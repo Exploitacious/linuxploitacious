@@ -134,3 +134,11 @@ if [ -f "/home/master/.config/fabric/fabric-bootstrap.inc" ]; then . "/home/mast
 if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
     tmux
 fi
+
+# Customize Prompt with Oh-My-Posh
+eval "$(oh-my-posh init zsh --config )"
+
+## Was recommended to use this to better generate symbols? MacOS Only
+# if [ "$TERM_PROGRAM" ≠ "Apple_Terminal" ]; then
+#    eval "$(oh-my-posh init zsh)"
+# fi
