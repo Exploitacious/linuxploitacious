@@ -10,11 +10,11 @@ My dotfiles for linux machines. Managed with Stow.
 - Make sure your files are set up in the exact same configuration as they would be in the ~/ home directory.
 
 ```
-Stow . 
+stow . 
 ```
 Initialize Stow to create symlinks
 
 ```
-Stow --adopt . 
+stow --adopt . 
 ```
 Initialize Stow and create symlinks, by adopting the existing file.
