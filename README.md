@@ -18,3 +18,15 @@ Initialize Stow to create symlinks
 stow --adopt . 
 ```
 Initialize Stow and create symlinks, by adopting the existing file.
+
+## Copy / Migrate files
+
+To copy or migrate new config files, simply move them or copy them into the exact same place as they were located in the home directory. For example:
+
+~/.config/neofetch/config.conf
+
+will need to move to:
+
+~/dotfiles/.config/neofetch/config.conf
+
+You can then either remove the original file from Home, or use the stow . --adopt command.
