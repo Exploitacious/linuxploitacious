@@ -136,7 +136,7 @@ if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
 fi
 
 # Customize Prompt with Oh-My-Posh
-eval "$(oh-my-posh init zsh --config )"
+eval "$(oh-my-posh init zsh --config $HOME/.config/ohmyposh/zen.toml)"
 
 ## Was recommended to use this to better generate symbols? MacOS Only
 # if [ "$TERM_PROGRAM" ≠ "Apple_Terminal" ]; then
