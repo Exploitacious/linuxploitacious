@@ -91,6 +91,9 @@ source $ZSH/oh-my-zsh.sh
 # Compilation flags
 # export ARCHFLAGS="-arch x86_64"
 
+# Enable Ctrl + Backspace to delete the previous word
+# bindkey '^[?' backward-kill-word # not working
+
 # Set personal aliases, overriding those provided by oh-my-zsh libs,
 # plugins, and themes. Aliases can be placed here, though oh-my-zsh
 # users are encouraged to define aliases within the ZSH_CUSTOM folder.
@@ -105,6 +108,7 @@ alias c="clear"
 alias x="exit"
 alias e="code -n ~/ ~/.zshrc ~/.config/neofetch/config.conf ~/dotfiles/.tmux.conf" #ExtrasIfNeeded: ~/.aliases ~/.colors ~/.hooks
 alias r="source ~/.zshrc"
+alias rt="tmux source-file ~/.tmux.conf"
 alias vsc="cd /mnt/c/users/Alex/VSCODE"
 alias h="history -10" # last 10 history commands
 alias hc="history -c" # clear history
