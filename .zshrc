@@ -103,7 +103,7 @@ source $ZSH/oh-my-zsh.sh
 #Shell
 alias c="clear"
 alias x="exit"
-alias e="code -n ~/ ~/.zshrc ~/.config/neofetch/config.conf" #ExtrasIfNeeded: ~/.aliases ~/.colors ~/.hooks
+alias e="code -n ~/ ~/.zshrc ~/.config/neofetch/config.conf ~/dotfiles/.tmux.conf" #ExtrasIfNeeded: ~/.aliases ~/.colors ~/.hooks
 alias r="source ~/.zshrc"
 alias vsc="cd /mnt/c/users/Alex/VSCODE"
 alias h="history -10" # last 10 history commands
@@ -142,3 +142,6 @@ eval "$(oh-my-posh init zsh --config $HOME/.config/ohmyposh/zen.toml)"
 # if [ "$TERM_PROGRAM" ≠ "Apple_Terminal" ]; then
 #    eval "$(oh-my-posh init zsh)"
 # fi
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
