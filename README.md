@@ -8,7 +8,6 @@ Designed to deploy a unified Linux environment by centralizing config files and 
 ---
 
 ## Execution
-(Use any of the below)
 
 ```bash
 wget -qO shellSetup.sh https://shell.ivantsov.tech && bash shellSetup.sh
@@ -20,7 +19,7 @@ curl -fsSL https://shell.ivantsov.tech | bash
 
 ---
 
-## 1. System Bootstrap (`shellSetup.sh`)
+## System Bootstrap (`shellSetup.sh`)
 
 **Purpose:** This script automates the initial environment configuration on a completely blank machine. It is designed to run exactly once per system install. Further changes to configs need to be managed via git/github
 * Installs Git and configures your global Git identity.
@@ -31,7 +30,7 @@ curl -fsSL https://shell.ivantsov.tech | bash
 
 ---
 
-## 2. GNU Stow: Core Mechanics
+## GNU Stow: Core Mechanics
 
 We use GNU Stow as a stateless symlink manager. It does not run a background daemon, and it does not maintain a database of what it has deployed. It reads the current state of a "package" directory and mirrors that structure to a target directory.
 
