@@ -63,3 +63,8 @@ Run `stow -t ~ zsh nvim scripts` (exclude / inlcude any folders you want to syml
     └── .config/
         └── btop/
             └── btop.conf     # Deploys -> ~/.config/btop/btop.conf
+```
+
+## dockerHost
+This folder is unrelated to the project, I just needed somewhere to put it. It's a docker compose file for my docker infrastructure. You can either igonre it or delete it as it serves no purpose here.
+
