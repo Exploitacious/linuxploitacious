@@ -34,10 +34,10 @@ main() {
 
     # Configure Global Git Identity
     echo -e "\n[*] Configuring Git Global Identity..."
-    read -p "Enter Git User Name [Alex Ivantsov]: " GIT_NAME
+    read -p "Enter Git User Name [Your Name]: " GIT_NAME
     GIT_NAME=${GIT_NAME:-"Your Name"}
     
-    read -p "Enter Git Email [alex@ivantsov.tech]: " GIT_EMAIL
+    read -p "Enter Git Email [email@example.com]: " GIT_EMAIL
     GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
 
     git config --global user.name "$GIT_NAME"
