@@ -1,0 +1,46 @@
+services:
+  finance-report:
+    image: ghcr.io/exploitacious/finance-report:latest
+    container_name: finance-report
+    restart: unless-stopped
+    ports:
+      - "3020:8000"
+    env_file:
+      - /root/finance-report-tokens/.env
+    volumes:
+      - /root/finance-report-data:/app/data
+      - /root/finance-report-tokens:/app/tokens
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=86400
+      - DOCKER_API_VERSION=1.53
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  ivantsov-tech:
+    image: ghcr.io/exploitacious/ivantsov.tech:latest
+    container_name: ivantsov.tech
+    restart: always
+    ports:
+      - "3010:80"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: always
+    ports:
+      - "8000:8000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
+    external: true
