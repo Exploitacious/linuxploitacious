@@ -1,18 +1,75 @@
 #!/bin/bash
 # Cross-Platform Linux Setup Script (Stow, Zsh, OMZ, OMP, Tmux)
 
+# 1. RECLAIM TTY: Prevent curl | bash from breaking interactive prompts
+exec < /dev/tty
+
 if [ "$EUID" -eq 0 ]; then
   echo "Error: Run as standard user. Sudo will be requested when needed."
   exit 1
 fi
 
+# 2. CONTEXT AWARENESS & BOOTSTRAPPING
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+
 if [ ! -d "$REPO_DIR/.git" ]; then
-  echo "Error: Run this script from within the cloned repository."
-  exit 1
+  echo "[*] Remote execution detected. Bootstrapping environment..."
+  
+  sudo -v
+
+  # Validate/Install Git
+  if ! command -v git &> /dev/null; then
+    echo "[*] Git missing. Installing..."
+    if [ -f /etc/debian_version ]; then
+      sudo apt-get update && sudo apt-get install -y git
+    elif [ -f /etc/arch-release ]; then
+      sudo pacman -Sy --noconfirm git
+    else
+      echo "[-] Unsupported OS for automatic Git installation. Install Git manually."
+      exit 1
+    fi
+  fi
+
+  # Configure Global Git Identity
+  echo -e "\n[*] Configuring Git Global Identity..."
+  read -p "Enter Git User Name [Alex Ivantsov]: " GIT_NAME
+  GIT_NAME=${GIT_NAME:-"Alex Ivantsov"}
+  
+  read -p "Enter Git Email [alex@ivantsov.tech]: " GIT_EMAIL
+  GIT_EMAIL=${GIT_EMAIL:-"alex@ivantsov.tech"}
+
+  git config --global user.name "$GIT_NAME"
+  git config --global user.email "$GIT_EMAIL"
+  echo "[+] Git identity set to $GIT_NAME <$GIT_EMAIL>"
+
+  # Clone Repository
+  TARGET_DIR="$HOME/linuxploitacious"
+  if [ ! -d "$TARGET_DIR" ]; then
+    echo "[*] Cloning repository to $TARGET_DIR..."
+    git clone https://github.com/Exploitacious/linuxploitacious.git "$TARGET_DIR"
+  else
+    echo "[!] Directory $TARGET_DIR already exists. Pulling latest..."
+    cd "$TARGET_DIR" && git pull
+  fi
+
+  # 3. THE HANDOFF: Execute the local script and kill the remote stream
+  echo "[*] Handoff to local repository execution..."
+  cd "$TARGET_DIR" || exit 1
+  chmod +x ShellSetup.sh
+  exec ./ShellSetup.sh
 fi
 
+# --- LOCAL EXECUTION CONTINUES HERE ---
 sudo -v
+
+# Verify whiptail
+if ! command -v whiptail &> /dev/null; then
+  if [ -f /etc/debian_version ]; then
+    sudo apt-get update && sudo apt-get install -y whiptail
+  elif [ -f /etc/arch-release ]; then
+    sudo pacman -Sy --noconfirm libnewt
+  fi
+fi
 
 # --- OS DETECTION ---
 if [ -f /etc/os-release ]; then
