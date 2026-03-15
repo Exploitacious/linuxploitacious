@@ -121,7 +121,9 @@ EOF
     # Add Fastfetch PPA on Ubuntu if needed
     if [[ "$OS_ID" == "ubuntu" ]]; then
         msg_info "Adding Fastfetch PPA..."
-        sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch
+        if ! sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch 2>/dev/null; then
+            msg_warn "Failed to add Fastfetch PPA. Will attempt direct .deb download if apt install fails."
+        fi
         sudo apt-get update
     fi
     
@@ -137,6 +139,21 @@ EOF
 
     msg_info "Installing packages: ${DEBIAN_PKGS[*]}"
     sudo apt-get install -y "${DEBIAN_PKGS[@]}"
+
+    # Fastfetch Fallback
+    if ! command -v fastfetch &> /dev/null; then
+        msg_warn "Fastfetch not found after apt install. Attempting manual install..."
+        # Fetch latest release URL for amd64 deb
+        FASTFETCH_URL=$(curl -s https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest | grep "browser_download_url.*linux-amd64.deb" | cut -d : -f 2,3 | tr -d \")
+        if [ -n "$FASTFETCH_URL" ]; then
+            wget -q "$FASTFETCH_URL" -O /tmp/fastfetch.deb
+            sudo apt-get install -y /tmp/fastfetch.deb
+            rm /tmp/fastfetch.deb
+            msg_success "Fastfetch installed manually."
+        else
+            msg_error "Failed to download Fastfetch."
+        fi
+    fi
     msg_success "Base packages installed."
   }
 
@@ -218,7 +235,9 @@ EOF
 
     if ! command -v oh-my-posh &> /dev/null; then
       msg_info "Installing Oh My Posh..."
-      sudo curl -s https://ohmyposh.dev/install.sh | sudo bash -s
+      mkdir -p "$HOME/.local/bin"
+      curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin"
+      export PATH=$PATH:$HOME/.local/bin
     fi
 
     if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
@@ -263,6 +282,16 @@ EOF
     msg_header "Deploying Dotfiles (GNU Stow)"
     cd "$REPO_DIR" || exit 1
     
+    # Ensure stow is installed
+    if ! command -v stow &> /dev/null; then
+        msg_warn "Stow not found. Installing..."
+        if [ -f /etc/debian_version ]; then
+            sudo apt-get update && sudo apt-get install -y stow
+        elif [ -f /etc/arch-release ]; then
+            sudo pacman -S --noconfirm stow
+        fi
+    fi
+
     if [ -d "$REPO_DIR/scripts/.local/bin" ]; then
       chmod -R +x "$REPO_DIR/scripts/.local/bin/"
     fi
