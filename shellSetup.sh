@@ -125,6 +125,13 @@ main() {
 
   install_node_env() {
     echo "Installing Node.js Environment..."
+    
+    # Clean up conflicting npm config
+    if [ -f "$HOME/.npmrc" ]; then
+        echo "[!] Backing up existing .npmrc to .npmrc.bak (incompatible with NVM)"
+        mv "$HOME/.npmrc" "$HOME/.npmrc.bak"
+    fi
+
     # Install NVM
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
     
@@ -136,8 +143,14 @@ main() {
     nvm install --lts
     nvm use --lts
 
-    # Enable pnpm
+    # Enable pnpm with suppressed prompts
+    export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
     corepack enable pnpm
+
+    # Set up pnpm environment for this session
+    export PNPM_HOME="$HOME/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
+    mkdir -p "$PNPM_HOME"
 
     # Install global packages
     pnpm add -g @google/gemini-cli opencode-ai
@@ -147,6 +160,16 @@ main() {
 
   setup_shell_env() {
     echo "Setting up Oh My Zsh, Oh My Posh, and TPM..."
+    
+    # Ensure dependencies are present if BASE was skipped
+    if ! command -v zsh &> /dev/null || ! command -v unzip &> /dev/null; then
+        echo "[*] Installing missing dependencies (zsh/unzip)..."
+        if [ -f /etc/debian_version ]; then
+            sudo apt-get update && sudo apt-get install -y zsh unzip
+        elif [ -f /etc/arch-release ]; then
+            sudo pacman -S --noconfirm zsh unzip
+        fi
+    fi
     
     if [ ! -d "$HOME/.oh-my-zsh" ]; then
       sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh) --unattended"
