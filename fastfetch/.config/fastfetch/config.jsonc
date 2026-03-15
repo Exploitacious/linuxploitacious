@@ -19,6 +19,7 @@
         {
             "type": "publicip",
             "timeout": 2000
-        }
+        },
+	"break"
     ]
 }
