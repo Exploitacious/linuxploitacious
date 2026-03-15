@@ -87,12 +87,21 @@ main() {
     echo "Configuring Debian/Kali base..."
     sudo apt-get update
     
+    # Ensure add-apt-repository is available
+    sudo apt-get install -y software-properties-common
+
+    # Add Fastfetch PPA on Ubuntu if needed
+    if [[ "$OS_ID" == "ubuntu" ]]; then
+        sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch
+        sudo apt-get update
+    fi
+    
     sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
     echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list > /dev/null
     
     sudo apt-get update && sudo apt-get full-upgrade -y
     
-    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap brave-browser)
+    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop)
     if [[ "$OS_ID" == "kali" ]]; then DEBIAN_PKGS+=(kali-win-kex); fi
 
     sudo apt-get install -y "${DEBIAN_PKGS[@]}"
@@ -102,7 +111,7 @@ main() {
     echo "Configuring Arch base..."
     sudo pacman -Syu --noconfirm
     
-    local ARCH_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel)
+    local ARCH_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel btop)
     sudo pacman -S --noconfirm --needed "${ARCH_PKGS[@]}"
 
     if ! command -v yay &> /dev/null; then
@@ -112,6 +121,26 @@ main() {
       cd "$REPO_DIR" || exit 1
     fi
     yay -S --noconfirm brave-bin
+  }
+
+  install_node_env() {
+    echo "Installing Node.js Environment..."
+    # Install NVM
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    
+    # Load NVM for current session
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    # Install Node LTS
+    nvm install --lts
+    nvm use --lts
+
+    # Enable pnpm
+    corepack enable pnpm
+
+    # Install global packages
+    pnpm add -g @google/gemini-cli opencode-ai
   }
 
   # --- SHELL ENVIRONMENT ---
@@ -132,13 +161,35 @@ main() {
     fi
 
     if [ -f "$HOME/.zshrc" ] && [ ! -L "$HOME/.zshrc" ]; then
-      rm "$HOME/.zshrc"
+      mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
     fi
 
-    sudo chsh -s $(which zsh) "$USER"
+    # Ensure zsh is in allowed shells
+    if ! grep -q "$(which zsh)" /etc/shells; then
+        echo "$(which zsh)" | sudo tee -a /etc/shells
+    fi
+    sudo chsh -s "$(which zsh)" "$USER"
   }
 
   # --- STOW DEPLOYMENT ---
+
+  backup_stow_conflicts() {
+    local pkg_dir="$REPO_DIR/$1"
+    local target_dir="$HOME"
+    
+    # Find all files in the package directory relative to package root
+    find "$pkg_dir" -type f | while read -r src_file; do
+        # Get relative path from pkg_dir
+        local rel_path="${src_file#$pkg_dir/}"
+        local dest_file="$target_dir/$rel_path"
+        
+        # Check if destination exists and is NOT a symlink
+        if [ -e "$dest_file" ] && [ ! -L "$dest_file" ]; then
+            echo "[!] Conflict found: $dest_file. Backing up to $dest_file.bak"
+            mv "$dest_file" "$dest_file.bak"
+        fi
+    done
+  }
 
   deploy_stow() {
     echo "Deploying dotfiles via GNU Stow..."
@@ -148,10 +199,11 @@ main() {
       chmod -R +x "$REPO_DIR/scripts/.local/bin/"
     fi
 
-    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh")
+    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
     
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
+        backup_stow_conflicts "$pkg"
         stow -t "$HOME" "$pkg"
         echo "Stowed: $pkg"
       else
@@ -163,8 +215,9 @@ main() {
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 20 78 5 \
+  "Select components to install/deploy (Space to toggle, Enter to confirm):" 20 78 6 \
     "BASE" "OS Updates & Core Packages" ON \
+    "NODE" "Node.js, NVM, pnpm, AI Tools" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
     "STOW" "Deploy Repo configs" ON 3>&1 1>&2 2>&3)
 
@@ -181,6 +234,7 @@ main() {
     fi
   fi
 
+  if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
 
