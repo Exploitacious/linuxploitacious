@@ -1,0 +1,38 @@
+#!/bin/bash
+# Kali Win-KeX Launcher & Session Manager
+
+echo "[*] Purging zombie KeX sessions..."
+kex --kill >/dev/null 2>&1
+
+# Target VNC/RDP locks specifically, leave WSLg's X0 alone
+sudo find /tmp/ -maxdepth 1 -name ".X*-lock" ! -name ".X0-lock" -exec rm -f {} + >/dev/null 2>&1
+
+echo "[*] Forcing DBus and background services to X11..."
+export WAYLAND_DISPLAY=
+export GDK_BACKEND=x11
+
+# Push the empty Wayland variable and X11 fallback into the DBus memory
+dbus-update-activation-environment --systemd GDK_BACKEND WAYLAND_DISPLAY
+
+case "$1" in
+    "rdp")
+        echo "[*] Launching KeX RDP (ESM Mode)..."
+        IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+        if [ -z "$IP" ]; then
+            echo "[-] Error: No IP address found on eth0."
+            exit 1
+        fi
+        kex --esm --ip -s >/dev/null 2>&1 &
+        sleep 3
+        /mnt/c/Windows/System32/mstsc.exe /v:"${IP}:3390"
+        ;;
+    "1080")
+        echo "[*] Launching KeX VNC (Forced 1920x1080)..."
+        kex --win -s --ip -g 1920x1080
+        ;;
+    *)
+        echo "[*] Launching KeX VNC (Standard)..."
+        echo "[!] Tip: Press F8 in the viewer to toggle fullscreen and scaling."
+        kex --win -s --ip
+        ;;
+esac

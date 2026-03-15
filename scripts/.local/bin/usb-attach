@@ -1,0 +1,31 @@
+#!/bin/bash
+# Windows-to-WSL USBIP Attachment Helper
+
+if [ -z "$1" ]; then
+    echo "[-] Error: You must provide a bus ID (e.g., usb-attach 4-1)"
+    exit 1
+fi
+
+echo "[*] Initializing Linux Virtual USB subsystem..."
+# You MUST load this module or the TCP stream has nowhere to go
+sudo modprobe vhci-hcd
+
+echo "[*] Querying Windows host for physical LAN IP..."
+WIN_IP=$(powershell.exe -NonInteractive -NoProfile -Command "(Get-NetIPConfiguration | Where-Object { \$_.IPv4DefaultGateway -ne \$null }).IPv4Address.IPAddress" | tr -d '\r' | head -n 1)
+
+if [ -z "$WIN_IP" ]; then
+    echo "[-] Error: Could not resolve Windows host IP."
+    exit 1
+fi
+
+echo "[*] Windows Host IP: $WIN_IP"
+
+echo "[*] Verifying Windows Firewall hole..."
+if ! nc -z -w 2 "$WIN_IP" 3240; then
+    echo "[-] FATAL: TCP port 3240 is closed on $WIN_IP."
+    echo "[-] If you opened the Windows Defender rule, a third-party antivirus is likely hijacking the block."
+    exit 1
+fi
+
+echo "[+] Firewall open. Pulling USB device $1 across the bridge..."
+sudo usbip attach --remote="${WIN_IP}" --busid="$1"

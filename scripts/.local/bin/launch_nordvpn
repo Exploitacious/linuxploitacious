@@ -1,0 +1,76 @@
+#!/bin/bash
+# Autonomous Portable NordVPN OpenVPN Launcher
+
+# Enforce root execution
+if [ "$EUID" -ne 0 ]; then
+  echo "Error: OpenVPN requires network interface privileges. Run with sudo."
+  exit 1
+fi
+
+# Dynamically resolve the true user and home directory
+ACTUAL_USER=${SUDO_USER:-$(whoami)}
+REAL_HOME=$(getent passwd "$ACTUAL_USER" | cut -d: -f6)
+
+BASE_DIR="$REAL_HOME/.config/nordvpn"
+CONFIG_DIR="$BASE_DIR/ovpn_udp"
+CRED_FILE="$BASE_DIR/vpn-credentials.txt"
+
+# --- SELF-HEALING PROVISIONING ---
+if [ ! -d "$CONFIG_DIR" ] || [ -z "$(ls -A "$CONFIG_DIR" 2>/dev/null)" ]; then
+  echo "Configuration files missing. Initiating autonomous provisioning..."
+  
+  # Ensure core dependencies exist before attempting download
+  if ! command -v unzip &> /dev/null || ! command -v wget &> /dev/null; then
+    echo "Error: 'wget' and 'unzip' are required for provisioning. Install them first."
+    exit 1
+  fi
+
+  mkdir -p "$BASE_DIR"
+  wget -q "https://downloads.nordcdn.com/configs/archives/servers/ovpn.zip" -O /tmp/ovpn.zip
+  unzip -qo /tmp/ovpn.zip -d "$BASE_DIR"
+  rm /tmp/ovpn.zip
+
+  echo "Patching OpenVPN cipher configurations..."
+  find "$CONFIG_DIR" -name "*.ovpn" -type f -print0 | xargs -0 sed -i \
+    -e "s|cipher AES-256-CBC|data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305|g" \
+    -e "\$aauth-user-pass $CRED_FILE"
+  
+  # Reassign ownership to the standard user, as root executed the download
+  chown -R "$ACTUAL_USER":"$ACTUAL_USER" "$BASE_DIR"
+fi
+
+# --- FIRST-TIME CREDENTIAL SETUP ---
+if [ ! -f "$CRED_FILE" ]; then
+  echo "First time setup: Enter your NordVPN service credentials."
+  read -p "Username: " NORDVPN_USERNAME
+  read -sp "Password: " NORDVPN_PASSWORD
+  echo -e "\nSaving credentials..."
+  
+  mkdir -p "$BASE_DIR"
+  echo -e "$NORDVPN_USERNAME\n$NORDVPN_PASSWORD" > "$CRED_FILE"
+  
+  # Lock down permissions
+  chmod 600 "$CRED_FILE"
+  chown "$ACTUAL_USER":"$ACTUAL_USER" "$CRED_FILE"
+fi
+
+# --- EXECUTION ---
+echo -e "\nAvailable configuration files are located in: $CONFIG_DIR"
+read -p "Enter server filename (or hit Enter for random): " OVPN_FILE
+
+if [ -z "$OVPN_FILE" ] || [ "$OVPN_FILE" == "random" ]; then
+  OVPN_FILE=$(ls -1 "$CONFIG_DIR" | shuf -n 1)
+  echo "Selected random server: $OVPN_FILE"
+fi
+
+if [ ! -f "$CONFIG_DIR/$OVPN_FILE" ]; then
+  echo "Error: Configuration file '$OVPN_FILE' does not exist."
+  exit 1
+fi
+
+echo "Kicking DNS resolver to clear DBus locks..."
+systemctl restart systemd-resolved
+sleep 1
+
+echo "Connecting to $OVPN_FILE..."
+openvpn --config "$CONFIG_DIR/$OVPN_FILE" --auth-user-pass "$CRED_FILE"
