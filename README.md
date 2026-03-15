@@ -1,16 +1,33 @@
 # Linux Shell and Config Setup
 
+---
+
+An interactive provisioning script for deploying a fully configured Linux environment. Optimized for Debian and Kali Linux. 
 Designed to deploy a unified Linux environment by centralizing config files and scripts across multiple machines using GNU Stow and Git. It's dead simple.
+
+---
+
+## Execution
+(Use any of the below)
+
+```bash
+wget -qO shellSetup.sh https://shell.ivantsov.tech && bash shellSetup.sh
+```
+
+```bash
+curl -fsSL https://shell.ivantsov.tech | bash
+```
 
 ---
 
 ## 1. System Bootstrap (`shellSetup.sh`)
 
-This repository includes a master setup script (`shellSetup.sh`) located in the root directory. 
-
-**Purpose:** This script automates the initial environment configuration on a completely blank machine. It is designed to run exactly once per system install.
-
-*(Note: Script capabilities are currently being fleshed out. Future iterations will handle dependency installation, repository cloning, and automated execution of the Stow deployment commands listed below.)*
+**Purpose:** This script automates the initial environment configuration on a completely blank machine. It is designed to run exactly once per system install. Further changes to configs need to be managed via git/github
+* Installs Git and configures your global Git identity.
+* Clones this repository to ~/linuxploitacious.
+* Launches an interactive menu to install base packages (Zsh, Tmux, Fastfetch, etc.).
+* Deploys configurations via GNU Stow.
+* Sets up Oh My Zsh and Oh My Posh theming.
 
 ---
 
