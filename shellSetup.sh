@@ -114,46 +114,61 @@ EOF
   install_debian_base() {
     msg_header "Configuring Debian/Kali base"
     sudo apt-get update
-    
-    # Ensure add-apt-repository is available
+
+    # Ensure software-properties-common is installed first
     sudo apt-get install -y software-properties-common
 
-    # Add Fastfetch PPA on Ubuntu if needed
-    if [[ "$OS_ID" == "ubuntu" ]]; then
-        msg_info "Adding Fastfetch PPA..."
-        if ! sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch 2>/dev/null; then
-            msg_warn "Failed to add Fastfetch PPA. Will attempt direct .deb download if apt install fails."
-        fi
-        sudo apt-get update
-    fi
-    
+    # Add Brave Browser keys
     msg_info "Adding Brave Browser keys..."
     sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
     echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list > /dev/null
-    
+
     msg_info "Upgrading system..."
     sudo apt-get update && sudo apt-get full-upgrade -y
-    
-    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop)
+
+    # Install base packages (stow, jq, etc.) first to ensure they exist for later steps
+    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop)
     if [[ "$OS_ID" == "kali" ]]; then DEBIAN_PKGS+=(kali-win-kex); fi
 
     msg_info "Installing packages: ${DEBIAN_PKGS[*]}"
     sudo apt-get install -y "${DEBIAN_PKGS[@]}"
 
-    # Fastfetch Fallback
+    # Attempt Fastfetch installation separately to avoid blocking other packages
     if ! command -v fastfetch &> /dev/null; then
-        msg_warn "Fastfetch not found after apt install. Attempting manual install..."
-        # Fetch latest release URL for amd64 deb
-        FASTFETCH_URL=$(curl -s https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest | grep "browser_download_url.*linux-amd64.deb" | cut -d : -f 2,3 | tr -d \")
-        if [ -n "$FASTFETCH_URL" ]; then
-            wget -q "$FASTFETCH_URL" -O /tmp/fastfetch.deb
-            sudo apt-get install -y /tmp/fastfetch.deb
-            rm /tmp/fastfetch.deb
-            msg_success "Fastfetch installed manually."
+        msg_info "Attempting to install Fastfetch..."
+
+        # 1. Try PPA for Ubuntu
+        if [[ "$OS_ID" == "ubuntu" ]]; then
+            msg_info "Trying Fastfetch PPA..."
+            if sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch 2>/dev/null; then
+                sudo apt-get update && sudo apt-get install -y fastfetch
+            fi
+        # 2. Try direct install (available in newer Debian/Kali)
         else
-            msg_error "Failed to download Fastfetch."
+            sudo apt-get install -y fastfetch 2>/dev/null
+        fi
+
+        # 3. Manual Fallback using jq (which we just installed)
+        if ! command -v fastfetch &> /dev/null; then
+            msg_warn "Fastfetch not found in repos. Attempting robust manual install..."
+            local FASTFETCH_URL
+            FASTFETCH_URL=$(curl -s https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest | jq -r '.assets[] | select(.name | test("linux-amd64.deb")) | .browser_download_url' | head -n 1)
+
+            if [[ -n "$FASTFETCH_URL" && "$FASTFETCH_URL" != "null" ]]; then
+                msg_info "Downloading Fastfetch from: $FASTFETCH_URL"
+                if wget -q "$FASTFETCH_URL" -O /tmp/fastfetch.deb; then
+                    sudo apt-get install -y /tmp/fastfetch.deb
+                    rm /tmp/fastfetch.deb
+                    msg_success "Fastfetch installed manually."
+                else
+                    msg_error "Failed to download Fastfetch .deb"
+                fi
+            else
+                msg_error "Could not find Fastfetch download URL."
+            fi
         fi
     fi
+
     msg_success "Base packages installed."
   }
 
