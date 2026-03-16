@@ -127,7 +127,7 @@ EOF
     sudo apt-get update && sudo apt-get full-upgrade -y
 
     # Install base packages (stow, jq, etc.) first to ensure they exist for later steps
-    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop)
+    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop tree)
     if [[ "$OS_ID" == "kali" ]]; then DEBIAN_PKGS+=(kali-win-kex); fi
 
     msg_info "Installing packages: ${DEBIAN_PKGS[*]}"
