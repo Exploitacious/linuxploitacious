@@ -118,16 +118,11 @@ EOF
     # Ensure software-properties-common is installed first
     sudo apt-get install -y software-properties-common
 
-    # Add Brave Browser keys
-    msg_info "Adding Brave Browser keys..."
-    sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list > /dev/null
-
     msg_info "Upgrading system..."
     sudo apt-get update && sudo apt-get full-upgrade -y
 
     # Install base packages (stow, jq, etc.) first to ensure they exist for later steps
-    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap brave-browser build-essential wget jq btop tree)
+    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap build-essential wget jq btop tree)
     if [[ "$OS_ID" == "kali" ]]; then DEBIAN_PKGS+=(kali-win-kex); fi
 
     msg_info "Installing packages: ${DEBIAN_PKGS[*]}"
@@ -186,8 +181,25 @@ EOF
       cd /tmp/yay && makepkg -si --noconfirm
       cd "$REPO_DIR" || exit 1
     fi
-    yay -S --noconfirm brave-bin
     msg_success "Base packages installed."
+  }
+
+  install_brave() {
+    msg_header "Installing Brave Browser"
+    
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      sudo apt-get install -y curl
+      sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list > /dev/null
+      sudo apt-get update && sudo apt-get install -y brave-browser
+    elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      if ! command -v yay &> /dev/null; then
+        msg_error "yay not found. Please install yay first or run BASE option."
+        return 1
+      fi
+      yay -S --noconfirm brave-bin
+    fi
+    msg_success "Brave Browser installed."
   }
 
   install_node_env() {
@@ -224,7 +236,7 @@ EOF
 
     # Install global packages
     msg_info "Installing Global AI Tools (@google/gemini-cli, opencode-ai)..."
-    pnpm add -g @google/gemini-cli opencode-ai
+    pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
     msg_success "Node environment ready."
   }
 
@@ -327,11 +339,12 @@ EOF
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 20 78 6 \
+  "Select components to install/deploy (Space to toggle, Enter to confirm):" 20 78 7 \
     "BASE" "OS Updates & Core Packages" ON \
     "NODE" "Node.js, NVM, pnpm, AI Tools" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
-    "STOW" "Deploy Repo configs" ON 3>&1 1>&2 2>&3)
+    "STOW" "Deploy Repo configs" ON \
+    "BRAVE" "Brave Browser" OFF 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
     msg_warn "Installation cancelled."
@@ -349,6 +362,7 @@ EOF
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
+  if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
 
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }

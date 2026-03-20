@@ -27,6 +27,16 @@ curl -fsSL https://shell.ivantsov.tech | bash
 * Launches an interactive menu to install base packages (Zsh, Tmux, Fastfetch, etc.).
 * Deploys configurations via GNU Stow.
 * Sets up Oh My Zsh and Oh My Posh theming.
+* Optionally installs Brave Browser.
+
+### Menu Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| BASE | OS Updates & Core Packages | ON |
+| NODE | Node.js, NVM, pnpm, AI Tools (Gemini CLI, Opencode, Claude Code) | ON |
+| SHELL | Zsh, OMZ, OMP, & TPM | ON |
+| STOW | Deploy Repo configs | ON |
+| BRAVE | Brave Browser | OFF |
 
 ---
 
