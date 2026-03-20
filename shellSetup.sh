@@ -286,21 +286,66 @@ EOF
   }
 
   # --- STOW DEPLOYMENT ---
+  # Ensures a completely clean slate before stowing each package.
+  # Handles: previous stow deployments, stale/broken symlinks, real file conflicts.
 
-  backup_stow_conflicts() {
+  unstow_package() {
+    # Phase 1: Remove any existing stow symlinks for this package
+    local pkg="$1"
+    msg_info "Unstowing previous deployment of '$pkg'..."
+    stow -D -t "$HOME" "$pkg" 2>/dev/null || true
+  }
+
+  clean_stale_symlinks() {
+    # Phase 2: Remove broken or stale symlinks at target paths
     local pkg_dir="$REPO_DIR/$1"
     local target_dir="$HOME"
-    
-    # Find all files in the package directory relative to package root
+
     find "$pkg_dir" -type f | while read -r src_file; do
-        # Get relative path from pkg_dir
         local rel_path="${src_file#$pkg_dir/}"
         local dest_file="$target_dir/$rel_path"
-        
-        # Check if destination exists and is NOT a symlink
+
+        if [ -L "$dest_file" ]; then
+            # Remove any symlink (broken or pointing elsewhere)
+            local link_target
+            link_target="$(readlink -f "$dest_file" 2>/dev/null || echo "")"
+            if [ ! -e "$dest_file" ] || [ "$link_target" != "$(readlink -f "$src_file")" ]; then
+                msg_warn "Removing stale symlink: $dest_file"
+                rm -f "$dest_file"
+            fi
+        fi
+    done
+  }
+
+  backup_real_files() {
+    # Phase 3: Back up any real (non-symlink) files that would conflict
+    local pkg_dir="$REPO_DIR/$1"
+    local target_dir="$HOME"
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+
+    find "$pkg_dir" -type f | while read -r src_file; do
+        local rel_path="${src_file#$pkg_dir/}"
+        local dest_file="$target_dir/$rel_path"
+
         if [ -e "$dest_file" ] && [ ! -L "$dest_file" ]; then
-            msg_warn "Conflict found: $dest_file. Backing up to $dest_file.bak"
-            mv "$dest_file" "$dest_file.bak"
+            local backup_file="${dest_file}.backup_${timestamp}"
+            msg_warn "Backing up real file: $dest_file -> $backup_file"
+            mv "$dest_file" "$backup_file"
+        fi
+    done
+  }
+
+  ensure_target_dirs() {
+    # Phase 4: Pre-create parent directories so stow doesn't have to fold trees
+    # through directories that contain non-stow files (prevents tree folding conflicts)
+    local pkg_dir="$REPO_DIR/$1"
+    local target_dir="$HOME"
+
+    find "$pkg_dir" -type d | while read -r src_dir; do
+        local rel_path="${src_dir#$pkg_dir/}"
+        if [ -n "$rel_path" ]; then
+            mkdir -p "$target_dir/$rel_path"
         fi
     done
   }
@@ -327,13 +372,23 @@ EOF
     
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
-        backup_stow_conflicts "$pkg"
-        stow -t "$HOME" "$pkg"
-        msg_success "Stowed: $pkg"
+        # Full 4-phase conflict resolution
+        unstow_package "$pkg"
+        clean_stale_symlinks "$pkg"
+        backup_real_files "$pkg"
+        ensure_target_dirs "$pkg"
+
+        if stow -v -t "$HOME" "$pkg" 2>&1; then
+            msg_success "Stowed: $pkg"
+        else
+            msg_error "Failed to stow: $pkg"
+        fi
       else
         msg_warn "Directory '$pkg' missing. Skipping."
       fi
     done
+
+    msg_success "All dotfiles deployed. Repository is the source of truth."
   }
 
   # --- MENU & EXECUTION ---

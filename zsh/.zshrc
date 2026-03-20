@@ -43,7 +43,9 @@ alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
 # Fastfetch (replaces Neofetch)
-fastfetch
+if command -v fastfetch >/dev/null 2>&1; then
+  fastfetch
+fi
 
 # Fabric Bootstrap
 if [ -f "$HOME/.config/fabric/fabric-bootstrap.inc" ]; then 
@@ -53,8 +55,10 @@ fi
 # opencode
 export PATH="$HOME/.opencode/bin:$PATH"
 
-#OhMyPosh
-eval "$(oh-my-posh init zsh --config $HOME/.config/ohmyposh/kali.json)"
+# Oh My Posh
+if command -v oh-my-posh >/dev/null 2>&1; then
+  eval "$(oh-my-posh init zsh --config $HOME/.config/ohmyposh/kali.json)"
+fi
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
