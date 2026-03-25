@@ -191,6 +191,101 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 
 ---
 
+## Snapper Snapshot Guide: Managing System Backups
+
+This guide explains how to use **Snapper** on your Arch Linux system to create, manage, and restore system snapshots. Your system is configured to take automatic snapshots of the root filesystem (`/`).
+
+### ⚙️ Current Configuration
+- **Tool**: `snapper` (Btrfs snapshot manager).
+- **Target**: Root filesystem (`/`).
+- **Automatic Retention Policy**:
+  - **Hourly**: Keeps the last **10** hourly snapshots.
+  - **Daily**: Keeps the last **7** daily snapshots.
+  - **Weekly/Monthly/Yearly**: Disabled (0).
+- **Package Manager Integration**:
+  - **snap-pac**: Installed. Automatically creates a "pre" snapshot before any pacman transaction and a "post" snapshot after.
+
+### 📸 Managing Snapshots
+
+#### 1. Listing Snapshots
+To see all current snapshots, including their type (single, pre, post) and description:
+```bash
+sudo snapper -c root list
+```
+
+#### 2. Creating a Manual Snapshot
+Before making risky changes (e.g., editing system configs, installing experimental software), create a manual checkpoint:
+```bash
+sudo snapper -c root create -d "Description of the checkpoint"
+```
+*   `-c root`: Specifies the config (root filesystem).
+*   `-d "..."`: Adds a description to the snapshot.
+
+#### 3. Deleting Snapshots
+To manually delete a specific snapshot (replace `NUMBER` with the ID from `list`):
+```bash
+sudo snapper -c root delete NUMBER
+```
+
+#### 4. Comparing Snapshots
+To see what files changed between two snapshots (e.g., between snapshot 10 and 11):
+```bash
+sudo snapper -c root status 10..11
+```
+To see the actual content differences (diff) of a specific file:
+```bash
+sudo snapper -c root diff 10..11 /path/to/file
+```
+
+### 🔄 Restoration Guide (Rollback)
+
+Since your system uses a standard Btrfs layout with specific subvolumes (`@`, `@home`, `@snapshots`), the safest way to restore the *entire* system is via a live environment.
+
+#### ⚠️ Warning
+Restoring the root filesystem will revert system files (`/etc`, `/usr`, `/var`) to a previous state. Your home directory (`/home`) is on a separate subvolume (`@home`) and **will not be touched**, so your personal files are safe.
+
+#### Step-by-Step Restoration
+1.  **Boot Live ISO**: Insert your Arch Linux USB installation media and boot into it.
+2.  **Mount Root Partition**:
+    Identify your root partition (likely `/dev/nvme0n1p4` based on your setup):
+    ```bash
+    mount /dev/nvme0n1p4 /mnt
+    ```
+3.  **Locate Snapshot**:
+    Snapshots are stored in `.snapshots/`. List them to find the one you want (check the timestamp):
+    ```bash
+    ls -l /mnt/@snapshots/*/snapshot
+    ```
+    *Note the number of the snapshot directory (e.g., `/mnt/@snapshots/55/snapshot`).*
+
+4.  **Backup Current State (Optional but Recommended)**:
+    Move the current broken system subvolume to a backup name:
+    ```bash
+    mv /mnt/@ /mnt/@_broken_$(date +%Y%m%d)
+    ```
+
+5.  **Restore the Snapshot**:
+    Create a read-write snapshot of the desired backup into the root position (`@`):
+    ```bash
+    btrfs subvolume snapshot /mnt/@snapshots/NUMBER/snapshot /mnt/@
+    ```
+    *(Replace `NUMBER` with the snapshot ID you chose).*
+
+6.  **Reboot**:
+    Unmount and reboot into your restored system:
+    ```bash
+    umount /mnt
+    reboot
+    ```
+
+#### Post-Restoration Cleanup
+Once you have successfully booted and verified the system is working, you can delete the broken backup subvolume to free up space:
+```bash
+sudo btrfs subvolume delete /mnt/@_broken_YYYYMMDD
+```
+
+---
+
 ## Troubleshooting
 
 ### "CONFIG NOT FOUND" or missing prompt theme
