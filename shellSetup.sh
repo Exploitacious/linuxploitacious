@@ -261,6 +261,34 @@ EOF
       fi
     done
     
+    msg_info "Sharing AI tool data with root..."
+    local PRIMARY_HOME=$(eval echo "~$SUDO_USER")
+    [ -z "$PRIMARY_HOME" ] && PRIMARY_HOME="$HOME"
+    
+    local AI_DIRS=(".gemini" ".claude" ".local/share/opencode")
+    local AI_FILES=(".claude.json")
+    
+    for dir in "${AI_DIRS[@]}"; do
+      local SRC="$PRIMARY_HOME/$dir"
+      local DST="/root/$dir"
+      if [ -d "$SRC" ]; then
+        sudo rm -rf "$DST"
+        sudo mkdir -p "$(dirname "$DST")"
+        sudo ln -s "$SRC" "$DST"
+        msg_success "Linked: $DST -> $SRC"
+      fi
+    done
+    
+    for file in "${AI_FILES[@]}"; do
+      local SRC="$PRIMARY_HOME/$file"
+      local DST="/root/$file"
+      if [ -f "$SRC" ]; then
+        sudo rm -f "$DST"
+        sudo ln -s "$SRC" "$DST"
+        msg_success "Linked: $DST -> $SRC"
+      fi
+    done
+    
     if [ ! -d "/root/.nvm" ]; then
       msg_info "Installing NVM for root..."
       sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'

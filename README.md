@@ -58,8 +58,17 @@ The ROOT option replicates your user profile to the root account:
 - Changes root's shell to zsh
 - Installs Oh My Zsh, Oh My Posh, and TPM for root
 - Deploys configs via stow to `/root` (symlinks to this repo)
+- Shares AI tool data directories with root (OpenCode, Gemini CLI, Claude Code)
 - Installs NVM, Node.js LTS, and pnpm for root
 - Installs global AI tools (gemini-cli, opencode-ai, claude-code) for root
+
+**AI Tool Data Sharing:**
+
+The following directories are symlinked from your user to `/root`, allowing seamless session continuity:
+- `~/.gemini/` - Gemini CLI auth and history
+- `~/.claude/` - Claude Code sessions and credentials
+- `~/.claude.json` - Claude Code config
+- `~/.local/share/opencode/` - OpenCode database and auth
 
 **After running:** Use `sudo -i` to access root's configured environment.
 
