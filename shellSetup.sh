@@ -264,6 +264,7 @@ EOF
     msg_info "Sharing AI tool data with root..."
     local PRIMARY_HOME=$(eval echo "~$SUDO_USER")
     [ -z "$PRIMARY_HOME" ] && PRIMARY_HOME="$HOME"
+    local PRIMARY_USER="${SUDO_USER:-$USER}"
     
     local AI_DIRS=(".gemini" ".claude" ".local/share/opencode")
     local AI_FILES=(".claude.json")
@@ -275,6 +276,8 @@ EOF
         sudo rm -rf "$DST"
         sudo mkdir -p "$(dirname "$DST")"
         sudo ln -s "$SRC" "$DST"
+        sudo chown -R "$PRIMARY_USER:$PRIMARY_USER" "$SRC"
+        sudo chmod -R g+rw "$SRC"
         msg_success "Linked: $DST -> $SRC"
       fi
     done
@@ -285,6 +288,8 @@ EOF
       if [ -f "$SRC" ]; then
         sudo rm -f "$DST"
         sudo ln -s "$SRC" "$DST"
+        sudo chown "$PRIMARY_USER:$PRIMARY_USER" "$SRC"
+        sudo chmod g+rw "$SRC"
         msg_success "Linked: $DST -> $SRC"
       fi
     done
