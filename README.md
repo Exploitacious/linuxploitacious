@@ -25,6 +25,24 @@ cd ~/linuxploitacious && git pull && bash shellSetup.sh
 
 The script is fully idempotent. It can be re-run at any time without conflicts. Existing configs are backed up automatically and the repository is always deployed as the source of truth.
 
+### Idempotency: Safe to Re-Run
+
+All components are designed to be safely re-run:
+
+| Component | Safety Mechanism |
+|-----------|------------------|
+| Package install | `--needed` flag (Arch) won't reinstall existing packages |
+| Oh My Zsh | Skips if `~/.oh-my-zsh` already exists |
+| Oh My Posh | Skips if binary already installed |
+| TPM | Skips if `~/.tmux/plugins/tpm` exists |
+| Stow | Removes old symlinks first, then deploys fresh |
+| NVM | Skips if `~/.nvm` already exists |
+| Node.js | `nvm install --lts` is safe to re-run |
+| AI tool symlinks | Removes and recreates symlinks (no duplicates) |
+| SSH keys | Skips if key already exists |
+
+**No data loss** - sessions, configs, and credentials are preserved on re-run.
+
 ---
 
 ## How It Works
