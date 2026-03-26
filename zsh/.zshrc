@@ -42,6 +42,7 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
+alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.gemini ~/.local/share/opencode && sudo chmod -R g+rw ~/.claude ~/.gemini ~/.local/share/opencode && echo "AI tool permissions fixed"'
 # Fastfetch (replaces Neofetch)
 if command -v fastfetch >/dev/null 2>&1; then
   fastfetch
