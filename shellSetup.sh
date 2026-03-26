@@ -281,6 +281,81 @@ ROOTNVM
     msg_success "Root profile setup complete. Run 'sudo -i' to use."
   }
 
+  setup_github_ssh() {
+    msg_header "Setting up GitHub SSH Key"
+    
+    local SSH_KEY="$HOME/.ssh/id_ed25519"
+    local GIT_EMAIL=$(git config --global user.email 2>/dev/null)
+    GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
+    
+    if [ -f "$SSH_KEY" ]; then
+      msg_info "SSH key already exists at $SSH_KEY"
+    else
+      msg_info "Generating new ed25519 SSH key..."
+      mkdir -p "$HOME/.ssh"
+      ssh-keygen -t ed25519 -C "$GIT_EMAIL" -f "$SSH_KEY" -N ""
+      msg_success "SSH key generated"
+    fi
+    
+    msg_info "Configuring SSH for GitHub..."
+    mkdir -p "$HOME/.ssh"
+    if ! grep -q "Host github.com" "$HOME/.ssh/config" 2>/dev/null; then
+      cat >> "$HOME/.ssh/config" << 'EOF'
+
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+EOF
+      chmod 600 "$HOME/.ssh/config"
+      msg_success "SSH config updated"
+    else
+      msg_info "GitHub host already configured in SSH config"
+    fi
+    
+    msg_info "Switching git remotes to SSH..."
+    if [ -d "$REPO_DIR/.git" ]; then
+      cd "$REPO_DIR" || exit 1
+      local REMOTE_URL=$(git remote get-url origin 2>/dev/null)
+      if [[ "$REMOTE_URL" == https://github.com/* ]]; then
+        local REPO_PATH="${REMOTE_URL#https://github.com/}"
+        git remote set-url origin "git@github.com:$REPO_PATH"
+        msg_success "Switched to SSH: git@github.com:$REPO_PATH"
+      elif [[ "$REMOTE_URL" == git@github.com:* ]]; then
+        msg_info "Remote already using SSH"
+      fi
+    fi
+    
+    msg_info "Copying SSH key to root..."
+    sudo mkdir -p /root/.ssh
+    sudo cp "$SSH_KEY" /root/.ssh/id_ed25519
+    sudo cp "$SSH_KEY.pub" /root/.ssh/id_ed25519.pub
+    sudo chmod 600 /root/.ssh/id_ed25519
+    sudo chmod 644 /root/.ssh/id_ed25519.pub
+    
+    if ! sudo grep -q "Host github.com" /root/.ssh/config 2>/dev/null; then
+      sudo tee -a /root/.ssh/config > /dev/null << 'EOF'
+
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+EOF
+      sudo chmod 600 /root/.ssh/config
+    fi
+    msg_success "SSH key copied to /root/.ssh/"
+    
+    SSH_PUBLIC_KEY=$(cat "$SSH_KEY.pub")
+    echo ""
+    echo -e "${CYAN}=== GitHub SSH Key ===${NC}"
+    echo -e "${YELLOW}Upload this public key to:${NC} https://github.com/settings/keys"
+    echo ""
+    echo -e "${GREEN}$SSH_PUBLIC_KEY${NC}"
+    echo ""
+    echo -e "${YELLOW}After uploading, test with:${NC} ssh -T git@github.com"
+    echo ""
+  }
+
   install_node_env() {
     msg_header "Installing Node.js Environment"
     
@@ -473,13 +548,14 @@ ROOTNVM
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 22 78 8 \
+  "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 9 \
     "BASE" "OS Updates & Core Packages" ON \
     "NODE" "Node.js, NVM, pnpm, AI Tools" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
     "STOW" "Deploy Repo configs" ON \
     "BRAVE" "Brave Browser" OFF \
-    "ROOT" "Replicate profile to root user" OFF 3>&1 1>&2 2>&3)
+    "ROOT" "Replicate profile to root user" OFF \
+    "SSHKEY" "Generate GitHub SSH key & configure" OFF 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
     msg_warn "Installation cancelled."
@@ -499,6 +575,7 @@ ROOTNVM
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
+  if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
 
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }
