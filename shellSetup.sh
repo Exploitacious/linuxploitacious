@@ -61,16 +61,23 @@ EOF
     fi
 
     # Configure Global Git Identity
-    msg_header "Configuring Git Global Identity"
-    read -p "Enter Git User Name [Your Name]: " GIT_NAME
-    GIT_NAME=${GIT_NAME:-"Your Name"}
+    EXISTING_GIT_NAME=$(git config --global user.name 2>/dev/null)
+    EXISTING_GIT_EMAIL=$(git config --global user.email 2>/dev/null)
     
-    read -p "Enter Git Email [email@example.com]: " GIT_EMAIL
-    GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
+    if [ -n "$EXISTING_GIT_NAME" ] && [ -n "$EXISTING_GIT_EMAIL" ]; then
+      msg_info "Git identity already configured: $EXISTING_GIT_NAME <$EXISTING_GIT_EMAIL>"
+    else
+      msg_header "Configuring Git Global Identity"
+      read -p "Enter Git User Name [Your Name]: " GIT_NAME
+      GIT_NAME=${GIT_NAME:-"Your Name"}
+      
+      read -p "Enter Git Email [email@example.com]: " GIT_EMAIL
+      GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
 
-    git config --global user.name "$GIT_NAME"
-    git config --global user.email "$GIT_EMAIL"
-    msg_success "Git identity set to $GIT_NAME <$GIT_EMAIL>"
+      git config --global user.name "$GIT_NAME"
+      git config --global user.email "$GIT_EMAIL"
+      msg_success "Git identity set to $GIT_NAME <$GIT_EMAIL>"
+    fi
 
     # Clone Repository
     TARGET_DIR="$HOME/linuxploitacious"
@@ -200,6 +207,78 @@ EOF
       yay -S --noconfirm brave-bin
     fi
     msg_success "Brave Browser installed."
+  }
+
+  setup_root_profile() {
+    msg_header "Setting up Root Profile"
+    
+    if [ "$EUID" -eq 0 ]; then
+      msg_error "This option must be run as a regular user, not as root."
+      return 1
+    fi
+    
+    msg_info "Ensuring system packages are installed..."
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      sudo apt-get install -y btop tmux fzf zsh
+    elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      sudo pacman -S --noconfirm --needed btop tmux fzf zsh
+    fi
+    
+    if ! grep -q "/usr/bin/zsh" /etc/shells; then
+      echo "/usr/bin/zsh" | sudo tee -a /etc/shells
+    fi
+    sudo chsh -s /usr/bin/zsh root
+    msg_success "Root shell set to zsh"
+    
+    if [ ! -d "/root/.oh-my-zsh" ]; then
+      msg_info "Installing Oh My Zsh for root..."
+      sudo git clone https://github.com/ohmyzsh/ohmyzsh.git /root/.oh-my-zsh
+    fi
+    
+    if ! sudo test -f "/root/.local/bin/oh-my-posh"; then
+      msg_info "Installing Oh My Posh for root..."
+      sudo mkdir -p /root/.local/bin
+      sudo curl -s https://ohmyposh.dev/install.sh | sudo bash -s -- -d /root/.local/bin
+    fi
+    
+    if [ ! -d "/root/.tmux/plugins/tpm" ]; then
+      msg_info "Installing Tmux Plugin Manager for root..."
+      sudo git clone https://github.com/tmux-plugins/tpm /root/.tmux/plugins/tpm
+    fi
+    
+    msg_info "Deploying configs to /root via stow..."
+    cd "$REPO_DIR" || exit 1
+    
+    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+    for pkg in "${PACKAGES[@]}"; do
+      if [ -d "$pkg" ]; then
+        sudo stow -D -t /root "$pkg" 2>/dev/null || true
+        if sudo stow -v -t /root "$pkg" 2>&1; then
+          msg_success "Stowed to /root: $pkg"
+        else
+          msg_error "Failed to stow to /root: $pkg"
+        fi
+      fi
+    done
+    
+    if [ ! -d "/root/.nvm" ]; then
+      msg_info "Installing NVM for root..."
+      sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+    fi
+    
+    msg_info "Installing Node.js, pnpm, and AI tools for root..."
+    sudo -i bash << 'ROOTNVM'
+export NVM_DIR="/root/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install --lts
+nvm use --lts
+corepack enable pnpm
+export PNPM_HOME="/root/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
+ROOTNVM
+    
+    msg_success "Root profile setup complete. Run 'sudo -i' to use."
   }
 
   install_node_env() {
@@ -394,12 +473,13 @@ EOF
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 20 78 7 \
+  "Select components to install/deploy (Space to toggle, Enter to confirm):" 22 78 8 \
     "BASE" "OS Updates & Core Packages" ON \
     "NODE" "Node.js, NVM, pnpm, AI Tools" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
     "STOW" "Deploy Repo configs" ON \
-    "BRAVE" "Brave Browser" OFF 3>&1 1>&2 2>&3)
+    "BRAVE" "Brave Browser" OFF \
+    "ROOT" "Replicate profile to root user" OFF 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
     msg_warn "Installation cancelled."
@@ -418,6 +498,7 @@ EOF
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
+  if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
 
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }

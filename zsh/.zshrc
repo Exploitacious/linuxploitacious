@@ -57,7 +57,7 @@ export PATH="$HOME/.opencode/bin:$PATH"
 
 # Oh My Posh
 if command -v oh-my-posh >/dev/null 2>&1; then
-  eval "$(oh-my-posh init zsh --config $HOME/.config/ohmyposh/kali.json)"
+  eval "$(oh-my-posh init zsh --config $HOME/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json)"
 fi
 
 export NVM_DIR="$HOME/.nvm"
