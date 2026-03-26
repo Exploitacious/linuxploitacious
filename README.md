@@ -1,6 +1,6 @@
 # Linuxploitacious - Linux Shell and Config Setup
 
-An interactive provisioning script for deploying a fully configured Linux environment. Optimized for Debian/Kali Linux (including WSL).
+An interactive provisioning script for deploying a fully configured Linux environment. Optimized for Arch Linux and Debian/Kali (including WSL).
 Centralizes config files and scripts across multiple machines using GNU Stow and Git.
 
 ---
@@ -45,6 +45,37 @@ The script uses a two-stage architecture:
 | SHELL | Zsh, Oh My Zsh, Oh My Posh theming, Tmux Plugin Manager | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
 | BRAVE | Brave Browser | OFF |
+| ROOT | Replicate user profile to root (configs, NVM, OMZ, OMP, TPM) | OFF |
+| SSHKEY | Generate GitHub SSH key, configure SSH, copy to root | OFF |
+
+---
+
+## ROOT Profile Setup
+
+The ROOT option replicates your user profile to the root account:
+
+- Installs missing packages (btop, tmux, fzf, zsh)
+- Changes root's shell to zsh
+- Installs Oh My Zsh, Oh My Posh, and TPM for root
+- Deploys configs via stow to `/root` (symlinks to this repo)
+- Installs NVM, Node.js LTS, and pnpm for root
+- Installs global AI tools (gemini-cli, opencode-ai, claude-code) for root
+
+**After running:** Use `sudo -i` to access root's configured environment.
+
+---
+
+## GitHub SSH Key Setup
+
+The SSHKEY option sets up SSH authentication for GitHub:
+
+- Generates ed25519 SSH key at `~/.ssh/id_ed25519` (if not exists)
+- Uses email from `git config --global user.email` for the key comment
+- Configures `~/.ssh/config` for GitHub
+- Switches git remote from HTTPS to SSH
+- Copies key pair to `/root/.ssh/` for root access
+
+**After running:** Upload the displayed public key to https://github.com/settings/keys
 
 ---
 
