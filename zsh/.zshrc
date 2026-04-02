@@ -72,3 +72,16 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+
+# OpenClaw
+export PATH="${HOME}/.npm-global/bin:${PATH}"
+export NODE_PATH="${HOME}/.npm-global/lib/node_modules"
+export NODE_COMPILE_CACHE="/var/tmp/openclaw-compile-cache"
+export OPENCLAW_NO_RESPAWN=1
+alias openclaw-update='pnpm add -g openclaw@latest && systemctl --user restart openclaw-gateway.service'
+alias openclaw-logs='openclaw logs --follow'
+alias openclaw-status='openclaw gateway status'
+alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
+
+# OpenClaw Completion
+[[ -f "${HOME}/.openclaw/completions/openclaw.zsh" ]] && source "${HOME}/.openclaw/completions/openclaw.zsh"
