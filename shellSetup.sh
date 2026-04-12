@@ -54,6 +54,8 @@ EOF
         sudo apt-get update && sudo apt-get install -y git
       elif [ -f /etc/arch-release ]; then
         sudo pacman -Sy --noconfirm git
+      elif [ -f /etc/redhat-release ]; then
+        sudo dnf install -y git
       else
         msg_error "Unsupported OS for automatic Git installation. Install Git manually."
         exit 1
@@ -114,6 +116,8 @@ EOF
     if ! command -v whiptail &> /dev/null; then sudo apt-get update && sudo apt-get install -y whiptail; fi
   elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
     if ! command -v whiptail &> /dev/null; then sudo pacman -Sy --noconfirm libnewt; fi
+  elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+    if ! command -v whiptail &> /dev/null; then sudo dnf install -y newt; fi
   fi
 
   # --- PACKAGE MANAGERS ---
@@ -228,6 +232,56 @@ EOF
     msg_success "Base packages installed."
   }
 
+  install_fedora_base() {
+    msg_header "Configuring Fedora/RHEL base"
+    sudo dnf upgrade -y
+
+    local FEDORA_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip nmap wget jq btop tree)
+    msg_info "Installing packages: ${FEDORA_PKGS[*]}"
+    sudo dnf install -y "${FEDORA_PKGS[@]}"
+
+    # Install Development Tools group (equivalent of build-essential)
+    msg_info "Installing Development Tools group..."
+    sudo dnf group install -y "Development Tools"
+
+    # FFmpeg: try ffmpeg-free (Fedora default repos) then ffmpeg (RPM Fusion)
+    if ! command -v ffmpeg &> /dev/null; then
+        sudo dnf install -y ffmpeg-free 2>/dev/null || sudo dnf install -y ffmpeg 2>/dev/null || \
+          msg_warn "FFmpeg unavailable in current repos. Enable RPM Fusion for full codec support."
+    fi
+
+    # Attempt Fastfetch installation separately
+    if ! command -v fastfetch &> /dev/null; then
+        msg_info "Attempting to install Fastfetch..."
+        sudo dnf install -y fastfetch 2>/dev/null
+
+        # Manual Fallback using jq (which we just installed)
+        if ! command -v fastfetch &> /dev/null; then
+            msg_warn "Fastfetch not found in repos. Attempting manual install..."
+            local FASTFETCH_URL
+            FASTFETCH_URL=$(curl -s https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest | jq -r '.assets[] | select(.name | test("linux-amd64\\.rpm$")) | .browser_download_url' | head -n 1)
+
+            if [[ -n "$FASTFETCH_URL" && "$FASTFETCH_URL" != "null" ]]; then
+                msg_info "Downloading Fastfetch from: $FASTFETCH_URL"
+                if wget -q "$FASTFETCH_URL" -O /tmp/fastfetch.rpm; then
+                    sudo dnf install -y /tmp/fastfetch.rpm
+                    rm /tmp/fastfetch.rpm
+                    msg_success "Fastfetch installed manually."
+                else
+                    msg_error "Failed to download Fastfetch .rpm"
+                fi
+            else
+                msg_error "Could not find Fastfetch download URL."
+            fi
+        fi
+    fi
+
+    # Install Nerd Fonts for Oh My Posh / terminal symbol support
+    install_nerd_fonts
+
+    msg_success "Base packages installed."
+  }
+
   install_brave() {
     msg_header "Installing Brave Browser"
     
@@ -242,6 +296,17 @@ EOF
         return 1
       fi
       yay -S --noconfirm brave-bin
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      sudo rpm --import https://brave-browser-rpm-release.s3.brave.com/brave-core.asc
+      cat << 'BRAVEREPO' | sudo tee /etc/yum.repos.d/brave-browser.repo > /dev/null
+[brave-browser]
+name=Brave Browser
+baseurl=https://brave-browser-rpm-release.s3.brave.com/$basearch
+enabled=1
+gpgcheck=1
+gpgkey=https://brave-browser-rpm-release.s3.brave.com/brave-core.asc
+BRAVEREPO
+      sudo dnf install -y brave-browser
     fi
     msg_success "Brave Browser installed."
   }
@@ -259,6 +324,8 @@ EOF
       sudo apt-get install -y btop tmux fzf zsh
     elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
       sudo pacman -S --noconfirm --needed btop tmux fzf zsh
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      sudo dnf install -y btop tmux fzf zsh
     fi
     
     if ! grep -q "/usr/bin/zsh" /etc/shells; then
@@ -312,6 +379,8 @@ EOF
         sudo apt-get install -y acl
       elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
         sudo pacman -S --noconfirm acl
+      elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+        sudo dnf install -y acl
       fi
     fi
 
@@ -530,6 +599,8 @@ EOF
             sudo apt-get update && sudo apt-get install -y zsh unzip
         elif [ -f /etc/arch-release ]; then
             sudo pacman -S --noconfirm zsh unzip
+        elif [ -f /etc/redhat-release ]; then
+            sudo dnf install -y zsh unzip
         fi
     fi
     
@@ -639,6 +710,8 @@ EOF
             sudo apt-get update && sudo apt-get install -y stow
         elif [ -f /etc/arch-release ]; then
             sudo pacman -S --noconfirm stow
+        elif [ -f /etc/redhat-release ]; then
+            sudo dnf install -y stow
         fi
     fi
 
@@ -686,11 +759,13 @@ EOF
     exit 0
   fi
 
-  if [[ $CHOICES == *"BASE"* ]]; then 
+  if [[ $CHOICES == *"BASE"* ]]; then
     if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
       install_debian_base
     elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
       install_arch_base
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      install_fedora_base
     fi
   fi
 

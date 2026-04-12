@@ -57,7 +57,14 @@ alias h="history -10"
 alias hc="history -c"
 alias hg="history | grep "
 alias ag="alias | grep "
-alias sapu='sudo apt-get update'
+# Package manager shortcut (cross-platform)
+if command -v apt-get >/dev/null 2>&1; then
+  alias sapu='sudo apt-get update'
+elif command -v dnf >/dev/null 2>&1; then
+  alias sapu='sudo dnf makecache'
+elif command -v pacman >/dev/null 2>&1; then
+  alias sapu='sudo pacman -Sy'
+fi
 alias ls='ls -alFh --color=auto --time-style=long-iso'
 alias ll='ls -alFh --color=auto --time-style=long-iso'
 alias cd..='cd ..'
