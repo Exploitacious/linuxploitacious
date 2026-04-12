@@ -69,7 +69,7 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
-alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.gemini ~/.local/share/opencode && sudo chmod -R g+rw ~/.claude ~/.gemini ~/.local/share/opencode && echo "AI tool permissions fixed"'
+alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -d -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; echo "AI tool permissions fixed (ACLs applied)"'
 
 # Fastfetch
 if command -v fastfetch >/dev/null 2>&1; then

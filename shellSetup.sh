@@ -118,6 +118,36 @@ EOF
 
   # --- PACKAGE MANAGERS ---
 
+  install_nerd_fonts() {
+    local FONT_DIR="/usr/local/share/fonts/NerdFonts"
+    if [ -d "$FONT_DIR" ] && fc-list | grep -qi "Nerd Font"; then
+      msg_info "Nerd Fonts already installed. Skipping."
+      return 0
+    fi
+
+    msg_header "Installing Nerd Fonts (MesloLG - recommended for Oh My Posh)"
+    sudo mkdir -p "$FONT_DIR"
+
+    local MESLO_URL
+    MESLO_URL=$(curl -s https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest | jq -r '.assets[] | select(.name == "Meslo.zip") | .browser_download_url')
+
+    if [[ -z "$MESLO_URL" || "$MESLO_URL" == "null" ]]; then
+      msg_error "Could not find Meslo Nerd Font download URL."
+      return 1
+    fi
+
+    msg_info "Downloading MesloLG Nerd Font..."
+    if wget -q "$MESLO_URL" -O /tmp/meslo-nf.zip; then
+      sudo unzip -o /tmp/meslo-nf.zip -d "$FONT_DIR/" > /dev/null 2>&1
+      rm /tmp/meslo-nf.zip
+      sudo fc-cache -f
+      msg_success "MesloLG Nerd Font installed. Set your terminal font to 'MesloLGM Nerd Font' for full symbol support."
+    else
+      msg_error "Failed to download Meslo Nerd Font."
+      return 1
+    fi
+  }
+
   install_debian_base() {
     msg_header "Configuring Debian/Kali base"
     sudo apt-get update
@@ -171,6 +201,9 @@ EOF
         fi
     fi
 
+    # Install Nerd Fonts for Oh My Posh / terminal symbol support
+    install_nerd_fonts
+
     msg_success "Base packages installed."
   }
 
@@ -188,6 +221,10 @@ EOF
       cd /tmp/yay && makepkg -si --noconfirm
       cd "$REPO_DIR" || exit 1
     fi
+
+    # Install Nerd Fonts for Oh My Posh / terminal symbol support
+    install_nerd_fonts
+
     msg_success "Base packages installed."
   }
 
@@ -246,9 +283,12 @@ EOF
       sudo git clone https://github.com/tmux-plugins/tpm /root/.tmux/plugins/tpm
     fi
     
+    # Ensure Nerd Fonts are available for root's OMP themes
+    install_nerd_fonts
+
     msg_info "Deploying configs to /root via stow..."
     cd "$REPO_DIR" || exit 1
-    
+
     local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
@@ -261,36 +301,87 @@ EOF
       fi
     done
     
-    msg_info "Sharing AI tool data with root..."
-    local PRIMARY_HOME=$(eval echo "~$SUDO_USER")
-    [ -z "$PRIMARY_HOME" ] && PRIMARY_HOME="$HOME"
-    local PRIMARY_USER="${SUDO_USER:-$USER}"
-    
+    msg_info "Sharing AI tool data with root (symlinks + ACLs)..."
+    local PRIMARY_USER="$USER"
+    local PRIMARY_HOME="$HOME"
+
+    # Install ACL utilities for proper cross-user file access
+    if ! command -v setfacl &> /dev/null; then
+      msg_info "Installing ACL utilities..."
+      if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+        sudo apt-get install -y acl
+      elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+        sudo pacman -S --noconfirm acl
+      fi
+    fi
+
     local AI_DIRS=(".gemini" ".claude" ".local/share/opencode")
     local AI_FILES=(".claude.json")
-    
+
     for dir in "${AI_DIRS[@]}"; do
       local SRC="$PRIMARY_HOME/$dir"
       local DST="/root/$dir"
-      if [ -d "$SRC" ]; then
-        sudo rm -rf "$DST"
+
+      # Skip if source doesn't exist (tool not installed yet)
+      if [ ! -d "$SRC" ]; then
+        msg_info "Skipping $dir (not present in $PRIMARY_HOME)"
+        continue
+      fi
+
+      # Already a correct symlink — just refresh ACLs
+      if [ -L "$DST" ] && [ "$(readlink -f "$DST")" = "$(readlink -f "$SRC")" ]; then
+        msg_info "$DST already linked correctly"
+      else
+        # Merge any unique data from root's copy into user's copy before replacing
+        if [ -d "$DST" ] && [ ! -L "$DST" ]; then
+          msg_info "Merging root's $dir data into $SRC before linking..."
+          sudo cp -rn "$DST"/* "$SRC"/ 2>/dev/null || true
+          sudo mv "$DST" "${DST}.bak.$(date +%Y%m%d_%H%M%S)"
+          msg_warn "Root's original $dir backed up to ${DST}.bak.*"
+        else
+          sudo rm -rf "$DST"
+        fi
+
         sudo mkdir -p "$(dirname "$DST")"
         sudo ln -s "$SRC" "$DST"
-        sudo chown -R "$PRIMARY_USER:$PRIMARY_USER" "$SRC"
-        sudo chmod -R g+rw "$SRC"
         msg_success "Linked: $DST -> $SRC"
       fi
+
+      # Fix ownership and set ACLs for seamless cross-user access
+      sudo chown -R "$PRIMARY_USER:$PRIMARY_USER" "$SRC"
+      if command -v setfacl &> /dev/null; then
+        sudo setfacl -R -m u:root:rwX "$SRC"
+        sudo setfacl -R -d -m u:root:rwX "$SRC"
+        sudo setfacl -R -m u:"$PRIMARY_USER":rwX "$SRC"
+        sudo setfacl -R -d -m u:"$PRIMARY_USER":rwX "$SRC"
+        msg_success "ACLs set on $SRC (both root and $PRIMARY_USER have full access)"
+      else
+        sudo chmod -R g+rw "$SRC"
+        msg_warn "setfacl not available — falling back to group permissions on $SRC"
+      fi
     done
-    
+
     for file in "${AI_FILES[@]}"; do
       local SRC="$PRIMARY_HOME/$file"
       local DST="/root/$file"
-      if [ -f "$SRC" ]; then
-        sudo rm -f "$DST"
-        sudo ln -s "$SRC" "$DST"
+      if [ -f "$SRC" ] || [ -L "$SRC" ]; then
+        if [ -L "$DST" ] && [ "$(readlink -f "$DST")" = "$(readlink -f "$SRC")" ]; then
+          msg_info "$DST already linked correctly"
+        else
+          # Back up root's copy if it's a real file
+          if [ -f "$DST" ] && [ ! -L "$DST" ]; then
+            sudo mv "$DST" "${DST}.bak.$(date +%Y%m%d_%H%M%S)"
+          else
+            sudo rm -f "$DST"
+          fi
+          sudo ln -s "$SRC" "$DST"
+          msg_success "Linked: $DST -> $SRC"
+        fi
         sudo chown "$PRIMARY_USER:$PRIMARY_USER" "$SRC"
-        sudo chmod g+rw "$SRC"
-        msg_success "Linked: $DST -> $SRC"
+        if command -v setfacl &> /dev/null; then
+          sudo setfacl -m u:root:rw "$SRC"
+          sudo setfacl -m u:"$PRIMARY_USER":rw "$SRC"
+        fi
       fi
     done
     
