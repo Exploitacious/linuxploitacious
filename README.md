@@ -72,7 +72,7 @@ The script uses a two-stage architecture:
 
 Claude Code configuration is deployed in two layers:
 
-**STOW (global config):** The `claude/` stow package deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational compression) and `~/.claude/settings.json` (model, effort level, permissions). These apply to every Claude Code session regardless of project directory.
+**STOW (global config):** The `claude/` directory deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational compression) and `~/.claude/settings.json` (model, effort level, permissions) using absolute symlinks instead of stow. This is necessary because stow creates relative symlinks that break when chained through the ROOT profile's `~/.claude` → `/home/user/.claude` symlink. These config files apply to every Claude Code session regardless of project directory.
 
 **NODE (plugins):** After installing Claude Code, the NODE option installs the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
 

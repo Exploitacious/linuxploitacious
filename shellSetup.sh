@@ -723,7 +723,9 @@ EOF
       chmod -R +x "$REPO_DIR/scripts/.local/bin/"
     fi
 
-    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "claude")
+    # NOTE: claude/ is excluded from stow — uses absolute symlinks instead (see deploy_claude_config)
+    # Stow's relative symlinks break through chained symlinks (user -> root sharing via AI_DIRS)
+    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
 
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
@@ -746,7 +748,47 @@ EOF
     msg_success "All dotfiles deployed. Repository is the source of truth."
   }
 
-  # --- CLAUDE CODE PLUGINS (runs after STOW so settings.json exists) ---
+  # --- CLAUDE CODE CONFIG (absolute symlinks — stow's relative links break through chained symlinks) ---
+
+  deploy_claude_config() {
+    msg_header "Deploying Claude Code Config"
+    local CLAUDE_DIR="$HOME/.claude"
+    local SOURCE_DIR="$REPO_DIR/claude/.claude"
+
+    if [ ! -d "$SOURCE_DIR" ]; then
+      msg_warn "claude/.claude/ not found in repo. Skipping."
+      return
+    fi
+
+    mkdir -p "$CLAUDE_DIR"
+
+    for file in "$SOURCE_DIR"/*; do
+      local filename
+      filename="$(basename "$file")"
+      local target="$CLAUDE_DIR/$filename"
+      local source="$SOURCE_DIR/$filename"
+
+      if [ -L "$target" ] && [ "$(readlink -f "$target")" = "$(readlink -f "$source")" ]; then
+        msg_info "Already linked: $target"
+        continue
+      fi
+
+      # Backup existing real files (not symlinks)
+      if [ -f "$target" ] && [ ! -L "$target" ]; then
+        local backup="${target}.backup_$(date +%Y%m%d_%H%M%S)"
+        mv "$target" "$backup"
+        msg_warn "Backed up existing $filename to $backup"
+      fi
+
+      # Remove stale symlink if present
+      [ -L "$target" ] && rm "$target"
+
+      ln -s "$source" "$target"
+      msg_success "Linked: $target -> $source"
+    done
+  }
+
+  # --- CLAUDE CODE PLUGINS (runs after config so settings.json exists) ---
 
   install_claude_plugins() {
     if ! command -v claude &> /dev/null; then
@@ -801,7 +843,10 @@ EOF
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
 
-  # Claude plugins depend on both NODE (claude CLI) and STOW (settings.json)
+  # Claude config uses absolute symlinks (not stow) to survive chained symlinks for root sharing
+  if [[ $CHOICES == *"STOW"* ]]; then deploy_claude_config; fi
+
+  # Claude plugins depend on both NODE (claude CLI) and config (settings.json)
   if [[ $CHOICES == *"NODE"* ]] || [[ $CHOICES == *"STOW"* ]]; then install_claude_plugins; fi
 
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
