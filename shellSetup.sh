@@ -587,15 +587,8 @@ EOF
     pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
     msg_success "Node environment ready."
 
-    # Install Claude Code plugins (caveman — compressed communication mode)
-    if command -v claude &> /dev/null; then
-      msg_info "Installing Claude Code plugins..."
-      claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null || true
-      claude plugin install caveman@caveman 2>/dev/null || true
-      msg_success "Claude Code plugins installed."
-    else
-      msg_warn "Claude CLI not found in PATH. Skipping plugin install."
-    fi
+    # NOTE: Claude Code plugin installation happens post-STOW (see install_claude_plugins)
+    # to ensure ~/.claude/settings.json exists before plugins try to write to it.
   }
 
   # --- SHELL ENVIRONMENT ---
@@ -753,6 +746,30 @@ EOF
     msg_success "All dotfiles deployed. Repository is the source of truth."
   }
 
+  # --- CLAUDE CODE PLUGINS (runs after STOW so settings.json exists) ---
+
+  install_claude_plugins() {
+    if ! command -v claude &> /dev/null; then
+      msg_warn "Claude CLI not found in PATH. Skipping plugin install."
+      return
+    fi
+
+    msg_header "Installing Claude Code Plugins"
+
+    msg_info "Registering caveman plugin marketplace..."
+    if claude plugin marketplace add JuliusBrussee/caveman; then
+      msg_success "Marketplace registered."
+      msg_info "Installing caveman plugin..."
+      if claude plugin install caveman@caveman; then
+        msg_success "Caveman plugin installed."
+      else
+        msg_warn "Caveman plugin install failed. Run manually: claude plugin install caveman@caveman"
+      fi
+    else
+      msg_warn "Marketplace registration failed. Run manually: claude plugin marketplace add JuliusBrussee/caveman"
+    fi
+  }
+
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
@@ -783,6 +800,10 @@ EOF
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
+
+  # Claude plugins depend on both NODE (claude CLI) and STOW (settings.json)
+  if [[ $CHOICES == *"NODE"* ]] || [[ $CHOICES == *"STOW"* ]]; then install_claude_plugins; fi
+
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
   if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
