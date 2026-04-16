@@ -356,6 +356,7 @@ BRAVEREPO
     msg_info "Deploying configs to /root via stow..."
     cd "$REPO_DIR" || exit 1
 
+    # NOTE: claude/ is excluded — ROOT shares ~/.claude via symlink (AI_DIRS block below)
     local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
@@ -582,9 +583,19 @@ EOF
     mkdir -p "$PNPM_HOME"
 
     # Install global packages
-    msg_info "Installing Global AI Tools (@google/gemini-cli, opencode-ai)..."
+    msg_info "Installing Global AI Tools (@google/gemini-cli, opencode-ai, claude-code)..."
     pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
     msg_success "Node environment ready."
+
+    # Install Claude Code plugins (caveman — compressed communication mode)
+    if command -v claude &> /dev/null; then
+      msg_info "Installing Claude Code plugins..."
+      claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null || true
+      claude plugin install caveman@caveman 2>/dev/null || true
+      msg_success "Claude Code plugins installed."
+    else
+      msg_warn "Claude CLI not found in PATH. Skipping plugin install."
+    fi
   }
 
   # --- SHELL ENVIRONMENT ---
@@ -719,8 +730,8 @@ EOF
       chmod -R +x "$REPO_DIR/scripts/.local/bin/"
     fi
 
-    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
-    
+    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "claude")
+
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
         # Full 4-phase conflict resolution

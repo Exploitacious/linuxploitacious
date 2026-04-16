@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "claude-opus-4-6",
+  "effortLevel": "high",
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "spinnerTipsEnabled": false,
+  "cleanupPeriodDays": 30,
+  "autoMemoryEnabled": true,
+  "autoDreamEnabled": true,
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}

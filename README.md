@@ -68,6 +68,20 @@ The script uses a two-stage architecture:
 
 ---
 
+## Claude Code Setup
+
+Claude Code configuration is deployed in two layers:
+
+**STOW (global config):** The `claude/` stow package deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational compression) and `~/.claude/settings.json` (model, effort level, permissions). These apply to every Claude Code session regardless of project directory.
+
+**NODE (plugins):** After installing Claude Code, the NODE option installs the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
+
+**ROOT sharing:** The ROOT option symlinks `~/.claude/` from the user account to `/root`, so both users share the same config, sessions, and credentials. The `claude/` stow package is intentionally excluded from ROOT's stow deployment to avoid conflicting with this symlink.
+
+**Note:** The global CLAUDE.md contains universal behavioral rules (no personal info). Project-specific instructions (identity, brand voice, client context) belong in a project-level `CLAUDE.md` within the working directory.
+
+---
+
 ## ROOT Profile Setup
 
 The ROOT option replicates your user profile to the root account:
@@ -157,6 +171,10 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │   └── .config/ohmyposh/
 │       ├── kali.json                  #   -> ~/.config/ohmyposh/kali.json
 │       └── zen.toml                   #   -> ~/.config/ohmyposh/zen.toml
+├── claude/                            # Package: Claude Code global config
+│   └── .claude/
+│       ├── CLAUDE.md                  #   -> ~/.claude/CLAUDE.md
+│       └── settings.json              #   -> ~/.claude/settings.json
 ├── rustscan/                          # Package: RustScan config
 │   └── .rustscan.toml                 #   -> ~/.rustscan.toml
 ├── scripts/                           # Package: Utility scripts
@@ -426,7 +444,7 @@ stow -R -t ~ zsh
 stow -D -t ~ zsh
 
 # Deploy all packages
-for pkg in bash zsh tmux btop fastfetch omp rustscan scripts; do
+for pkg in bash zsh tmux btop fastfetch omp rustscan scripts claude; do
   stow -R -t ~ "$pkg"
 done
 ```
