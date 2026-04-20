@@ -53,7 +53,7 @@ EOF
       if [ -f /etc/debian_version ]; then
         sudo apt-get update && sudo apt-get install -y git
       elif [ -f /etc/arch-release ]; then
-        sudo pacman -Sy --noconfirm git
+        sudo pacman -S --noconfirm --needed git
       elif [ -f /etc/redhat-release ]; then
         sudo dnf install -y git
       else
@@ -70,15 +70,16 @@ EOF
       msg_info "Git identity already configured: $EXISTING_GIT_NAME <$EXISTING_GIT_EMAIL>"
     else
       msg_header "Configuring Git Global Identity"
-      read -p "Enter Git User Name [Your Name]: " GIT_NAME
-      GIT_NAME=${GIT_NAME:-"Your Name"}
-      
-      read -p "Enter Git Email [email@example.com]: " GIT_EMAIL
-      GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
+      read -p "Enter Git User Name: " GIT_NAME
+      read -p "Enter Git Email: " GIT_EMAIL
 
-      git config --global user.name "$GIT_NAME"
-      git config --global user.email "$GIT_EMAIL"
-      msg_success "Git identity set to $GIT_NAME <$GIT_EMAIL>"
+      if [ -z "$GIT_NAME" ] || [ -z "$GIT_EMAIL" ]; then
+        msg_warn "Git identity not set — you'll need to configure it before committing."
+      else
+        git config --global user.name "$GIT_NAME"
+        git config --global user.email "$GIT_EMAIL"
+        msg_success "Git identity set to $GIT_NAME <$GIT_EMAIL>"
+      fi
     fi
 
     # Clone Repository
@@ -115,7 +116,7 @@ EOF
   if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
     if ! command -v whiptail &> /dev/null; then sudo apt-get update && sudo apt-get install -y whiptail; fi
   elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
-    if ! command -v whiptail &> /dev/null; then sudo pacman -Sy --noconfirm libnewt; fi
+    if ! command -v whiptail &> /dev/null; then sudo pacman -S --noconfirm --needed libnewt; fi
   elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
     if ! command -v whiptail &> /dev/null; then sudo dnf install -y newt; fi
   fi
@@ -215,7 +216,7 @@ EOF
     msg_header "Configuring Arch base"
     sudo pacman -Syu --noconfirm
     
-    local ARCH_PKGS=(zsh stow git curl unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel btop)
+    local ARCH_PKGS=(zsh stow git curl wget unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel jq btop tree)
     msg_info "Installing packages: ${ARCH_PKGS[*]}"
     sudo pacman -S --noconfirm --needed "${ARCH_PKGS[@]}"
 
@@ -404,7 +405,7 @@ BRAVEREPO
     # will fold any data they wrote into the primary user's home.
     if [ ! -d "/root/.nvm" ]; then
       msg_info "Installing NVM for root..."
-      sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+      sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash'
     fi
 
     msg_info "Installing Node.js and pnpm for root..."
@@ -535,6 +536,17 @@ ROOTAI
     
     msg_info "Configuring SSH for GitHub..."
     mkdir -p "$HOME/.ssh"
+    if ! grep -q "Host \*" "$HOME/.ssh/config" 2>/dev/null; then
+      cat >> "$HOME/.ssh/config" << 'EOF'
+
+Host *
+    AddKeysToAgent yes
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+EOF
+      msg_success "SSH global defaults added"
+    fi
     if ! grep -q "Host github.com" "$HOME/.ssh/config" 2>/dev/null; then
       cat >> "$HOME/.ssh/config" << 'EOF'
 
@@ -543,11 +555,11 @@ Host github.com
     User git
     IdentityFile ~/.ssh/id_ed25519
 EOF
-      chmod 600 "$HOME/.ssh/config"
-      msg_success "SSH config updated"
+      msg_success "GitHub SSH host configured"
     else
       msg_info "GitHub host already configured in SSH config"
     fi
+    chmod 600 "$HOME/.ssh/config"
     
     msg_info "Switching git remotes to SSH..."
     if [ -d "$REPO_DIR/.git" ]; then
@@ -569,6 +581,16 @@ EOF
     sudo chmod 600 /root/.ssh/id_ed25519
     sudo chmod 644 /root/.ssh/id_ed25519.pub
     
+    if ! sudo grep -q "Host \*" /root/.ssh/config 2>/dev/null; then
+      sudo tee -a /root/.ssh/config > /dev/null << 'EOF'
+
+Host *
+    AddKeysToAgent yes
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+EOF
+    fi
     if ! sudo grep -q "Host github.com" /root/.ssh/config 2>/dev/null; then
       sudo tee -a /root/.ssh/config > /dev/null << 'EOF'
 
@@ -577,9 +599,9 @@ Host github.com
     User git
     IdentityFile ~/.ssh/id_ed25519
 EOF
-      sudo chmod 600 /root/.ssh/config
     fi
-    msg_success "SSH key copied to /root/.ssh/"
+    sudo chmod 600 /root/.ssh/config
+    msg_success "SSH key and config copied to /root/.ssh/"
     
     SSH_PUBLIC_KEY=$(cat "$SSH_KEY.pub")
     echo ""
@@ -603,7 +625,7 @@ EOF
 
     # Install NVM
     msg_info "Installing NVM..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
     
     # Load NVM for current session
     export NVM_DIR="$HOME/.nvm"
