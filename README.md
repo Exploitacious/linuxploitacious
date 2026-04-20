@@ -59,12 +59,16 @@ The script uses a two-stage architecture:
 | Option | Description | Default |
 |--------|-------------|---------|
 | BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, etc.) | ON |
-| NODE | Node.js via NVM, pnpm, AI tools (Gemini CLI, OpenCode, Claude Code) | ON |
+| NODE | Node.js via NVM and pnpm (required by openclaw tooling) | ON |
 | SHELL | Zsh, Oh My Zsh, Oh My Posh theming, Tmux Plugin Manager | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
 | BRAVE | Brave Browser | OFF |
 | ROOT | Replicate user profile to root (configs, NVM, OMZ, OMP, TPM) | OFF |
 | SSHKEY | Generate GitHub SSH key, configure SSH, copy to root | OFF |
+
+**Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
+
+> **Supply chain note:** The two installers are fetched unpinned at setup time. Acceptable for a personal dotfiles repo; pin to a version (`bash -s <version>` for Claude) or checksum-verify if you plan to run this on machines you don't own.
 
 ---
 
@@ -74,7 +78,7 @@ Claude Code configuration is deployed in two layers:
 
 **STOW (global config):** The `claude/` directory deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational compression) and `~/.claude/settings.json` (model, effort level, permissions) using absolute symlinks instead of stow. This is necessary because stow creates relative symlinks that break when chained through the ROOT profile's `~/.claude` → `/home/user/.claude` symlink. These config files apply to every Claude Code session regardless of project directory.
 
-**NODE (plugins):** After installing Claude Code, the NODE option installs the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
+**Plugins:** After Claude Code installs (via the always-on vendor installer), the script registers the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
 
 **ROOT sharing:** The ROOT option symlinks `~/.claude/` from the user account to `/root`, so both users share the same config, sessions, and credentials. The `claude/` stow package is intentionally excluded from ROOT's stow deployment to avoid conflicting with this symlink.
 
@@ -90,14 +94,13 @@ The ROOT option replicates your user profile to the root account:
 - Changes root's shell to zsh
 - Installs Oh My Zsh, Oh My Posh, and TPM for root
 - Deploys configs via stow to `/root` (symlinks to this repo)
-- Shares AI tool data directories with root (OpenCode, Gemini CLI, Claude Code)
 - Installs NVM, Node.js LTS, and pnpm for root
-- Installs global AI tools (gemini-cli, opencode-ai, claude-code) for root
+- Installs Claude Code and OpenCode for root via their official vendor installers (native binaries, no npm)
+- Shares AI tool data directories with root (Claude Code, OpenCode)
 
 **AI Tool Data Sharing:**
 
 The following directories are symlinked from your user to `/root`, allowing seamless session continuity:
-- `~/.gemini/` - Gemini CLI auth and history
 - `~/.claude/` - Claude Code sessions and credentials
 - `~/.claude.json` - Claude Code config
 - `~/.local/share/opencode/` - OpenCode database and auth
