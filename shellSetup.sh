@@ -385,8 +385,57 @@ BRAVEREPO
       fi
     fi
 
-    local AI_DIRS=(".gemini" ".claude" ".local/share/opencode")
+    local AI_DIRS=(".claude" ".local/share/opencode")
     local AI_FILES=(".claude.json")
+
+    # Install Node/pnpm and AI CLIs for root BEFORE symlinking AI_DIRS.
+    # Installers may stat/clobber their own config dirs; doing this first keeps
+    # them away from the user's live state, and the AI_DIRS merge step below
+    # will fold any data they wrote into the primary user's home.
+    if [ ! -d "/root/.nvm" ]; then
+      msg_info "Installing NVM for root..."
+      sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+    fi
+
+    msg_info "Installing Node.js and pnpm for root..."
+    sudo -i bash << 'ROOTNVM'
+export NVM_DIR="/root/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install --lts
+nvm use --lts
+corepack enable pnpm
+ROOTNVM
+
+    msg_info "Installing AI CLIs for root (Claude Code, OpenCode)..."
+    sudo -i bash << 'ROOTAI'
+export NVM_DIR="/root/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+export PNPM_HOME="/root/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+
+if command -v pnpm &> /dev/null; then
+  pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+fi
+if command -v npm &> /dev/null; then
+  npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+fi
+for shim in /root/.local/share/pnpm/claude /root/.local/share/pnpm/opencode /root/.local/share/pnpm/gemini; do
+  if [ -e "$shim" ] || [ -L "$shim" ]; then
+    rm -f "$shim"
+  fi
+done
+if [ -d /root/.nvm/versions/node ]; then
+  find /root/.nvm/versions/node -maxdepth 3 \( -name claude -o -name opencode -o -name gemini \) -delete 2>/dev/null || true
+fi
+
+curl -fsSL https://claude.ai/install.sh | bash
+curl -fsSL https://opencode.ai/install | bash
+ROOTAI
+
+    if [ -L /root/.gemini ] || [ -e /root/.gemini ]; then
+      msg_warn "Removing deprecated /root/.gemini..."
+      sudo rm -rf /root/.gemini
+    fi
 
     for dir in "${AI_DIRS[@]}"; do
       local SRC="$PRIMARY_HOME/$dir"
@@ -454,24 +503,7 @@ BRAVEREPO
         fi
       fi
     done
-    
-    if [ ! -d "/root/.nvm" ]; then
-      msg_info "Installing NVM for root..."
-      sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
-    fi
-    
-    msg_info "Installing Node.js, pnpm, and AI tools for root..."
-    sudo -i bash << 'ROOTNVM'
-export NVM_DIR="/root/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm install --lts
-nvm use --lts
-corepack enable pnpm
-export PNPM_HOME="/root/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
-pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
-ROOTNVM
-    
+
     msg_success "Root profile setup complete. Run 'sudo -i' to use."
   }
 
@@ -551,7 +583,7 @@ EOF
   }
 
   install_node_env() {
-    msg_header "Installing Node.js Environment"
+    msg_header "Installing Node.js Environment (NVM, Node LTS, pnpm)"
     
     # Clean up conflicting npm config
     if [ -f "$HOME/.npmrc" ]; then
@@ -582,13 +614,69 @@ EOF
     export PATH="$PNPM_HOME:$PATH"
     mkdir -p "$PNPM_HOME"
 
-    # Install global packages
-    msg_info "Installing Global AI Tools (@google/gemini-cli, opencode-ai, claude-code)..."
-    pnpm add -g @google/gemini-cli opencode-ai @anthropic-ai/claude-code
     msg_success "Node environment ready."
+  }
 
-    # NOTE: Claude Code plugin installation happens post-STOW (see install_claude_plugins)
-    # to ensure ~/.claude/settings.json exists before plugins try to write to it.
+  # --- AI CLI TOOLS (Claude Code, OpenCode) via official vendor installers ---
+  # Runs unconditionally — installers are fast and self-updating. Handles legacy
+  # pnpm/npm/nvm shim cleanup so old versions don't shadow the native binaries.
+
+  install_ai_tools() {
+    msg_header "Installing AI CLIs (Claude Code, OpenCode)"
+
+    if command -v pnpm &> /dev/null; then
+      msg_info "Removing legacy pnpm-global AI packages..."
+      pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+    fi
+    if command -v npm &> /dev/null; then
+      npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+    fi
+
+    local pnpm_home="${PNPM_HOME:-$HOME/.local/share/pnpm}"
+    for shim in claude opencode gemini; do
+      if [ -e "$pnpm_home/$shim" ] || [ -L "$pnpm_home/$shim" ]; then
+        rm -f "$pnpm_home/$shim"
+      fi
+    done
+
+    if [ -d "$HOME/.nvm/versions/node" ]; then
+      find "$HOME/.nvm/versions/node" -maxdepth 3 \( -name claude -o -name opencode -o -name gemini \) -delete 2>/dev/null || true
+    fi
+
+    if command -v npm &> /dev/null; then
+      local npm_prefix
+      npm_prefix="$(npm config get prefix 2>/dev/null)"
+      if [ -n "$npm_prefix" ] && [ -d "$npm_prefix/bin" ]; then
+        for shim in claude opencode gemini; do
+          if [ -e "$npm_prefix/bin/$shim" ] || [ -L "$npm_prefix/bin/$shim" ]; then
+            rm -f "$npm_prefix/bin/$shim"
+          fi
+        done
+      fi
+    fi
+
+    if [ -e "$HOME/.gemini" ] || [ -L "$HOME/.gemini" ]; then
+      msg_warn "Removing deprecated ~/.gemini..."
+      rm -rf "$HOME/.gemini"
+    fi
+
+    if [ -x "$HOME/.local/bin/claude" ]; then
+      msg_info "Claude Code already present; refreshing via installer..."
+    else
+      msg_info "Installing Claude Code..."
+    fi
+    curl -fsSL https://claude.ai/install.sh | bash
+
+    if [ -x "$HOME/.opencode/bin/opencode" ]; then
+      msg_info "OpenCode already present; refreshing via installer..."
+    else
+      msg_info "Installing OpenCode..."
+    fi
+    curl -fsSL https://opencode.ai/install | bash
+
+    export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
+
+    msg_success "AI CLIs installed: $(command -v claude 2>/dev/null || echo claude-missing), $(command -v opencode 2>/dev/null || echo opencode-missing)"
   }
 
   # --- SHELL ENVIRONMENT ---
@@ -817,7 +905,7 @@ EOF
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
   "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 9 \
     "BASE" "OS Updates & Core Packages" ON \
-    "NODE" "Node.js, NVM, pnpm, AI Tools" ON \
+    "NODE" "Node.js, NVM, pnpm" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
     "STOW" "Deploy Repo configs" ON \
     "BRAVE" "Brave Browser" OFF \
@@ -846,8 +934,11 @@ EOF
   # Claude config uses absolute symlinks (not stow) to survive chained symlinks for root sharing
   if [[ $CHOICES == *"STOW"* ]]; then deploy_claude_config; fi
 
-  # Claude plugins depend on both NODE (claude CLI) and config (settings.json)
-  if [[ $CHOICES == *"NODE"* ]] || [[ $CHOICES == *"STOW"* ]]; then install_claude_plugins; fi
+  # AI CLIs always install via vendor scripts — fast, idempotent, the core of this setup
+  install_ai_tools
+
+  # Claude plugins: self-gates if claude CLI or settings are missing
+  install_claude_plugins
 
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi

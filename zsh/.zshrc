@@ -16,8 +16,10 @@ zstyle ':omz:update' mode auto
 plugins=(git)
 source $ZSH/oh-my-zsh.sh
 
-# User configuration
-export PATH="$PATH:$HOME/.local/bin"
+# User configuration — put ~/.local/bin first so native binaries (e.g. claude)
+# win over any stale pnpm/npm shims that may linger in PNPM_HOME or npm-global.
+export PATH="$HOME/.local/bin:$PATH"
+typeset -U path PATH
 
 ### Aliases
 # Shell
@@ -49,7 +51,7 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
-alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -d -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.gemini ~/.local/share/opencode 2>/dev/null; echo "AI tool permissions fixed (ACLs applied)"'
+alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -d -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; echo "AI tool permissions fixed (ACLs applied)"'
 # Fastfetch (replaces Neofetch)
 if command -v fastfetch >/dev/null 2>&1; then
   fastfetch
