@@ -1,0 +1,9 @@
+#!/bin/bash
+HIST_FILE="${HOME}/.clipboard_history"
+[ ! -f "$HIST_FILE" ] && echo "No clipboard history." >&2 && exit 1
+command -v fzf >/dev/null 2>&1 || { echo "fzf required." >&2; exit 1; }
+
+selected=$(tac "$HIST_FILE" | fzf --no-sort --prompt="clipboard> ")
+[ -z "$selected" ] && exit 0
+printf '%b' "$selected" | xclip -selection clipboard
+echo "Copied to clipboard."

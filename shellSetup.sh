@@ -338,7 +338,17 @@ BRAVEREPO
       msg_info "Installing Oh My Zsh for root..."
       sudo git clone https://github.com/ohmyzsh/ohmyzsh.git /root/.oh-my-zsh
     fi
-    
+
+    local ROOT_ZSH_CUSTOM="/root/.oh-my-zsh/custom"
+    if ! sudo test -d "$ROOT_ZSH_CUSTOM/plugins/zsh-autosuggestions"; then
+      msg_info "Installing zsh-autosuggestions plugin for root..."
+      sudo git clone https://github.com/zsh-users/zsh-autosuggestions "$ROOT_ZSH_CUSTOM/plugins/zsh-autosuggestions" -q
+    fi
+    if ! sudo test -d "$ROOT_ZSH_CUSTOM/plugins/zsh-syntax-highlighting"; then
+      msg_info "Installing zsh-syntax-highlighting plugin for root..."
+      sudo git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ROOT_ZSH_CUSTOM/plugins/zsh-syntax-highlighting" -q
+    fi
+
     if ! sudo test -f "/root/.local/bin/oh-my-posh"; then
       msg_info "Installing Oh My Posh for root..."
       sudo mkdir -p /root/.local/bin
@@ -699,6 +709,16 @@ EOF
     if [ ! -d "$HOME/.oh-my-zsh" ]; then
       msg_info "Installing Oh My Zsh..."
       sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh) --unattended"
+    fi
+
+    local ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
+      msg_info "Installing zsh-autosuggestions plugin..."
+      git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" -q
+    fi
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
+      msg_info "Installing zsh-syntax-highlighting plugin..."
+      git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" -q
     fi
 
     if ! command -v oh-my-posh &> /dev/null; then

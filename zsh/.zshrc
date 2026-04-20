@@ -13,7 +13,7 @@ ENABLE_CORRECTION="true"
 zstyle ':omz:update' mode auto
 
 # Plugins
-plugins=(git)
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 source $ZSH/oh-my-zsh.sh
 
 # User configuration — put ~/.local/bin first so native binaries (e.g. claude)
@@ -25,9 +25,8 @@ typeset -U path PATH
 # Shell
 alias c="clear"
 alias x="exit"
-alias e="code -n ~/ ~/.zshrc ~/.config/fastfetch/config.jsonc"
+alias e="nano ~/.zshrc"
 alias r="source ~/.zshrc"
-alias vsc="cd /mnt/c/users/Alex/VSCODE"
 alias h="history -10"
 alias hc="history -c"
 alias hg="history | grep "
@@ -38,12 +37,13 @@ if command -v apt-get >/dev/null 2>&1; then
 elif command -v dnf >/dev/null 2>&1; then
   alias sapu='sudo dnf makecache'
 elif command -v pacman >/dev/null 2>&1; then
-  alias sapu='sudo pacman -Sy'
+  alias sapu='sudo pacman -Syu'
 fi
 alias ls='ls -alFh --color=auto --time-style=long-iso'
 alias ll='ls -alFh --color=auto --time-style=long-iso'
 alias cd..='cd ..'
 alias cd...='cd .. && cd ..'
+alias ssh='TERM=xterm-256color ssh'
 
 # Utilities
 alias connectnord='sudo ~/.local/bin/launch_nordvpn'
