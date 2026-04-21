@@ -518,15 +518,55 @@ ROOTAI
     msg_success "Root profile setup complete. Run 'sudo -i' to use."
   }
 
+  install_github_cli() {
+    msg_header "Installing GitHub CLI"
+
+    if command -v gh &> /dev/null; then
+      msg_info "GitHub CLI already installed: $(gh --version | head -1)"
+      return 0
+    fi
+
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      msg_info "Adding GitHub CLI repository..."
+      sudo mkdir -p -m 755 /etc/apt/keyrings
+      wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+      sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+      sudo apt-get update
+      sudo apt-get install -y gh
+    elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      sudo pacman -S --noconfirm --needed github-cli
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      sudo dnf install -y gh
+    else
+      msg_error "Unsupported OS for GitHub CLI auto-install"
+      return 1
+    fi
+
+    if command -v gh &> /dev/null; then
+      msg_success "GitHub CLI installed: $(gh --version | head -1)"
+    else
+      msg_error "GitHub CLI installation failed"
+      return 1
+    fi
+  }
+
   setup_github_ssh() {
     msg_header "Setting up GitHub SSH Key"
     
     local SSH_KEY="$HOME/.ssh/id_ed25519"
     local GIT_EMAIL=$(git config --global user.email 2>/dev/null)
     GIT_EMAIL=${GIT_EMAIL:-"email@example.com"}
-    
+    local NEED_KEY_UPLOAD=true
+
     if [ -f "$SSH_KEY" ]; then
       msg_info "SSH key already exists at $SSH_KEY"
+      echo -ne "${YELLOW}Is this key already added to your GitHub account? [y/N]: ${NC}"
+      read -r REPLY
+      if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        NEED_KEY_UPLOAD=false
+        msg_info "Skipping SSH key upload"
+      fi
     else
       msg_info "Generating new ed25519 SSH key..."
       mkdir -p "$HOME/.ssh"
@@ -603,14 +643,50 @@ EOF
     sudo chmod 600 /root/.ssh/config
     msg_success "SSH key and config copied to /root/.ssh/"
     
-    SSH_PUBLIC_KEY=$(cat "$SSH_KEY.pub")
-    echo ""
-    echo -e "${CYAN}=== GitHub SSH Key ===${NC}"
-    echo -e "${YELLOW}Upload this public key to:${NC} https://github.com/settings/keys"
-    echo ""
-    echo -e "${GREEN}$SSH_PUBLIC_KEY${NC}"
-    echo ""
-    echo -e "${YELLOW}After uploading, test with:${NC} ssh -T git@github.com"
+    # Install and configure GitHub CLI
+    install_github_cli
+
+    local GH_AUTHENTICATED=false
+    if command -v gh &> /dev/null; then
+      if gh auth status &> /dev/null; then
+        msg_info "GitHub CLI already authenticated"
+        GH_AUTHENTICATED=true
+      else
+        echo ""
+        msg_warn "A browser will open (or you'll get a device code for github.com/login/device)"
+        echo ""
+        if gh auth login -p ssh -h github.com; then
+          msg_success "GitHub CLI authenticated"
+          gh config set git_protocol ssh -h github.com
+          GH_AUTHENTICATED=true
+        else
+          msg_warn "Auth skipped. Run later: gh auth login"
+        fi
+      fi
+
+      # Upload SSH key if authenticated and needed
+      if $GH_AUTHENTICATED && $NEED_KEY_UPLOAD && [ -f "$SSH_KEY.pub" ]; then
+        local KEY_TITLE="$(hostname)-$(date +%Y%m%d)"
+        msg_info "Uploading SSH key to GitHub as '$KEY_TITLE'..."
+        if gh ssh-key add "$SSH_KEY.pub" -t "$KEY_TITLE" 2>/dev/null; then
+          msg_success "SSH key uploaded to GitHub"
+        else
+          msg_warn "SSH key may already exist on GitHub (OK)"
+        fi
+      fi
+    fi
+
+    # Fallback: show key for manual upload if gh auth unavailable and upload needed
+    if ! $GH_AUTHENTICATED && $NEED_KEY_UPLOAD; then
+      SSH_PUBLIC_KEY=$(cat "$SSH_KEY.pub")
+      echo ""
+      echo -e "${CYAN}=== GitHub SSH Key ===${NC}"
+      echo -e "${YELLOW}Upload this public key to:${NC} https://github.com/settings/keys"
+      echo ""
+      echo -e "${GREEN}$SSH_PUBLIC_KEY${NC}"
+      echo ""
+    fi
+    echo -e "${YELLOW}Test connection with:${NC} ssh -T git@github.com"
     echo ""
   }
 
@@ -952,7 +1028,7 @@ EOF
     "STOW" "Deploy Repo configs" ON \
     "BRAVE" "Brave Browser" OFF \
     "ROOT" "Replicate profile to root user" OFF \
-    "SSHKEY" "Generate GitHub SSH key & configure" OFF 3>&1 1>&2 2>&3)
+    "SSHKEY" "GitHub SSH key, CLI & auth" OFF 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
     msg_warn "Installation cancelled."
