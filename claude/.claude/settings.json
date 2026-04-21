@@ -12,6 +12,9 @@
     "defaultMode": "auto"
   },
   "model": "claude-opus-4-6",
+  "enabledPlugins": {
+    "caveman@caveman": true
+  },
   "extraKnownMarketplaces": {
     "caveman": {
       "source": {
@@ -25,8 +28,5 @@
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
-  "enabledPlugins": {
-    "caveman@caveman": true
-  }
+  "skipAutoPermissionPrompt": true
 }

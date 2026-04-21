@@ -417,6 +417,24 @@ nvm use --lts
 corepack enable pnpm
 ROOTNVM
 
+    if [ ! -d "/root/.pyenv" ]; then
+      msg_info "Installing pyenv for root..."
+      sudo -i bash -c 'curl -fsSL https://pyenv.run | bash'
+    fi
+
+    msg_info "Installing Python for root..."
+    sudo -i bash << 'ROOTPY'
+export PYENV_ROOT="/root/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
+if ! pyenv versions --bare | grep -qF "$LATEST_PY"; then
+  pyenv install "$LATEST_PY"
+fi
+pyenv global "$LATEST_PY"
+pip install --upgrade pip setuptools wheel
+ROOTPY
+
     msg_info "Installing AI CLIs for root (Claude Code, OpenCode)..."
     sudo -i bash << 'ROOTAI'
 export NVM_DIR="/root/.nvm"
@@ -725,6 +743,129 @@ EOF
     msg_success "Node environment ready."
   }
 
+  # --- PYTHON ENVIRONMENT (pyenv, Python latest, common pip packages) ---
+
+  install_python_env() {
+    msg_header "Installing Python Environment (pyenv, Python, pip packages)"
+
+    # Install pyenv build dependencies (OS-specific)
+    msg_info "Installing pyenv build dependencies..."
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      sudo apt-get install -y make build-essential libssl-dev zlib1g-dev \
+        libbz2-dev libreadline-dev libsqlite3-dev llvm libncursesw5-dev \
+        xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+    elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      sudo pacman -S --noconfirm --needed base-devel openssl zlib bzip2 \
+        readline sqlite llvm ncurses xz tk libxml2 xmlsec libffi
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      sudo dnf install -y make gcc zlib-devel bzip2 bzip2-devel \
+        readline-devel sqlite sqlite-devel openssl-devel tk-devel \
+        libffi-devel xz-devel libuuid-devel gdbm-libs
+    fi
+
+    # Install pyenv via official installer
+    if [ -d "$HOME/.pyenv" ]; then
+      msg_info "pyenv already installed; updating..."
+      cd "$HOME/.pyenv" && git pull -q && cd "$REPO_DIR"
+    else
+      msg_info "Installing pyenv..."
+      curl -fsSL https://pyenv.run | bash
+    fi
+
+    # Load pyenv for current session
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)" 2>/dev/null || true
+
+    # Install latest stable Python 3
+    local LATEST_PY
+    LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
+    if pyenv versions --bare | grep -qF "$LATEST_PY"; then
+      msg_info "Python $LATEST_PY already installed"
+    else
+      msg_info "Installing Python $LATEST_PY (this takes a few minutes)..."
+      pyenv install "$LATEST_PY"
+    fi
+    pyenv global "$LATEST_PY"
+
+    # Upgrade pip, setuptools, wheel
+    msg_info "Upgrading pip, setuptools, wheel..."
+    pip install --upgrade pip setuptools wheel
+
+    # Install common pip packages
+    msg_info "Installing common pip packages..."
+    pip install --upgrade \
+      requests \
+      httpx \
+      aiohttp \
+      flask \
+      fastapi \
+      uvicorn \
+      django \
+      sqlalchemy \
+      alembic \
+      psycopg2-binary \
+      pymongo \
+      redis \
+      celery \
+      pytest \
+      pytest-cov \
+      pytest-asyncio \
+      black \
+      ruff \
+      mypy \
+      isort \
+      pre-commit \
+      pylint \
+      ipython \
+      jupyter \
+      notebook \
+      numpy \
+      pandas \
+      matplotlib \
+      seaborn \
+      scikit-learn \
+      scipy \
+      pillow \
+      pyyaml \
+      toml \
+      python-dotenv \
+      click \
+      typer \
+      rich \
+      tqdm \
+      beautifulsoup4 \
+      lxml \
+      scrapy \
+      selenium \
+      paramiko \
+      fabric \
+      boto3 \
+      google-cloud-storage \
+      azure-identity \
+      pydantic \
+      marshmallow \
+      cryptography \
+      pyopenssl \
+      jwt \
+      passlib \
+      bcrypt \
+      docker \
+      kubernetes \
+      ansible-core \
+      jinja2 \
+      gunicorn \
+      python-multipart \
+      websockets \
+      pika \
+      poetry \
+      pipx \
+      virtualenv
+
+    msg_success "Python environment ready: $(python --version), pip $(pip --version | awk '{print $2}')"
+  }
+
   # --- AI CLI TOOLS (Claude Code, OpenCode) via official vendor installers ---
   # Runs unconditionally — installers are fast and self-updating. Handles legacy
   # pnpm/npm/nvm shim cleanup so old versions don't shadow the native binaries.
@@ -1021,9 +1162,10 @@ EOF
   # --- MENU & EXECUTION ---
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 9 \
+  "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 10 \
     "BASE" "OS Updates & Core Packages" ON \
     "NODE" "Node.js, NVM, pnpm" ON \
+    "PYTHON" "Python, pyenv, pip packages" ON \
     "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
     "STOW" "Deploy Repo configs" ON \
     "BRAVE" "Brave Browser" OFF \
@@ -1046,6 +1188,7 @@ EOF
   fi
 
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi
+  if [[ $CHOICES == *"PYTHON"* ]]; then install_python_env; fi
   if [[ $CHOICES == *"SHELL"* ]]; then setup_shell_env; fi
   if [[ $CHOICES == *"STOW"* ]]; then deploy_stow; fi
 
