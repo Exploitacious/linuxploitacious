@@ -1,5 +1,5 @@
 #!/bin/bash
-# Custom Claude Code statusline — 4-quadrant dashboard
+# Custom Claude Code statusline — 3-row dashboard with column-aligned separators
 # Reads JSON from stdin, outputs formatted status line
 
 JSON=$(cat)
@@ -20,22 +20,25 @@ eval $(echo "$JSON" | jq -r '
   "RL_7D=\(.rate_limits.seven_day.used_percentage // "")"
 ' 2>/dev/null)
 
-# Terminal width
-COLS=$(tput cols 2>/dev/null || echo 120)
+# Colors (use $'...' so ESC is a real byte, not literal backslash text)
+RST=$'\033[0m'
+B=$'\033[1m'
+D=$'\033[2m'
+GRN=$'\033[38;5;78m'
+YEL=$'\033[38;5;220m'
+RED=$'\033[38;5;196m'
+CYN=$'\033[38;5;117m'
+PUR=$'\033[38;5;141m'
+GRY=$'\033[38;5;245m'
+WHT=$'\033[38;5;255m'
+SEP="${GRY}│${RST}"
+SEP_WRAP="      ${SEP}      "
 
-# Colors
-RST='\033[0m'
-B='\033[1m'
-D='\033[2m'
-GRN='\033[38;5;78m'
-YEL='\033[38;5;220m'
-RED='\033[38;5;196m'
-CYN='\033[38;5;117m'
-PUR='\033[38;5;141m'
-GRY='\033[38;5;245m'
-WHT='\033[38;5;255m'
+# Column widths (visible chars, before separator)
+COL1_W=38
+COL2_W=35
 
-# Progress bar: make_bar <percent> <width>
+# Progress bar
 make_bar() {
     local pct=$1 width=$2
     local filled=$(( pct * width / 100 ))
@@ -69,25 +72,20 @@ fmt_time() {
     fi
 }
 
-# Strip ANSI for measuring visible length
+# Strip ANSI escapes to measure visible length
 strip_ansi() {
     printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g'
 }
 
-# Print a row: left-aligned text + right-aligned text padded to terminal width
-print_row() {
-    local left="$1" right="$2"
-    local left_vis right_vis
-    left_vis=$(strip_ansi "$left")
-    right_vis=$(strip_ansi "$right")
-    local left_len=${#left_vis}
-    local right_len=${#right_vis}
-    local gap=$(( COLS - left_len - right_len ))
-    [ "$gap" -lt 2 ] && gap=2
-    printf '%b' "$left"
-    printf '%*s' "$gap" ""
-    printf '%b' "$right"
-    printf '\n'
+# Pad a string (with ANSI) to target visible width
+pad_to() {
+    local s="$1" target="$2"
+    local vis
+    vis=$(strip_ansi "$s")
+    local len=${#vis}
+    local need=$(( target - len ))
+    [ "$need" -lt 0 ] && need=0
+    printf '%s%*s' "$s" "$need" ""
 }
 
 # === Compute values ===
@@ -121,31 +119,53 @@ if [ -x "$CS" ]; then
     [ -n "$CAVEMAN" ] && CAVEMAN="  $CAVEMAN"
 fi
 
-# === TOP LEFT: Model + Tags ===
-TOP_LEFT="${B}${PUR}${MODEL}${RST}${CAVEMAN}"
+# Formatted cost
+COST_FMT=$(printf '%.2f' "$COST")
 
-# === TOP RIGHT: Context bar  5h bar  7d bar ===
-TOP_RIGHT="${CTX_C}${CTX_BAR}  ${ctx_pct}%${RST} ${D}/ ${CTX_L}${RST}"
+# === Build cells ===
 
+# Row 1: model+badges  │  context bar  │  time
+R1_C1="${B}${PUR}${MODEL}${RST}${CAVEMAN}"
+R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}"
+R1_C3="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}     ${GRY}${API_TIME}${RST} ${D}api${RST}"
+
+# Row 2: Usage  $cost  cache%  │  (blank)  │  +/- lines
+R2_C1="${D}Usage${RST}      ${CYN}\$${COST_FMT}${RST}      ${CACHE_C}cache ${CACHE_PCT}%${RST}"
+R2_C3="${GRN}+${LINES_ADD}${RST}   ${RED}-${LINES_REM}${RST}"
+
+# Row 3: Capacity  5h bar  │  7d bar
 if [ -n "$RL_5H" ]; then
     rl5=${RL_5H%.*}
     RL5_BAR=$(make_bar "$rl5" 10)
     RL5C=$(pct_color "$rl5" 50 80)
-    TOP_RIGHT="${TOP_RIGHT}   ${D}5h${RST} ${RL5C}${RL5_BAR} ${rl5}%${RST}"
 fi
 if [ -n "$RL_7D" ]; then
     rl7=${RL_7D%.*}
     RL7_BAR=$(make_bar "$rl7" 10)
     RL7C=$(pct_color "$rl7" 50 80)
-    TOP_RIGHT="${TOP_RIGHT}  ${D}7d${RST} ${RL7C}${RL7_BAR} ${rl7}%${RST}"
 fi
-
-# === BOTTOM LEFT: Cost + Cache ===
-BOT_LEFT="${CYN}\$$(printf '%.2f' "$COST")${RST}   ${CACHE_C}cache ${CACHE_PCT}%${RST}"
-
-# === BOTTOM RIGHT: Time + Changes ===
-BOT_RIGHT="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}  ${GRY}${API_TIME}${RST} ${D}api${RST}   ${GRN}+${LINES_ADD}${RST} ${RED}-${LINES_REM}${RST}"
+R3_C1="${D}Capacity${RST}      ${D}5h${RST} ${RL5C}${RL5_BAR}   ${rl5}%${RST}"
+R3_C2="${D}7d${RST} ${RL7C}${RL7_BAR}   ${rl7}%${RST}"
 
 # === Render ===
-print_row "$TOP_LEFT" "$TOP_RIGHT"
-print_row "$BOT_LEFT" "$BOT_RIGHT"
+
+# Row 1
+pad_to "$R1_C1" "$COL1_W"
+printf '%s' "${SEP_WRAP}"
+pad_to "$R1_C2" "$COL2_W"
+printf '%s' "${SEP_WRAP}"
+printf '%s\n\n' "$R1_C3"
+
+# Row 2
+pad_to "$R2_C1" "$COL1_W"
+printf '%s' "${SEP_WRAP}"
+pad_to "" "$COL2_W"
+printf '%s' "${SEP_WRAP}"
+printf '%s\n\n' "$R2_C3"
+
+# Row 3
+if [ -n "$RL_5H" ] || [ -n "$RL_7D" ]; then
+    pad_to "$R3_C1" "$COL1_W"
+    printf '%s' "${SEP_WRAP}"
+    printf '%s\n' "$R3_C2"
+fi
