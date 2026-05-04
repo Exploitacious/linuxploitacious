@@ -25,7 +25,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash /home/master/.claude/statusline.sh",
+    "command": "bash \"$HOME/.claude/statusline.sh\"",
     "refreshInterval": 5
   },
   "spinnerTipsEnabled": false,
