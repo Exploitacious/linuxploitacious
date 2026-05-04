@@ -102,6 +102,27 @@ EOF
   # --- LOCAL EXECUTION CONTINUES HERE ---
   sudo -v
 
+  # --- AUTO-SYNC WITH UPSTREAM ---
+  # Re-runs from inside an existing clone never hit the bootstrap pull above,
+  # so they used to drift behind origin. Sync now if the tree is clean.
+  if [ -d "$REPO_DIR/.git" ]; then
+    cd "$REPO_DIR" || exit 1
+    # Mark the repo safe even when invoked under an unexpected uid
+    git config --global --add safe.directory "$REPO_DIR" 2>/dev/null || true
+
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+      msg_warn "Working tree has uncommitted changes — skipping auto-pull."
+      msg_warn "Commit/stash and re-run to sync with upstream."
+    else
+      msg_info "Syncing with upstream (git pull --ff-only)..."
+      if git pull --ff-only 2>&1; then
+        msg_success "Repository up to date."
+      else
+        msg_warn "Auto-pull failed (network, diverged history, or missing upstream). Continuing with local copy."
+      fi
+    fi
+  fi
+
   # --- OS DETECTION ---
   if [ -f /etc/os-release ]; then
     . /etc/os-release
