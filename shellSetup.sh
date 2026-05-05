@@ -1205,16 +1205,24 @@ EOF
 
   # --- MENU & EXECUTION ---
 
+  # Build menu items dynamically so the ROOT option is hidden when we're
+  # already running as root — there's no "regular user" to mirror configs from.
+  local MENU_ITEMS=(
+    "BASE"   "OS Updates & Core Packages" ON
+    "NODE"   "Node.js, NVM, pnpm" ON
+    "PYTHON" "Python, pyenv, pip packages" ON
+    "SHELL"  "Zsh, OMZ, OMP, & TPM" ON
+    "STOW"   "Deploy Repo configs" ON
+    "BRAVE"  "Brave Browser" OFF
+  )
+  if [ "$EUID" -ne 0 ]; then
+    MENU_ITEMS+=("ROOT" "Replicate profile to root user" OFF)
+  fi
+  MENU_ITEMS+=("SSHKEY" "GitHub SSH key, CLI & auth" OFF)
+
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-  "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 10 \
-    "BASE" "OS Updates & Core Packages" ON \
-    "NODE" "Node.js, NVM, pnpm" ON \
-    "PYTHON" "Python, pyenv, pip packages" ON \
-    "SHELL" "Zsh, OMZ, OMP, & TPM" ON \
-    "STOW" "Deploy Repo configs" ON \
-    "BRAVE" "Brave Browser" OFF \
-    "ROOT" "Replicate profile to root user" OFF \
-    "SSHKEY" "GitHub SSH key, CLI & auth" OFF 3>&1 1>&2 2>&3)
+    "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 10 \
+    "${MENU_ITEMS[@]}" 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
     msg_warn "Installation cancelled."
