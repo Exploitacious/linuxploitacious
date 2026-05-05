@@ -34,8 +34,31 @@ EOF
   echo -e "${NC}"
 
   if [ "$EUID" -eq 0 ]; then
-    msg_error "Run as standard user. Sudo will be requested when needed."
-    exit 1
+    msg_warn "Running as root."
+    echo
+    echo "  This works on single-user / root-only systems (VMs, containers,"
+    echo "  pen-testing rigs) but is NOT recommended on machines with regular"
+    echo "  user accounts. As root, every package postinstall (pnpm/npm/curl|bash)"
+    echo "  runs with full system privileges, and configs deploy to /root only."
+    echo
+    echo "  If your machine has a standard user, exit and re-run as that user."
+    echo
+    msg_info "Continuing in 10s. Press 'q' or 'n' (then Enter) to abort, any other key to continue now."
+
+    local secs=10 reply=""
+    while [ "$secs" -gt 0 ]; do
+      printf "\r  [%2ds] continuing as root... " "$secs"
+      if read -r -t 1 -n 1 reply 2>/dev/null; then
+        echo
+        case "$reply" in
+          q|Q|n|N) msg_error "Aborted by user."; exit 1 ;;
+          *) break ;;
+        esac
+      fi
+      secs=$((secs - 1))
+    done
+    echo
+    msg_success "Proceeding as root."
   fi
 
   # 2. CONTEXT AWARENESS & BOOTSTRAPPING
