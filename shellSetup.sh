@@ -1203,6 +1203,81 @@ EOF
     fi
   }
 
+  # --- COWORK + AGENT COORDINATION (private repo; needs gh auth from SSHKEY first) ---
+
+  setup_cowork() {
+    msg_header "Deploying COWORK (Multi-Agent Coordination)"
+
+    local COWORK_DIR="$HOME/COWORK"
+
+    if ! command -v gh &> /dev/null; then
+      msg_warn "gh CLI not installed. Enable SSHKEY first. Skipping COWORK."
+      return
+    fi
+    if ! gh auth status &> /dev/null; then
+      msg_warn "gh CLI not authenticated. Re-run with SSHKEY enabled. Skipping COWORK."
+      return
+    fi
+
+    if [ ! -d "$COWORK_DIR/.git" ]; then
+      msg_info "Cloning Exploitacious/COWORK to $COWORK_DIR..."
+      if gh repo clone Exploitacious/COWORK "$COWORK_DIR"; then
+        msg_success "COWORK cloned."
+      else
+        msg_error "COWORK clone failed. Verify gh auth covers private repos."
+        return
+      fi
+    else
+      msg_info "COWORK already cloned; pulling latest..."
+      (cd "$COWORK_DIR" && git pull --ff-only) || msg_warn "git pull failed (uncommitted changes?)"
+    fi
+
+    if [ ! -d "$COWORK_DIR/AGENTS" ]; then
+      msg_warn "COWORK/AGENTS/ not present in this branch. Skipping coordination setup."
+      return
+    fi
+
+    # Ensure per-machine runtime dirs exist (these are gitignored).
+    msg_info "Creating runtime dirs..."
+    mkdir -p "$COWORK_DIR/AGENTS/runtime"/{manifest.d,tasks,decisions,archive,inbox,outbox,pulse,tmp,journal}
+
+    # Make bin/ scripts executable.
+    if [ -d "$COWORK_DIR/AGENTS/bin" ]; then
+      chmod +x "$COWORK_DIR/AGENTS/bin"/* 2>/dev/null
+    fi
+
+    # Add AGENTS/bin to PATH via shellrc fragment (idempotent).
+    local SHELLRC
+    if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
+      SHELLRC="$HOME/.zshrc"
+    else
+      SHELLRC="$HOME/.bashrc"
+    fi
+    if ! grep -q 'COWORK/AGENTS/bin' "$SHELLRC" 2>/dev/null; then
+      printf '\n# --- COWORK Multi-Agent Coordination ---\nexport PATH="$HOME/COWORK/AGENTS/bin:$PATH"\n' >> "$SHELLRC"
+      msg_success "Added AGENTS/bin to PATH in $SHELLRC"
+    else
+      msg_info "AGENTS/bin already on PATH in $SHELLRC"
+    fi
+
+    # One-time migration from legacy ~/.agent-coordination/ if present.
+    if [ -d "$HOME/.agent-coordination" ]; then
+      msg_info "Legacy ~/.agent-coordination/ detected."
+      echo -ne "${YELLOW}Run migrate-from-legacy now? [y/N]: ${NC}"
+      read -r REPLY
+      if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        if "$COWORK_DIR/AGENTS/bin/migrate-from-legacy"; then
+          msg_success "Legacy coordination migrated."
+        else
+          msg_warn "Migration failed. Inspect manually: $COWORK_DIR/AGENTS/bin/migrate-from-legacy"
+        fi
+      fi
+    fi
+
+    msg_success "COWORK deployed. Open a new shell, then test with 'ac-status'."
+    msg_info "Activation triggers: type 'ACTIVATE AGENT' or 'ACTIVATE COORDINATOR' in any Claude Code session."
+  }
+
   # --- MENU & EXECUTION ---
 
   # Build menu items dynamically so the ROOT option is hidden when we're
@@ -1219,9 +1294,10 @@ EOF
     MENU_ITEMS+=("ROOT" "Replicate profile to root user" OFF)
   fi
   MENU_ITEMS+=("SSHKEY" "GitHub SSH key, CLI & auth" OFF)
+  MENU_ITEMS+=("COWORK" "COWORK repo + Multi-Agent Coordination (needs SSHKEY)" OFF)
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
-    "Select components to install/deploy (Space to toggle, Enter to confirm):" 24 78 10 \
+    "Select components to install/deploy (Space to toggle, Enter to confirm):" 26 78 11 \
     "${MENU_ITEMS[@]}" 3>&1 1>&2 2>&3)
 
   if [ -z "$CHOICES" ]; then
@@ -1256,6 +1332,9 @@ EOF
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
   if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
+
+  # COWORK runs LAST — requires gh auth established by SSHKEY (private repo)
+  if [[ $CHOICES == *"COWORK"* ]]; then setup_cowork; fi
 
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }
