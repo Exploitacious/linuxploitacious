@@ -289,6 +289,15 @@ $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Window
 Deploy-Symlink -Source $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
 Deploy-Symlink -Source $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
 
+# Windows Terminal settings (Catppuccin Mocha, font, opacity, acrylic)
+$wtSettingsSource = Join-Path $RepoDir 'windows-terminal\settings.json'
+$wtSettingsTarget = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+if (Test-Path (Split-Path $wtSettingsTarget -Parent)) {
+    Deploy-Symlink -Source $wtSettingsSource -Target $wtSettingsTarget
+} else {
+    Write-Warn 'Windows Terminal not found — skipping settings deploy.'
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DONE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -304,6 +313,7 @@ Write-Host '  Configs deployed:' -ForegroundColor White
 Write-Host '    wezterm/.wezterm.lua        -> ~/.wezterm.lua'
 Write-Host '    powershell/profile.ps1      -> Documents/PowerShell/profile.ps1'
 Write-Host '    omp/.config/ohmyposh/*      -> ~/.config/ohmyposh/*'
+Write-Host '    windows-terminal/settings   -> AppData/.../WindowsTerminal/settings.json'
 Write-Host ''
 Write-Host '  Keybinds (WezTerm):' -ForegroundColor White
 Write-Host '    Shift+Enter                  Multi-line input (Claude Code)'

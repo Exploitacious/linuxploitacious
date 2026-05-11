@@ -8,8 +8,8 @@ config.color_scheme = 'Catppuccin Mocha'
 
 -- Font — JetBrains Mono Nerd Font with ligatures
 config.font = wezterm.font_with_fallback {
+  { family = 'JetBrainsMono NF', harfbuzz_features = { 'calt=1', 'clig=1', 'liga=1' } },
   { family = 'JetBrains Mono', harfbuzz_features = { 'calt=1', 'clig=1', 'liga=1' } },
-  { family = 'JetBrainsMono Nerd Font', harfbuzz_features = { 'calt=1', 'clig=1', 'liga=1' } },
   'Cascadia Code',
 }
 config.font_size = 11.5

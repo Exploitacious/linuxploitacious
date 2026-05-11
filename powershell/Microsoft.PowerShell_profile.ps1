@@ -1,6 +1,11 @@
 # PowerShell Profile — linuxploitacious
 # github.com/Exploitacious/linuxploitacious
 
+# --- Encoding (UTF-8 for Nerd Font glyphs + OMP icons) ---
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # --- Oh My Posh ---
 # Prefer repo-controlled theme (deployed via symlink), fall back to OMP cache
 $ompTheme = Join-Path $env:USERPROFILE '.config\ohmyposh\catppuccin_mocha.omp.json'
