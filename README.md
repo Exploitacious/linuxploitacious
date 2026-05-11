@@ -88,7 +88,7 @@ Claude Code configuration is deployed in two layers:
 
 **ROOT sharing:** The ROOT option symlinks `~/.claude/` from the user account to `/root`, so both users share the same config, sessions, and credentials. The `claude/` stow package is intentionally excluded from ROOT's stow deployment to avoid conflicting with this symlink.
 
-**Note:** The global CLAUDE.md contains universal behavioral rules (no personal info). Project-specific instructions (identity, brand voice, client context) belong in a project-level `CLAUDE.md` within the working directory.
+**Personalizing Claude with a context directory:** The global CLAUDE.md includes a "Context Awareness" section that checks for `~/COWORK/CONTEXT/` at session start. If you fork this repo, replace that path with your own. The idea: keep a directory somewhere on your machine with markdown files that describe who you are, how you communicate, and how you want Claude to behave (`about-me.md`, `brand-voice.md`, `working-preferences.md`, or whatever fits). The global CLAUDE.md points Claude there so every session starts with that context, even when you're working in an unrelated project. You don't need a full COWORK setup -- any directory with a few context files works. Project-level `CLAUDE.md` files then layer on top for project-specific instructions.
 
 ---
 

@@ -931,7 +931,6 @@ EOF
 
 Host *
     AddKeysToAgent yes
-    IdentitiesOnly yes
     ServerAliveInterval 60
     ServerAliveCountMax 3
 EOF
@@ -944,6 +943,14 @@ Host github.com
     HostName github.com
     User git
     IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+Host ssh.github.com
+    HostName ssh.github.com
+    Port 443
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
 EOF
       msg_success "GitHub SSH host configured"
     else
@@ -976,7 +983,6 @@ EOF
 
 Host *
     AddKeysToAgent yes
-    IdentitiesOnly yes
     ServerAliveInterval 60
     ServerAliveCountMax 3
 EOF
@@ -988,6 +994,14 @@ Host github.com
     HostName github.com
     User git
     IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+Host ssh.github.com
+    HostName ssh.github.com
+    Port 443
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
 EOF
     fi
     sudo chmod 600 /root/.ssh/config

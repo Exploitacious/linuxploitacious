@@ -2,11 +2,11 @@
 
 These rules apply to every Claude Code session on this machine, regardless of project. Project-level CLAUDE.md files add context on top of these defaults.
 
-## COWORK integration
+## COWORK Context Awareness
 
-If `~/COWORK/CLAUDE.md` exists, treat it as the primary global instruction layer. Read it before this file. Its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`) take precedence over anything below. This file is the host-specific fallback for systems where COWORK is not deployed (see `linuxploitacious/shellSetup.sh` → COWORK menu item).
+If `~/COWORK/CONTEXT/` exists on this machine, read `about-me.md`, `brand-voice.md`, and `working-preferences.md` from it at the start of every session. These files define who the operator is, how they communicate, and how you should behave. This applies even when working outside the COWORK directory -- the context files are always relevant to how you should operate.
 
-When COWORK is present, the rules below still apply but COWORK's rules layer on top. There is no conflict — COWORK's instructions are a superset.
+If `~/COWORK/CLAUDE.md` exists, treat it as the primary global instruction layer. Its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`) take precedence over anything below. This file is the host-specific fallback for systems where COWORK is not deployed. When COWORK is present, the rules below still apply but COWORK's rules layer on top -- its instructions are a superset.
 
 ## Behavioral Rules
 
