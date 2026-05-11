@@ -382,7 +382,10 @@ BRAVEREPO
     sudo chsh -s /usr/bin/zsh root
     msg_success "Root shell set to zsh"
     
-    if [ ! -d "/root/.oh-my-zsh" ]; then
+    # Use `sudo test` — /root isn't readable as the primary user, so a bare
+    # `[ -d /root/... ]` always returns false and we end up trying to clone
+    # into a populated dir, which fails non-idempotently.
+    if ! sudo test -d "/root/.oh-my-zsh"; then
       msg_info "Installing Oh My Zsh for root..."
       sudo git clone https://github.com/ohmyzsh/ohmyzsh.git /root/.oh-my-zsh
     fi
@@ -407,7 +410,7 @@ BRAVEREPO
       sudo curl -s https://ohmyposh.dev/install.sh | sudo bash -s -- -d /root/.local/bin
     fi
     
-    if [ ! -d "/root/.tmux/plugins/tpm" ]; then
+    if ! sudo test -d "/root/.tmux/plugins/tpm"; then
       msg_info "Installing Tmux Plugin Manager for root..."
       sudo git clone https://github.com/tmux-plugins/tpm /root/.tmux/plugins/tpm
     fi
@@ -420,9 +423,31 @@ BRAVEREPO
 
     # NOTE: claude/ is excluded — ROOT shares ~/.claude via symlink (AI_DIRS block below)
     local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+    local TS_ROOT
+    TS_ROOT="$(date +%Y%m%d_%H%M%S)"
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then
+        # Phase 1: drop any prior stow links
         sudo stow -D -t /root "$pkg" 2>/dev/null || true
+
+        # Phase 2/3: back up real files in /root that would conflict with stow.
+        # /root/.bashrc ships as a real file from skel; without this, stow aborts.
+        while IFS= read -r src_file; do
+          local rel_path="${src_file#$pkg/}"
+          local dest_file="/root/$rel_path"
+          if sudo test -e "$dest_file" && ! sudo test -L "$dest_file"; then
+            local backup_file="${dest_file}.backup_${TS_ROOT}"
+            msg_warn "Backing up /root real file: $dest_file -> $backup_file"
+            sudo mv "$dest_file" "$backup_file"
+          fi
+        done < <(find "$pkg" -type f)
+
+        # Phase 4: ensure parent dirs exist (skip pkg-root)
+        while IFS= read -r src_dir; do
+          local rel_path="${src_dir#$pkg/}"
+          [ -n "$rel_path" ] && sudo mkdir -p "/root/$rel_path"
+        done < <(find "$pkg" -mindepth 1 -type d)
+
         if sudo stow -v -t /root "$pkg" 2>&1; then
           msg_success "Stowed to /root: $pkg"
         else
@@ -454,7 +479,7 @@ BRAVEREPO
     # Installers may stat/clobber their own config dirs; doing this first keeps
     # them away from the user's live state, and the AI_DIRS merge step below
     # will fold any data they wrote into the primary user's home.
-    if [ ! -d "/root/.nvm" ]; then
+    if ! sudo test -d "/root/.nvm"; then
       msg_info "Installing NVM for root..."
       sudo -i bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash'
     fi
@@ -468,9 +493,11 @@ nvm use --lts
 corepack enable pnpm
 ROOTNVM
 
-    if [ ! -d "/root/.pyenv" ]; then
+    if ! sudo test -d "/root/.pyenv"; then
       msg_info "Installing pyenv for root..."
       sudo -i bash -c 'curl -fsSL https://pyenv.run | bash'
+    else
+      msg_info "pyenv already installed for root; skipping."
     fi
 
     msg_info "Installing Python for root..."
@@ -483,7 +510,9 @@ if ! pyenv versions --bare | grep -qF "$LATEST_PY"; then
   pyenv install "$LATEST_PY"
 fi
 pyenv global "$LATEST_PY"
-pip install --upgrade pip setuptools wheel
+# pip-as-root is fine inside a pyenv prefix (per-version, not system-wide);
+# silence the standard warning.
+pip install --upgrade --root-user-action ignore pip setuptools wheel
 ROOTPY
 
     msg_info "Installing AI CLIs for root (Claude Code, OpenCode)..."
@@ -491,13 +520,15 @@ ROOTPY
 export NVM_DIR="/root/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 export PNPM_HOME="/root/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
+# Prepend ~/.local/bin so the Claude installer's post-install PATH check passes
+# (it warns when its install dir is missing from PATH).
+export PATH="$HOME/.local/bin:$PNPM_HOME:$PATH"
 
 if command -v pnpm &> /dev/null; then
-  pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+  pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli >/dev/null 2>&1 || true
 fi
 if command -v npm &> /dev/null; then
-  npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+  npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli >/dev/null 2>&1 || true
 fi
 for shim in /root/.local/share/pnpm/claude /root/.local/share/pnpm/opencode /root/.local/share/pnpm/gemini; do
   if [ -e "$shim" ] || [ -L "$shim" ]; then
@@ -784,7 +815,7 @@ EOF
 
     msg_info "Usage:"
     echo "  Attach:        tmux a -t main         (auto on SSH login)"
-    echo "  Detach:        Ctrl-b d               (keeps session alive)"
+    echo "  Detach:        Ctrl-a d               (keeps session alive — prefix is Ctrl-a)"
     echo "  List:          tmux ls"
     echo "  New session:   tmux new -s <name>"
     echo "  Kill session:  tmux kill-session -t <name>"
@@ -1094,75 +1125,80 @@ EOF
     msg_info "Upgrading pip, setuptools, wheel..."
     pip install --upgrade pip setuptools wheel
 
-    # Install common pip packages
-    msg_info "Installing common pip packages..."
+    # Minimal globals: tools you want available everywhere. Project libraries
+    # belong in per-project virtualenvs (poetry/uv/pyenv-virtualenv) — not here.
+    msg_info "Installing core Python tools (lint/format/test/env management)..."
     pip install --upgrade \
-      requests \
-      httpx \
-      aiohttp \
-      flask \
-      fastapi \
-      uvicorn \
-      django \
-      sqlalchemy \
-      alembic \
-      psycopg2-binary \
-      pymongo \
-      redis \
-      celery \
-      pytest \
-      pytest-cov \
-      pytest-asyncio \
+      pipx \
+      poetry \
+      virtualenv \
+      pre-commit \
       black \
       ruff \
       mypy \
       isort \
-      pre-commit \
-      pylint \
+      pytest \
+      pytest-cov \
+      pytest-asyncio \
       ipython \
-      jupyter \
-      notebook \
-      numpy \
-      pandas \
-      matplotlib \
-      seaborn \
-      scikit-learn \
-      scipy \
-      pillow \
-      pyyaml \
-      toml \
-      python-dotenv \
-      click \
-      typer \
+      requests \
+      httpx \
       rich \
-      tqdm \
-      beautifulsoup4 \
-      lxml \
-      scrapy \
-      selenium \
-      paramiko \
-      fabric \
-      boto3 \
-      google-cloud-storage \
-      azure-identity \
-      pydantic \
-      marshmallow \
-      cryptography \
-      pyopenssl \
-      jwt \
-      passlib \
-      bcrypt \
-      docker \
-      kubernetes \
-      ansible-core \
-      jinja2 \
-      gunicorn \
-      python-multipart \
-      websockets \
-      pika \
-      poetry \
-      pipx \
-      virtualenv
+      typer \
+      click \
+      python-dotenv \
+      pyyaml
+
+    # Heavier optional groups via pipx (isolated, on-demand). Only the CLI
+    # tools — libraries still belong in project venvs.
+    msg_info "Installing CLI apps via pipx (isolated)..."
+    pipx ensurepath >/dev/null 2>&1 || true
+    for app in jupyter pylint; do
+      if ! pipx list --short 2>/dev/null | grep -q "^$app "; then
+        pipx install "$app" 2>&1 | tail -1
+      fi
+    done
+
+    # Optional bundles — opt-in via whiptail. Each one installs into the
+    # global pyenv. Project work should still use venvs; these are for ad-hoc
+    # REPL / scratch use.
+    if command -v whiptail >/dev/null 2>&1; then
+      local PY_CHOICES
+      PY_CHOICES=$(whiptail --title "Optional Python Package Bundles" --checklist \
+        "Pick global bundles to install (cancel to skip — recommended)." 18 78 6 \
+        "DATA"    "numpy, pandas, matplotlib, seaborn, scipy, scikit-learn, pillow" OFF \
+        "WEB"     "flask, fastapi, uvicorn, django, jinja2, gunicorn, pydantic" OFF \
+        "DB"      "sqlalchemy, alembic, psycopg2-binary, pymongo, redis, celery" OFF \
+        "SCRAPE"  "beautifulsoup4, lxml, scrapy, selenium" OFF \
+        "CLOUD"   "boto3, google-cloud-storage, azure-identity, docker, kubernetes, ansible-core" OFF \
+        "CRYPTO"  "cryptography, pyopenssl, bcrypt, passlib, pyjwt, paramiko, fabric" OFF \
+        3>&1 1>&2 2>&3) || PY_CHOICES=""
+
+      if [[ "$PY_CHOICES" == *"DATA"* ]]; then
+        msg_info "Installing DATA bundle..."
+        pip install --upgrade numpy pandas matplotlib seaborn scipy scikit-learn pillow
+      fi
+      if [[ "$PY_CHOICES" == *"WEB"* ]]; then
+        msg_info "Installing WEB bundle..."
+        pip install --upgrade flask fastapi uvicorn django jinja2 gunicorn pydantic python-multipart websockets
+      fi
+      if [[ "$PY_CHOICES" == *"DB"* ]]; then
+        msg_info "Installing DB bundle..."
+        pip install --upgrade sqlalchemy alembic psycopg2-binary pymongo redis celery pika
+      fi
+      if [[ "$PY_CHOICES" == *"SCRAPE"* ]]; then
+        msg_info "Installing SCRAPE bundle..."
+        pip install --upgrade beautifulsoup4 lxml scrapy selenium
+      fi
+      if [[ "$PY_CHOICES" == *"CLOUD"* ]]; then
+        msg_info "Installing CLOUD bundle..."
+        pip install --upgrade boto3 google-cloud-storage azure-identity docker kubernetes ansible-core
+      fi
+      if [[ "$PY_CHOICES" == *"CRYPTO"* ]]; then
+        msg_info "Installing CRYPTO bundle..."
+        pip install --upgrade cryptography pyopenssl bcrypt passlib pyjwt paramiko fabric
+      fi
+    fi
 
     msg_success "Python environment ready: $(python --version), pip $(pip --version | awk '{print $2}')"
   }
@@ -1174,12 +1210,13 @@ EOF
   install_ai_tools() {
     msg_header "Installing AI CLIs (Claude Code, OpenCode)"
 
+    # Silent cleanup — pnpm/npm print ERR_PNPM_CANNOT_REMOVE_MISSING_DEPS on stderr
+    # before returning non-zero when the packages aren't installed. Suppress both.
     if command -v pnpm &> /dev/null; then
-      msg_info "Removing legacy pnpm-global AI packages..."
-      pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+      pnpm remove -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli >/dev/null 2>&1 || true
     fi
     if command -v npm &> /dev/null; then
-      npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli 2>/dev/null || true
+      npm uninstall -g @anthropic-ai/claude-code opencode-ai @google/gemini-cli >/dev/null 2>&1 || true
     fi
 
     local pnpm_home="${PNPM_HOME:-$HOME/.local/share/pnpm}"
