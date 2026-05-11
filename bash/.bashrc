@@ -65,8 +65,10 @@ elif command -v dnf >/dev/null 2>&1; then
 elif command -v pacman >/dev/null 2>&1; then
   alias sapu='sudo pacman -Syu'
 fi
-alias ls='ls -alFh --color=auto --time-style=long-iso'
+alias ls='ls -lFh --color=auto --time-style=long-iso'
+alias lsa='ls -alFh --color=auto --time-style=long-iso'
 alias ll='ls -alFh --color=auto --time-style=long-iso'
+alias la='ls -alFh --color=auto --time-style=long-iso'
 alias cd..='cd ..'
 alias cd...='cd .. && cd ..'
 alias ssh='TERM=xterm-256color ssh'
@@ -77,8 +79,6 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
-alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -d -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; echo "AI tool permissions fixed (ACLs applied)"'
-
 # Fastfetch
 if command -v fastfetch >/dev/null 2>&1; then
   fastfetch
@@ -92,9 +92,11 @@ fi
 # Opencode
 export PATH="$HOME/.opencode/bin:$PATH"
 
-# Oh My Posh
+# Oh My Posh — stowed theme (repo-controlled, survives cache wipes)
 if command -v oh-my-posh >/dev/null 2>&1; then
-  eval "$(oh-my-posh init bash --config $HOME/.config/ohmyposh/kali.json)"
+  OMP_THEME="$HOME/.config/ohmyposh/catppuccin_mocha.omp.json"
+  [ -f "$OMP_THEME" ] || OMP_THEME="$HOME/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json"
+  eval "$(oh-my-posh init bash --config "$OMP_THEME")"
 fi
 
 # NVM
@@ -123,3 +125,8 @@ alias openclaw-update='pnpm add -g openclaw@latest && systemctl --user restart o
 alias openclaw-logs='openclaw logs --follow'
 alias openclaw-status='openclaw gateway status'
 alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
+
+# --- Tmux auto-attach on SSH login (drop into 'main' session, create if missing) ---
+if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
+  tmux attach -t main 2>/dev/null || tmux new -s main
+fi

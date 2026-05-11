@@ -1,0 +1,11 @@
+#!/bin/sh
+# Emit just the colored online/offline dot (no bg). Caller wraps in pill style.
+# fg-only escapes so surrounding bg (e.g. #313244 panel) is preserved.
+
+IP=$("$(dirname "$0")/pubip" 2>/dev/null)
+
+if [ -n "$IP" ] && [ "$IP" != "offline" ]; then
+    printf '#[fg=#a6e3a1]●#[fg=#cdd6f4]'
+else
+    printf '#[fg=#f38ba8]●#[fg=#cdd6f4]'
+fi

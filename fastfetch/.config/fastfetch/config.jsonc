@@ -17,8 +17,9 @@
         "break",
         "localip",
         {
-            "type": "publicip",
-            "timeout": 2000
+            "type": "command",
+            "key": "Public IP",
+            "text": "curl -fsS --max-time 3 https://api.ipify.org || echo 'unavailable'"
         },
 	"break"
     ]

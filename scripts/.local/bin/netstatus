@@ -1,0 +1,13 @@
+#!/bin/sh
+# Render the catppuccin NET pill for tmux status bar.
+# Calls pubip (cached), emits a label pill + IP value pill, color flips for offline.
+
+IP=$("$(dirname "$0")/pubip" 2>/dev/null)
+
+if [ -n "$IP" ] && [ "$IP" != "offline" ]; then
+    # online — green label pill + IP value pill
+    printf '#[fg=#1e1e2e,bg=#a6e3a1] NET #[fg=#cdd6f4,bg=#313244] %s ' "$IP"
+else
+    # offline — red label pill + "offline" value pill
+    printf '#[fg=#1e1e2e,bg=#f38ba8] NET #[fg=#cdd6f4,bg=#313244] offline '
+fi

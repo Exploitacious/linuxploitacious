@@ -111,10 +111,14 @@ else CACHE_C=$RED; fi
 TOTAL_TIME=$(fmt_time "$TOTAL_MS")
 API_TIME=$(fmt_time "$API_MS")
 
-# Caveman badge
+# Caveman badge — stable marketplace path first; fall back to versioned cache.
+# Cache dir hash changes on plugin update, so hardcoding it drifts and badge disappears.
 CAVEMAN=""
-CS="$HOME/.claude/plugins/cache/caveman/caveman/c2ed24b3e5d4/hooks/caveman-statusline.sh"
-if [ -x "$CS" ]; then
+CS="$HOME/.claude/plugins/marketplaces/caveman/src/hooks/caveman-statusline.sh"
+if [ ! -e "$CS" ]; then
+    CS=$(ls -1 "$HOME/.claude/plugins/cache/caveman/caveman/"*/src/hooks/caveman-statusline.sh 2>/dev/null | head -1)
+fi
+if [ -n "$CS" ] && [ -r "$CS" ]; then
     CAVEMAN=$(bash "$CS" 2>/dev/null)
     [ -n "$CAVEMAN" ] && CAVEMAN="  $CAVEMAN"
 fi

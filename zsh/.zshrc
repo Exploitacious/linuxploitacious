@@ -12,8 +12,23 @@ ENABLE_CORRECTION="true"
 # Auto-update behavior
 zstyle ':omz:update' mode auto
 
-# Plugins
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
+# Plugins (git, sudo, command-not-found, colored-man-pages are OMZ builtins — no install needed)
+plugins=(
+  git
+  sudo
+  command-not-found
+  colored-man-pages
+  docker
+  docker-compose
+  z
+  zsh-autosuggestions
+  zsh-syntax-highlighting
+  zsh-completions
+  fzf-tab
+)
+# zsh-completions exposes extra completions
+[ -d "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-completions/src" ] && \
+  fpath+=("${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-completions/src")
 source $ZSH/oh-my-zsh.sh
 
 # User configuration — put ~/.local/bin first so native binaries (e.g. claude)
@@ -39,8 +54,10 @@ elif command -v dnf >/dev/null 2>&1; then
 elif command -v pacman >/dev/null 2>&1; then
   alias sapu='sudo pacman -Syu'
 fi
-alias ls='ls -alFh --color=auto --time-style=long-iso'
+alias ls='ls -lFh --color=auto --time-style=long-iso'
+alias lsa='ls -alFh --color=auto --time-style=long-iso'
 alias ll='ls -alFh --color=auto --time-style=long-iso'
+alias la='ls -alFh --color=auto --time-style=long-iso'
 alias cd..='cd ..'
 alias cd...='cd .. && cd ..'
 alias ssh='TERM=xterm-256color ssh'
@@ -51,7 +68,6 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
-alias claude-fix='sudo chown -R $USER:$USER ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; sudo setfacl -R -d -m u:root:rwX -m u:$USER:rwX ~/.claude ~/.local/share/opencode 2>/dev/null; echo "AI tool permissions fixed (ACLs applied)"'
 # Fastfetch (replaces Neofetch)
 if command -v fastfetch >/dev/null 2>&1; then
   fastfetch
@@ -65,9 +81,11 @@ fi
 # opencode
 export PATH="$HOME/.opencode/bin:$PATH"
 
-# Oh My Posh
+# Oh My Posh — stowed theme (repo-controlled, survives cache wipes)
 if command -v oh-my-posh >/dev/null 2>&1; then
-  eval "$(oh-my-posh init zsh --config $HOME/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json)"
+  OMP_THEME="$HOME/.config/ohmyposh/catppuccin_mocha.omp.json"
+  [ -f "$OMP_THEME" ] || OMP_THEME="$HOME/.cache/oh-my-posh/themes/catppuccin_mocha.omp.json"
+  eval "$(oh-my-posh init zsh --config "$OMP_THEME")"
 fi
 
 export NVM_DIR="$HOME/.nvm"
@@ -100,5 +118,10 @@ alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
 # OpenClaw Completion
 [[ -f "${HOME}/.openclaw/completions/openclaw.zsh" ]] && source "${HOME}/.openclaw/completions/openclaw.zsh"
 
-# opencode
-export PATH=/root/.opencode/bin:$PATH
+# --- COWORK Multi-Agent Coordination ---
+export PATH="$HOME/COWORK/AGENTS/bin:$PATH"
+
+# --- Tmux auto-attach on SSH login (drop into 'main' session, create if missing) ---
+if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
+  tmux attach -t main 2>/dev/null || tmux new -s main
+fi

@@ -221,8 +221,11 @@ EOF
         # 1. Try PPA for Ubuntu
         if [[ "$OS_ID" == "ubuntu" ]]; then
             msg_info "Trying Fastfetch PPA..."
-            if sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch 2>/dev/null; then
-                sudo apt-get update && sudo apt-get install -y fastfetch
+            if ! grep -rq "zhangsongcui3336/fastfetch" /etc/apt/sources.list.d/ 2>/dev/null; then
+                sudo add-apt-repository -y ppa:zhangsongcui3336/fastfetch 2>/dev/null && \
+                  sudo apt-get update && sudo apt-get install -y fastfetch
+            else
+                sudo apt-get install -y fastfetch
             fi
         # 2. Try direct install (available in newer Debian/Kali)
         else
@@ -385,14 +388,18 @@ BRAVEREPO
     fi
 
     local ROOT_ZSH_CUSTOM="/root/.oh-my-zsh/custom"
-    if ! sudo test -d "$ROOT_ZSH_CUSTOM/plugins/zsh-autosuggestions"; then
-      msg_info "Installing zsh-autosuggestions plugin for root..."
-      sudo git clone https://github.com/zsh-users/zsh-autosuggestions "$ROOT_ZSH_CUSTOM/plugins/zsh-autosuggestions" -q
-    fi
-    if ! sudo test -d "$ROOT_ZSH_CUSTOM/plugins/zsh-syntax-highlighting"; then
-      msg_info "Installing zsh-syntax-highlighting plugin for root..."
-      sudo git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ROOT_ZSH_CUSTOM/plugins/zsh-syntax-highlighting" -q
-    fi
+    declare -A ROOT_OMZ_PLUGINS=(
+      [zsh-autosuggestions]="https://github.com/zsh-users/zsh-autosuggestions"
+      [zsh-syntax-highlighting]="https://github.com/zsh-users/zsh-syntax-highlighting"
+      [zsh-completions]="https://github.com/zsh-users/zsh-completions"
+      [fzf-tab]="https://github.com/Aloxaf/fzf-tab"
+    )
+    for plugin in "${!ROOT_OMZ_PLUGINS[@]}"; do
+      if ! sudo test -d "$ROOT_ZSH_CUSTOM/plugins/$plugin"; then
+        msg_info "Installing OMZ plugin for root: $plugin"
+        sudo git clone --depth 1 "${ROOT_OMZ_PLUGINS[$plugin]}" "$ROOT_ZSH_CUSTOM/plugins/$plugin" -q
+      fi
+    done
 
     if ! sudo test -f "/root/.local/bin/oh-my-posh"; then
       msg_info "Installing Oh My Posh for root..."
@@ -578,6 +585,256 @@ ROOTAI
     done
 
     msg_success "Root profile setup complete. Run 'sudo -i' to use."
+  }
+
+  setup_swapfile() {
+    msg_header "Setting up Swapfile"
+
+    if [ -n "$(swapon --show=NAME --noheadings 2>/dev/null)" ]; then
+      msg_info "Swap already active:"
+      swapon --show
+      return 0
+    fi
+
+    # Size = round(RAM in GB), min 2, max 32
+    local RAM_GB
+    RAM_GB=$(awk '/MemTotal/ {printf "%d", ($2/1024/1024)+0.5}' /proc/meminfo)
+    [ "$RAM_GB" -lt 2 ] && RAM_GB=2
+    [ "$RAM_GB" -gt 32 ] && RAM_GB=32
+
+    local SWAPFILE=/swapfile
+    if sudo test -e "$SWAPFILE"; then
+      msg_warn "$SWAPFILE exists but is not active. Investigate manually; not touching it."
+      return 1
+    fi
+
+    # Check free space — need RAM_GB + 1GB headroom on /
+    local FREE_GB
+    FREE_GB=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+    if [ "$FREE_GB" -lt $((RAM_GB + 1)) ]; then
+      msg_error "Not enough free space on / (need ${RAM_GB}G + 1G headroom, have ${FREE_GB}G). Skipping."
+      return 1
+    fi
+
+    # Detect FS type — btrfs needs special handling (chattr +C, no holes)
+    local FS_TYPE
+    FS_TYPE=$(df -T / | awk 'NR==2 {print $2}')
+    if [ "$FS_TYPE" = "btrfs" ]; then
+      msg_warn "Root is btrfs — fallocate creates holes; using btrfs-safe path."
+      sudo touch "$SWAPFILE"
+      sudo chattr +C "$SWAPFILE" 2>/dev/null || true
+      sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=$((RAM_GB*1024)) status=progress
+    else
+      msg_info "Allocating ${RAM_GB}G swapfile at $SWAPFILE (fs: $FS_TYPE)..."
+      if ! sudo fallocate -l "${RAM_GB}G" "$SWAPFILE" 2>/dev/null; then
+        msg_warn "fallocate failed, falling back to dd..."
+        sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=$((RAM_GB*1024)) status=progress
+      fi
+    fi
+
+    sudo chmod 600 "$SWAPFILE"
+    sudo mkswap "$SWAPFILE"
+    sudo swapon "$SWAPFILE"
+
+    if ! grep -qE "^${SWAPFILE}[[:space:]]" /etc/fstab; then
+      echo "${SWAPFILE} none swap sw 0 0" | sudo tee -a /etc/fstab > /dev/null
+      msg_success "Added swapfile entry to /etc/fstab."
+    fi
+
+    # Tune swappiness — low so swap is emergency-only on a workstation/VM
+    if [ ! -f /etc/sysctl.d/99-swappiness.conf ]; then
+      echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf > /dev/null
+      sudo sysctl -q --system
+      msg_success "vm.swappiness=10 (swap reserved for memory pressure)."
+    fi
+
+    msg_success "Swap active: $(swapon --show=NAME,SIZE --noheadings | head -1)"
+  }
+
+  install_docker() {
+    msg_header "Installing Docker Engine"
+
+    if command -v docker &> /dev/null && docker --version &> /dev/null; then
+      msg_info "Docker already installed: $(docker --version)"
+    else
+      if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+        msg_info "Installing Docker via official APT repo..."
+        sudo apt-get update
+        sudo apt-get install -y ca-certificates curl gnupg
+        sudo install -m 0755 -d /etc/apt/keyrings
+
+        # Kali ships with Debian-derived sources; force docker repo to match Debian codename
+        local DOCKER_CODENAME="$VERSION_CODENAME"
+        if [[ "$OS_ID" == "kali" ]] || [ -z "$DOCKER_CODENAME" ]; then
+          DOCKER_CODENAME="bookworm"
+        fi
+        local DOCKER_OS="debian"
+        if [[ "$OS_ID" == "ubuntu" ]]; then DOCKER_OS="ubuntu"; fi
+
+        curl -fsSL "https://download.docker.com/linux/${DOCKER_OS}/gpg" | \
+          sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DOCKER_OS} ${DOCKER_CODENAME} stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+        sudo pacman -S --noconfirm --needed docker docker-compose
+      elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+        sudo dnf -y install dnf-plugins-core
+        sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+        sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      else
+        msg_error "Unsupported OS for Docker auto-install."
+        return 1
+      fi
+      msg_success "Docker installed: $(docker --version)"
+    fi
+
+    # Enable + start daemon
+    if command -v systemctl &> /dev/null; then
+      sudo systemctl enable --now docker.service containerd.service 2>/dev/null || true
+    fi
+
+    # Add current user to docker group (skip if root)
+    if [ "$EUID" -ne 0 ]; then
+      local TARGET_USER="${SUDO_USER:-$USER}"
+      if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx docker; then
+        sudo usermod -aG docker "$TARGET_USER"
+        msg_warn "Added $TARGET_USER to 'docker' group. Log out + back in (or 'newgrp docker') for it to take effect."
+      else
+        msg_info "$TARGET_USER already in docker group."
+      fi
+    fi
+
+    # Smoke test (won't fail script if daemon isn't ready yet)
+    if sudo docker run --rm hello-world &> /dev/null; then
+      msg_success "Docker smoke test passed."
+    else
+      msg_warn "Docker smoke test skipped or failed — daemon may need a moment."
+    fi
+  }
+
+  setup_tmux_persistence() {
+    msg_header "Setting up Tmux Persistence (auto-attach + systemd boot)"
+
+    if ! command -v tmux &> /dev/null; then
+      msg_info "Installing tmux..."
+      if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+        sudo apt-get install -y tmux
+      elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+        sudo pacman -S --noconfirm --needed tmux
+      elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+        sudo dnf install -y tmux
+      fi
+    fi
+
+    # The .zshrc/.bashrc shipped by this repo already contains the SSH auto-attach snippet,
+    # so re-stow is enough to wire it up. Just inform the user.
+    msg_info "SSH auto-attach snippet ships in stowed .zshrc/.bashrc (deploys via STOW step)."
+
+    if [ "$EUID" -eq 0 ]; then
+      msg_warn "Running as root — skipping systemd --user unit setup."
+      return 0
+    fi
+
+    # systemd user unit so the 'main' session survives reboots
+    local UNIT_DIR="$HOME/.config/systemd/user"
+    local UNIT_FILE="$UNIT_DIR/tmux-main.service"
+    mkdir -p "$UNIT_DIR"
+
+    local TMUX_BIN
+    TMUX_BIN="$(command -v tmux)"
+
+    cat > "$UNIT_FILE" <<EOF
+[Unit]
+Description=tmux default session (main)
+Documentation=man:tmux(1)
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=${TMUX_BIN} new-session -d -s main
+ExecStop=${TMUX_BIN} kill-session -t main
+KillMode=none
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+
+    msg_success "Wrote $UNIT_FILE"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now tmux-main.service && \
+      msg_success "tmux-main.service enabled + started" || \
+      msg_warn "Failed to enable tmux-main.service (check 'systemctl --user status tmux-main')"
+
+    # Enable linger so user services run without an active login (survive reboots)
+    local TARGET_USER="${SUDO_USER:-$USER}"
+    if loginctl show-user "$TARGET_USER" 2>/dev/null | grep -q "Linger=yes"; then
+      msg_info "Linger already enabled for $TARGET_USER."
+    else
+      sudo loginctl enable-linger "$TARGET_USER" && \
+        msg_success "Linger enabled for $TARGET_USER (user services run at boot)." || \
+        msg_warn "Failed to enable linger."
+    fi
+
+    msg_info "Usage:"
+    echo "  Attach:        tmux a -t main         (auto on SSH login)"
+    echo "  Detach:        Ctrl-b d               (keeps session alive)"
+    echo "  List:          tmux ls"
+    echo "  New session:   tmux new -s <name>"
+    echo "  Kill session:  tmux kill-session -t <name>"
+  }
+
+  configure_passwordless_sudo() {
+    msg_header "Configuring Passwordless Sudo"
+
+    if [ "$EUID" -eq 0 ]; then
+      msg_warn "Running as root — passwordless sudo not applicable. Skipping."
+      return 0
+    fi
+
+    if ! command -v sudo &> /dev/null; then
+      msg_error "sudo not installed. Skipping."
+      return 1
+    fi
+
+    local TARGET_USER="${SUDO_USER:-$USER}"
+    local SUDOERS_FILE="/etc/sudoers.d/90-${TARGET_USER}-nopasswd"
+    local SUDOERS_LINE="${TARGET_USER} ALL=(ALL:ALL) NOPASSWD:ALL"
+
+    if sudo test -f "$SUDOERS_FILE" && sudo grep -qxF "$SUDOERS_LINE" "$SUDOERS_FILE"; then
+      msg_info "Passwordless sudo already configured for ${TARGET_USER}."
+      return 0
+    fi
+
+    msg_warn "About to grant ${TARGET_USER} passwordless sudo (NOPASSWD: ALL)."
+    msg_warn "This means anyone with shell access as ${TARGET_USER} gets full root."
+    echo -ne "${YELLOW}Proceed? [y/N]: ${NC}"
+    read -r REPLY
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+      msg_info "Skipping passwordless sudo."
+      return 0
+    fi
+
+    # Write via a tmpfile + visudo -cf so we never install a broken sudoers entry
+    local TMP_SUDOERS
+    TMP_SUDOERS="$(mktemp)"
+    printf '%s\n' "$SUDOERS_LINE" > "$TMP_SUDOERS"
+
+    if sudo visudo -cf "$TMP_SUDOERS" > /dev/null; then
+      sudo install -m 0440 -o root -g root "$TMP_SUDOERS" "$SUDOERS_FILE"
+      rm -f "$TMP_SUDOERS"
+      msg_success "Passwordless sudo enabled for ${TARGET_USER} (${SUDOERS_FILE})."
+    else
+      rm -f "$TMP_SUDOERS"
+      msg_error "visudo validation failed. Sudoers not modified."
+      return 1
+    fi
   }
 
   install_github_cli() {
@@ -995,20 +1252,35 @@ EOF
     fi
 
     local ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
-      msg_info "Installing zsh-autosuggestions plugin..."
-      git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" -q
-    fi
-    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
-      msg_info "Installing zsh-syntax-highlighting plugin..."
-      git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" -q
-    fi
+
+    # OMZ custom plugins (third-party — git/sudo/docker/etc. are builtins, no clone needed)
+    declare -A OMZ_PLUGINS=(
+      [zsh-autosuggestions]="https://github.com/zsh-users/zsh-autosuggestions"
+      [zsh-syntax-highlighting]="https://github.com/zsh-users/zsh-syntax-highlighting"
+      [zsh-completions]="https://github.com/zsh-users/zsh-completions"
+      [fzf-tab]="https://github.com/Aloxaf/fzf-tab"
+    )
+    for plugin in "${!OMZ_PLUGINS[@]}"; do
+      if [ ! -d "$ZSH_CUSTOM/plugins/$plugin" ]; then
+        msg_info "Installing OMZ plugin: $plugin"
+        git clone --depth 1 "${OMZ_PLUGINS[$plugin]}" "$ZSH_CUSTOM/plugins/$plugin" -q
+      fi
+    done
 
     if ! command -v oh-my-posh &> /dev/null; then
       msg_info "Installing Oh My Posh..."
       mkdir -p "$HOME/.local/bin"
       curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin"
       export PATH=$PATH:$HOME/.local/bin
+    fi
+
+    # Ensure catppuccin_mocha theme cached locally (OMP init falls back here if repo copy missing)
+    local OMP_CACHE_DIR="$HOME/.cache/oh-my-posh/themes"
+    mkdir -p "$OMP_CACHE_DIR"
+    if [ ! -f "$OMP_CACHE_DIR/catppuccin_mocha.omp.json" ]; then
+      msg_info "Downloading catppuccin_mocha OMP theme..."
+      curl -fsSL https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/catppuccin_mocha.omp.json \
+        -o "$OMP_CACHE_DIR/catppuccin_mocha.omp.json" || msg_warn "Theme download failed (will fall back to stowed copy)."
     fi
 
     if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
@@ -1086,7 +1358,10 @@ EOF
     local pkg_dir="$REPO_DIR/$1"
     local target_dir="$HOME"
 
-    find "$pkg_dir" -type d | while read -r src_dir; do
+    # -mindepth 1 skips the package root; otherwise the first find entry equals
+    # $pkg_dir exactly, the "${src_dir#$pkg_dir/}" prefix strip (with trailing /)
+    # leaves it unchanged, and mkdir -p "$HOME/$abs_path" creates a phantom tree.
+    find "$pkg_dir" -mindepth 1 -type d | while read -r src_dir; do
         local rel_path="${src_dir#$pkg_dir/}"
         if [ -n "$rel_path" ]; then
             mkdir -p "$target_dir/$rel_path"
@@ -1288,10 +1563,19 @@ EOF
     "PYTHON" "Python, pyenv, pip packages" ON
     "SHELL"  "Zsh, OMZ, OMP, & TPM" ON
     "STOW"   "Deploy Repo configs" ON
+    "TMUX"   "Tmux persistence (auto-attach + systemd boot)" ON
+    "DOCKER" "Docker Engine (CE + compose plugin)" OFF
     "BRAVE"  "Brave Browser" OFF
   )
   if [ "$EUID" -ne 0 ]; then
     MENU_ITEMS+=("ROOT" "Replicate profile to root user" OFF)
+    MENU_ITEMS+=("NOPASS" "Enable passwordless sudo for current user" OFF)
+  fi
+  # Offer SWAP only when none is configured (always-on for the rare case where it'd help)
+  if [ -z "$(swapon --show=NAME --noheadings 2>/dev/null)" ]; then
+    local _RAM_GB
+    _RAM_GB=$(awk '/MemTotal/ {printf "%d", ($2/1024/1024)+0.5}' /proc/meminfo)
+    MENU_ITEMS+=("SWAP" "Create ${_RAM_GB}G swapfile (matches RAM, none currently)" ON)
   fi
   MENU_ITEMS+=("SSHKEY" "GitHub SSH key, CLI & auth" OFF)
   MENU_ITEMS+=("COWORK" "COWORK repo + Multi-Agent Coordination (needs SSHKEY)" OFF)
@@ -1329,8 +1613,12 @@ EOF
   # Claude plugins: self-gates if claude CLI or settings are missing
   install_claude_plugins
 
+  if [[ $CHOICES == *"SWAP"* ]]; then setup_swapfile; fi
+  if [[ $CHOICES == *"DOCKER"* ]]; then install_docker; fi
+  if [[ $CHOICES == *"TMUX"* ]]; then setup_tmux_persistence; fi
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
+  if [[ $CHOICES == *"NOPASS"* ]]; then configure_passwordless_sudo; fi
   if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
 
   # COWORK runs LAST — requires gh auth established by SSHKEY (private repo)

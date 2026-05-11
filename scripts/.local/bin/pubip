@@ -1,0 +1,31 @@
+#!/bin/sh
+# Print cached public IP. Refresh if cache is older than TTL or missing.
+# Designed for tmux status-right (called every status-interval), so:
+#   - never blocks longer than 2s on the network
+#   - never prints anything fragile when offline
+#   - mtime check keeps API calls cheap (default 5 min cache)
+
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/pubip"
+TTL="${PUBIP_TTL:-300}"   # seconds — override with `PUBIP_TTL=60 pubip`
+URL="${PUBIP_URL:-https://api.ipify.org}"
+
+mkdir -p "$(dirname "$CACHE")"
+
+needs_refresh=1
+if [ -s "$CACHE" ]; then
+    age=$(( $(date +%s) - $(stat -c %Y "$CACHE" 2>/dev/null || echo 0) ))
+    [ "$age" -lt "$TTL" ] && needs_refresh=0
+fi
+
+if [ "$needs_refresh" = 1 ]; then
+    ip=$(curl -fsS --max-time 2 "$URL" 2>/dev/null)
+    if [ -n "$ip" ]; then
+        printf '%s' "$ip" > "$CACHE"
+    fi
+fi
+
+if [ -s "$CACHE" ]; then
+    cat "$CACHE"
+else
+    printf 'offline'
+fi

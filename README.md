@@ -60,11 +60,17 @@ The script uses a two-stage architecture:
 |--------|-------------|---------|
 | BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, etc.) | ON |
 | NODE | Node.js via NVM and pnpm (required by openclaw tooling) | ON |
-| SHELL | Zsh, Oh My Zsh, Oh My Posh theming, Tmux Plugin Manager | ON |
+| PYTHON | Python via pyenv + pip packages | ON |
+| SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
+| TMUX | Tmux persistence: SSH auto-attach + `tmux-main.service` systemd unit + linger | ON |
+| DOCKER | Docker Engine (docker-ce + buildx + compose plugin), adds user to `docker` group | OFF |
 | BRAVE | Brave Browser | OFF |
-| ROOT | Replicate user profile to root (configs, NVM, OMZ, OMP, TPM) | OFF |
+| ROOT | Replicate user profile to root (configs, NVM, OMZ, OMP, TPM) | OFF (hidden when running as root) |
+| NOPASS | Enable passwordless sudo for current user (drops `/etc/sudoers.d/90-<user>-nopasswd`, visudo-validated) | OFF (hidden when running as root) |
+| SWAP | Create swapfile sized to match RAM (`/swapfile`, `vm.swappiness=10`) | ON (hidden when swap already exists) |
 | SSHKEY | Generate GitHub SSH key, configure SSH, copy to root | OFF |
+| COWORK | Clone COWORK repo + Multi-Agent Coordination (requires SSHKEY) | OFF |
 
 **Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
 
@@ -215,8 +221,10 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 
 | Alias | Command | Description |
 |-------|---------|-------------|
-| `ls` | `ls -alFh --color=auto --time-style=long-iso` | Detailed file listing |
-| `ll` | (same as `ls`) | Alias for `ls` |
+| `ls` | `ls -lFh --color=auto --time-style=long-iso` | Detailed listing, **hides dotfiles** |
+| `lsa` | `ls -alFh --color=auto --time-style=long-iso` | Detailed listing **including dotfiles** |
+| `la` | (same as `lsa`) | Alias for `lsa` |
+| `ll` | (same as `lsa`) | Alias for `lsa` (muscle-memory shortcut) |
 | `cd..` | `cd ..` | Go up one directory (typo-friendly) |
 | `cd...` | `cd .. && cd ..` | Go up two directories |
 | `vsc` | `cd /mnt/c/users/Alex/VSCODE` | Jump to VS Code workspace (WSL) |
@@ -255,18 +263,142 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 
 ---
 
-## Tmux Configuration
+## Tmux
+
+### Configuration
 
 | Setting | Value |
 |---------|-------|
-| Prefix | `Ctrl+Space` (instead of default `Ctrl+B`) |
+| Prefix | **`Ctrl+a`** (screen-default — avoids the Windows IME `Ctrl+a` collision in Termius/PuTTY) |
 | Window/pane indexing | Starts at 1 (not 0) |
 | Copy mode | Vi keybindings |
 | Mouse | Enabled |
-| Theme | Catppuccin (via TPM) |
+| History limit | 50 000 lines |
+| Theme | Catppuccin Mocha (via TPM) |
 | Pane splits | Open in current working directory |
+| Reload bind | `PFX r` runs `source-file ~/.tmux.conf` |
 
-**First run:** After opening tmux, press `Ctrl+Space` then `I` (capital i) to install plugins via TPM.
+**First run:** TPM auto-clones itself on first launch and `install_plugins` runs once. After that, plugins are managed via `PFX I` (install) and `PFX U` (update).
+
+### Plugins (declared in `.tmux.conf`)
+
+| Plugin | Purpose |
+|--------|---------|
+| `tmux-plugins/tpm` | Plugin manager |
+| `tmux-plugins/tmux-sensible` | Sane defaults (escape-time, history, etc.) |
+| `dreamsofcode-io/catppuccin-tmux` | Theme (mocha flavour) |
+| `tmux-plugins/tmux-resurrect` | Save/restore sessions, windows, panes, running programs, and pane contents. Manual: `PFX Ctrl+s` save, `PFX Ctrl+r` restore |
+| `tmux-plugins/tmux-continuum` | Auto-saves resurrect every 15 min; auto-restores on tmux server start (pairs with `tmux-main.service`) |
+| `tmux-plugins/tmux-yank` | `y` in copy mode + mouse-drag → system clipboard via OSC52 (works through Termius → Windows) |
+| `tmux-plugins/tmux-prefix-highlight` | Status-bar indicator that lights up when prefix is active or in copy/sync mode |
+| `tmux-plugins/tmux-cpu` | CPU / RAM widgets for status bar |
+| `tmux-plugins/tmux-online-status` | Green/red dot showing internet reachability |
+
+### Status bar (right side)
+
+`PFX-indicator │ CPU% │ RAM% │ online-dot │ Public IP │ YYYY-MM-DD HH:MM`
+
+Public IP is fetched via the `pubip` script (`~/.local/bin/pubip`) which caches to `~/.cache/pubip` for 5 minutes — keeps the status bar fast and stops every refresh from hitting api.ipify.org.
+
+### Persistence (headless VMs)
+
+The `TMUX` menu option wires three things so your work survives SSH disconnects, reboots, and laptop closes:
+
+1. **Auto-attach on SSH login** — `.zshrc` and `.bashrc` ship with a snippet that, on SSH-originated shells outside an existing tmux, runs `tmux attach -t main 2>/dev/null || tmux new -s main`. SSH in → land directly in the `main` session every time.
+2. **`tmux-main.service`** — a `~/.config/systemd/user/tmux-main.service` unit that starts `tmux new-session -d -s main` at boot. Survives reboots.
+3. **`loginctl enable-linger <user>`** — user services run without an active login session, so step 2 actually triggers at boot rather than at first login.
+
+To detach from a session and keep it running: **`Ctrl+a d`**. Do **not** `exit` — that kills the pane (and if it's the only pane, the window; if the only window, the session).
+
+### Command Cheatsheet
+
+The prefix on this setup is **`Ctrl+a`** (written as `PFX` below). All commands except shell ones are typed *after* hitting the prefix.
+
+**Shell (outside tmux)**
+
+| Command | Purpose |
+|---------|---------|
+| `tmux` | Start unnamed session |
+| `tmux new -s <name>` | Start named session |
+| `tmux ls` | List sessions |
+| `tmux a` | Attach to most recent session |
+| `tmux a -t <name>` | Attach to specific session |
+| `tmux kill-session -t <name>` | Kill one session |
+| `tmux kill-server` | Kill all sessions (nukes tmux server) |
+
+**Sessions (inside tmux)**
+
+| Keys | Purpose |
+|------|---------|
+| `PFX d` | Detach (keeps session alive) |
+| `PFX s` | Interactive session picker |
+| `PFX $` | Rename current session |
+| `PFX (` / `PFX )` | Previous / next session |
+
+**Windows (tabs)**
+
+| Keys | Purpose |
+|------|---------|
+| `PFX c` | New window |
+| `PFX ,` | Rename window |
+| `PFX &` | Kill window (confirms) |
+| `PFX n` / `PFX p` | Next / previous window |
+| `PFX 1` … `PFX 9` | Jump to window by number |
+| `PFX w` | Interactive window picker |
+
+**Panes (splits)**
+
+| Keys | Purpose |
+|------|---------|
+| `PFX "` | Split horizontally (top/bottom) — opens in `$PWD` |
+| `PFX %` | Split vertically (left/right) — opens in `$PWD` |
+| `PFX <arrow>` | Move focus between panes |
+| `PFX x` | Kill current pane (confirms) |
+| `PFX z` | Toggle pane zoom (fullscreen current pane) |
+| `PFX {` / `PFX }` | Swap pane with previous / next |
+| `PFX SPACE` | Cycle pane layouts |
+| `PFX q` | Show pane numbers (press number to jump) |
+
+**Copy mode (vi keys enabled)**
+
+| Keys | Purpose |
+|------|---------|
+| `PFX [` | Enter copy mode |
+| `v` | Start selection (vi-style) |
+| `y` | Yank selection to tmux buffer |
+| `q` | Exit copy mode |
+| `PFX ]` | Paste most recent buffer |
+| `PFX =` | Show buffer list |
+| Mouse drag | Select + auto-copy (mouse is on) |
+
+**Misc**
+
+| Keys | Purpose |
+|------|---------|
+| `PFX ?` | Show all keybindings |
+| `PFX :` | Command prompt (`:source-file ~/.tmux.conf`, etc.) |
+| `PFX r` (if bound) | Reload `.tmux.conf` — not bound by default; use `:source ~/.tmux.conf` |
+| `PFX I` | Install TPM plugins (capital i) |
+| `PFX U` | Update TPM plugins |
+
+### Typical headless-VM workflow
+
+```sh
+ssh vm                              # SSH in → drops you into 'main' session automatically
+# ... work ...
+Ctrl+a d                        # detach, close laptop, walk away
+ssh vm                              # reconnect later → same session, same state
+```
+
+If `main` ever gets cluttered, spin up project-scoped sessions:
+
+```sh
+tmux new -s coworkdev               # for COWORK work
+tmux new -s claude                  # for a long Claude session
+PFX s                               # inside tmux: switch between them
+```
+
+To survive flaky networks, install Mosh on both ends and replace `ssh vm` with `mosh vm -- tmux a -t main`.
 
 ---
 
