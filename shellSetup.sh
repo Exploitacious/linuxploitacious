@@ -814,9 +814,11 @@ EOF
     fi
 
     msg_info "Usage:"
-    echo "  Attach:        tmux a -t main         (auto on SSH login)"
+    echo "  SSH login:     session picker shows on connect (attach existing / new / plain shell)"
     echo "  Detach:        Ctrl-a d               (keeps session alive — prefix is Ctrl-a)"
+    echo "  Switch:        Ctrl-a s               (visual session picker inside tmux)"
     echo "  List:          tmux ls"
+    echo "  Attach:        tmux a -t <name>"
     echo "  New session:   tmux new -s <name>"
     echo "  Kill session:  tmux kill-session -t <name>"
   }

@@ -126,7 +126,46 @@ alias openclaw-logs='openclaw logs --follow'
 alias openclaw-status='openclaw gateway status'
 alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
 
-# --- Tmux auto-attach on SSH login (drop into 'main' session, create if missing) ---
+# --- Tmux session picker on SSH login ---
 if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
-  tmux attach -t main 2>/dev/null || tmux new -s main
+  _tmux_sessions=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && _tmux_sessions+=("$line")
+  done < <(tmux list-sessions -F '#S' 2>/dev/null)
+
+  printf '\033[36m━━ tmux session picker ━━\033[0m\n'
+  if (( ${#_tmux_sessions[@]} > 0 )); then
+    i=1
+    for s in "${_tmux_sessions[@]}"; do
+      printf "  %d) attach → %s\n" "$i" "$s"
+      ((i++))
+    done
+  else
+    printf "  (no existing sessions)\n"
+  fi
+  printf "  n) new named session\n"
+  printf "  q) plain shell (no tmux)\n"
+  printf "choice [n]: "
+  read choice
+  case "$choice" in
+    q|Q) ;;
+    ''|n|N)
+      printf "session name [work]: "
+      read name
+      tmux new -s "${name:-work}"
+      ;;
+    [0-9]*)
+      idx=$((choice - 1))
+      target="${_tmux_sessions[$idx]:-}"
+      if [[ -n "$target" ]]; then
+        tmux attach -t "$target"
+      else
+        printf "invalid index — starting plain shell\n"
+      fi
+      ;;
+    *)
+      tmux attach -t "$choice" 2>/dev/null || tmux new -s "$choice"
+      ;;
+  esac
+  unset _tmux_sessions choice name target i s idx
 fi
