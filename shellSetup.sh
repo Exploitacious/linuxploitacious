@@ -1820,5 +1820,11 @@ EOF
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }
 
-# Execute the buffered payload
+# Execute the buffered payload.
 main "$@"
+
+# Explicit exit so `curl ... | bash` doesn't sit waiting for more
+# script content after main returns. Bash piped from a network
+# stream occasionally doesn't see EOF cleanly and hangs at the
+# end; explicit exit short-circuits that.
+exit 0
