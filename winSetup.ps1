@@ -741,7 +741,9 @@ if ($Selected -contains 'COWORK') {
         if (Test-Path $memInit) {
             Write-Info 'Initializing Claude Code auto-memory git-sync...'
             try {
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $memInit
+                # -AutoCommit: if init creates a new per-host memory subdir,
+                # stage + commit + push it. Only commits the exact target path.
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $memInit -AutoCommit
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success 'Memory sync initialized (or already in place).'
                 } elseif ($LASTEXITCODE -eq 2) {

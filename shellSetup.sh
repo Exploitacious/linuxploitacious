@@ -1643,7 +1643,10 @@ EOF
     # already-initialized machines (no-op).
     if [ -x "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" ]; then
       msg_info "Initializing Claude Code auto-memory git-sync..."
-      if "$COWORK_DIR/WORKFORCE/bin/ac-memory-init"; then
+      # --auto-commit: if init creates a new per-host memory subdir, stage +
+      # commit + push it so the workspace machine can pull this host's memories.
+      # Only commits the exact target path, no other modified files.
+      if "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" --auto-commit; then
         msg_success "Memory sync initialized (or already in place)."
       else
         local rc=$?
