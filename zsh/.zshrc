@@ -164,13 +164,8 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
   unset _tmux_sessions choice name target
 fi
 
-<<<<<<< Updated upstream
-# --- COWORK Claude wrapper (root/master safety) ---
-source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null
-=======
 # opencode
 export PATH=/root/.opencode/bin:$PATH
 
 # --- COWORK Claude wrapper (root/master safety) ---
-source /home/master/COWORK/WORKFORCE/bin/claude-wrapper.sh 2>/dev/null
->>>>>>> Stashed changes
+source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null
