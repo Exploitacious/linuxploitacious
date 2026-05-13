@@ -169,3 +169,6 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
   esac
   unset _tmux_sessions choice name target i s idx
 fi
+
+# --- COWORK Claude wrapper (root/master safety) ---
+source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null
