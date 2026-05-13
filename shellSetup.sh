@@ -1607,9 +1607,17 @@ EOF
       return
     fi
 
-    # Make bin/ scripts executable.
+    # Make bin/ scripts executable. Skip non-shell extensions
+    # (.md, .ps1, .json, .yml, .yaml) — chmod +x on those dirties
+    # git status without doing anything useful.
     if [ -d "$COWORK_DIR/WORKFORCE/bin" ]; then
-      chmod +x "$COWORK_DIR/WORKFORCE/bin"/* 2>/dev/null
+      for f in "$COWORK_DIR/WORKFORCE/bin"/*; do
+        [ -f "$f" ] || continue
+        case "$(basename "$f")" in
+          *.md|*.ps1|*.json|*.yml|*.yaml|*.txt) continue ;;
+        esac
+        chmod +x "$f" 2>/dev/null
+      done
     fi
 
     # Add WORKFORCE/bin to PATH via shellrc fragment (idempotent).
