@@ -638,7 +638,6 @@ if ($Selected -contains 'COWORK') {
     }
 
     if ($canProceed) {
-        # Clone or pull
         if (-not (Test-Path (Join-Path $CoworkDir '.git'))) {
             Write-Info "Cloning Exploitacious/COWORK to $CoworkDir..."
             gh repo clone Exploitacious/COWORK $CoworkDir
@@ -649,43 +648,118 @@ if ($Selected -contains 'COWORK') {
                 $canProceed = $false
             }
         } else {
-            Write-Info 'COWORK already cloned; pulling latest...'
+            # Idempotent sync — handles dirty working trees by stashing local
+            # edits with a labeled timestamp, pulling, then attempting to
+            # restore. If restore conflicts, stash stays for manual recovery
+            # and setup continues. Never destroys local work silently.
+            Write-Info 'COWORK already cloned; syncing...'
             Push-Location $CoworkDir
-            git pull --ff-only 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Warn 'git pull failed (uncommitted changes?)' }
+
+            $stashLabel = ''
+            # Detect modified-tracked OR staged-but-uncommitted.
+            git diff --quiet HEAD 2>$null
+            $hasUnstaged = ($LASTEXITCODE -ne 0)
+            git diff --cached --quiet 2>$null
+            $hasStaged = ($LASTEXITCODE -ne 0)
+
+            if ($hasUnstaged -or $hasStaged) {
+                $stashLabel = "setup-auto-" + (Get-Date -Format 'yyyy-MM-ddTHH-mm-ssZ' -AsUTC)
+                Write-Info "Uncommitted changes detected — stashing as '$stashLabel'..."
+                git stash push -m $stashLabel 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warn "git stash failed. Skipping sync. Inspect: cd $CoworkDir; git status"
+                    Pop-Location
+                    return
+                }
+            }
+
+            git pull --ff-only 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success 'COWORK synced to origin.'
+            } else {
+                Write-Warn 'git pull --ff-only failed (diverged history, detached HEAD, or remote config?). Continuing with local HEAD.'
+                Write-Info "Inspect manually: cd $CoworkDir; git status; git log --oneline -5"
+            }
+
+            # Restore stash if we made one.
+            if ($stashLabel) {
+                $stashList = (git stash list 2>$null)
+                $stashRef = ($stashList | Select-String -Pattern $stashLabel -SimpleMatch | Select-Object -First 1).ToString()
+                if ($stashRef -match '^(stash@\{\d+\})') {
+                    $ref = $Matches[1]
+                    git stash pop $ref 2>$null | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success 'Local changes restored from stash.'
+                    } else {
+                        Write-Warn "Stash pop conflicted. Local changes preserved in stash '$stashLabel'."
+                        Write-Info "Recover with: cd $CoworkDir; git stash list; git stash apply <stash@{N}>"
+                    }
+                }
+            }
+
             Pop-Location
         }
     }
 
-    if ($canProceed -and (Test-Path (Join-Path $CoworkDir 'AGENTS'))) {
-        # Create runtime dirs (gitignored)
-        Write-Info 'Creating runtime dirs...'
-        $runtimeDirs = @('manifest.d', 'tasks', 'decisions', 'archive', 'inbox', 'outbox', 'pulse', 'tmp', 'journal')
-        foreach ($dir in $runtimeDirs) {
-            $path = Join-Path $CoworkDir "AGENTS\runtime\$dir"
-            if (-not (Test-Path $path)) {
-                New-Item -ItemType Directory -Path $path -Force | Out-Null
-            }
-        }
-
-        # Add AGENTS/bin to PATH via PS profile (idempotent)
-        $agentsBin = Join-Path $CoworkDir 'AGENTS\bin'
+    # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
+    # lives under WORKFORCE\FLEETPROJECTS\<slug>\runtime\ and is created
+    # lazily by ac-register, not at clone time.
+    if ($canProceed -and (Test-Path (Join-Path $CoworkDir 'WORKFORCE'))) {
+        # Add WORKFORCE/bin to PATH via PS profile (idempotent + clean up legacy AGENTS reference).
+        $workforceBin = Join-Path $CoworkDir 'WORKFORCE\bin'
         $profilePath = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'
         if (Test-Path $profilePath) {
             $profileContent = Get-Content $profilePath -Raw
-            if ($profileContent -notmatch 'COWORK.*AGENTS.*bin') {
-                $pathLine = "`n# --- COWORK Multi-Agent Coordination ---`n`$env:Path = `"$agentsBin;`$env:Path`""
-                Add-Content -Path $profilePath -Value $pathLine
-                Write-Success 'Added AGENTS/bin to PATH in PowerShell profile.'
-            } else {
-                Write-Info 'AGENTS/bin already on PATH in profile.'
+            $alreadyWired = $profileContent -match 'COWORK.*WORKFORCE.*bin'
+            $hasLegacy    = $profileContent -match 'COWORK.*AGENTS.*bin'
+
+            if ($hasLegacy -and -not $alreadyWired) {
+                # Remove legacy two-line block (header comment + AGENTS\bin export).
+                Write-Info 'Removing legacy COWORK\AGENTS\bin export from profile.'
+                $cleaned = $profileContent -replace "(?ms)^\s*#\s*---\s*COWORK Multi-Agent Coordination\s*---\s*\r?\n\s*\`$env:Path\s*=.*?AGENTS\\bin.*?(\r?\n)", ''
+                Set-Content -Path $profilePath -Value $cleaned -NoNewline
+                $profileContent = $cleaned
+                $hasLegacy = $false
             }
+
+            if (-not $alreadyWired) {
+                $pathLine = "`n# --- COWORK Multi-Agent Coordination ---`n`$env:Path = `"$workforceBin;`$env:Path`""
+                Add-Content -Path $profilePath -Value $pathLine
+                Write-Success 'Added WORKFORCE/bin to PATH in PowerShell profile.'
+            } else {
+                Write-Info 'WORKFORCE/bin already on PATH in profile.'
+            }
+        }
+
+        # Initialize Claude Code auto-memory git-sync (Option A doctrine).
+        # See ~\COWORK\WORKFORCE\FLEETPROJECTS\project-leisure\runtime\decisions\
+        #     2026-05-13__memory-sync-doctrine.md
+        # Script is idempotent: safe on fresh installs, existing dirs, and re-runs.
+        # Requires Windows Developer Mode (Settings → For Developers) OR an elevated
+        # PowerShell session for the symlink creation step.
+        $memInit = Join-Path $CoworkDir 'WORKFORCE\bin\ac-memory-init.ps1'
+        if (Test-Path $memInit) {
+            Write-Info 'Initializing Claude Code auto-memory git-sync...'
+            try {
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $memInit
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success 'Memory sync initialized (or already in place).'
+                } elseif ($LASTEXITCODE -eq 2) {
+                    Write-Warn 'ac-memory-init: .gitignore excludes the target path. Fix .gitignore then re-run.'
+                } else {
+                    Write-Warn "ac-memory-init.ps1 exited non-zero (rc=$LASTEXITCODE). Likely cause: Developer Mode not enabled OR not running as Administrator. Enable Dev Mode (Settings → Update & Security → For Developers) or re-run as admin."
+                }
+            } catch {
+                Write-Warn "ac-memory-init.ps1 failed: $_"
+            }
+        } else {
+            Write-Info 'ac-memory-init.ps1 not present yet — skipping memory sync init.'
         }
 
         Write-Success 'COWORK deployed.'
         Write-Info 'Activation triggers: type ACTIVATE AGENT or ACTIVATE COORDINATOR in any Claude Code session.'
     } elseif ($canProceed) {
-        Write-Warn 'COWORK/AGENTS/ not present in this branch. Skipping coordination setup.'
+        Write-Warn 'COWORK/WORKFORCE/ not present in this branch. Skipping coordination setup.'
     }
 }
 

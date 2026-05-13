@@ -1556,36 +1556,105 @@ EOF
         return
       fi
     else
-      msg_info "COWORK already cloned; pulling latest..."
-      (cd "$COWORK_DIR" && git pull --ff-only) || msg_warn "git pull failed (uncommitted changes?)"
+      # Idempotent sync — handles dirty working trees by stashing local edits
+      # with a labeled timestamp, pulling, then attempting to restore.
+      # If restore conflicts, the stash stays in `git stash list` for manual
+      # recovery and setup continues. Never destroys local work silently.
+      msg_info "COWORK already cloned; syncing..."
+      (
+        cd "$COWORK_DIR" || exit 1
+
+        local stash_label=""
+        # Detect modified-tracked OR staged-but-uncommitted changes.
+        if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+          stash_label="setup-auto-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          msg_info "Uncommitted changes detected — stashing as '$stash_label'..."
+          if ! git stash push -m "$stash_label" >/dev/null 2>&1; then
+            msg_warn "git stash failed. Skipping sync. Inspect: cd $COWORK_DIR && git status"
+            exit 1
+          fi
+        fi
+
+        if git pull --ff-only 2>/dev/null; then
+          msg_success "COWORK synced to origin."
+        else
+          msg_warn "git pull --ff-only failed (diverged history, detached HEAD, or remote config?). Continuing with local HEAD."
+          msg_info "Inspect manually: cd $COWORK_DIR && git status && git log --oneline -5"
+        fi
+
+        # Restore stash if we made one.
+        if [ -n "$stash_label" ]; then
+          local stash_ref
+          stash_ref=$(git stash list 2>/dev/null | grep -F "$stash_label" | head -1 | sed -E 's/^([^:]+):.*/\1/')
+          if [ -n "$stash_ref" ]; then
+            if git stash pop "$stash_ref" >/dev/null 2>&1; then
+              msg_success "Local changes restored from stash."
+            else
+              # Pop conflicted — leave the stash in place + tell user.
+              msg_warn "Stash pop conflicted. Local changes preserved in stash '$stash_label'."
+              msg_info "Recover with: cd $COWORK_DIR && git stash list && git stash apply <stash@{N}>"
+            fi
+          fi
+        fi
+      )
     fi
 
-    if [ ! -d "$COWORK_DIR/AGENTS" ]; then
-      msg_warn "COWORK/AGENTS/ not present in this branch. Skipping coordination setup."
+    # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
+    # lives under WORKFORCE/FLEETPROJECTS/<slug>/runtime/ and is created
+    # lazily by ac-register, not at clone time.
+    if [ ! -d "$COWORK_DIR/WORKFORCE" ]; then
+      msg_warn "COWORK/WORKFORCE/ not present in this branch. Skipping coordination setup."
       return
     fi
 
-    # Ensure per-machine runtime dirs exist (these are gitignored).
-    msg_info "Creating runtime dirs..."
-    mkdir -p "$COWORK_DIR/AGENTS/runtime"/{manifest.d,tasks,decisions,archive,inbox,outbox,pulse,tmp,journal}
-
     # Make bin/ scripts executable.
-    if [ -d "$COWORK_DIR/AGENTS/bin" ]; then
-      chmod +x "$COWORK_DIR/AGENTS/bin"/* 2>/dev/null
+    if [ -d "$COWORK_DIR/WORKFORCE/bin" ]; then
+      chmod +x "$COWORK_DIR/WORKFORCE/bin"/* 2>/dev/null
     fi
 
-    # Add AGENTS/bin to PATH via shellrc fragment (idempotent).
+    # Add WORKFORCE/bin to PATH via shellrc fragment (idempotent).
     local SHELLRC
     if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
       SHELLRC="$HOME/.zshrc"
     else
       SHELLRC="$HOME/.bashrc"
     fi
-    if ! grep -q 'COWORK/AGENTS/bin' "$SHELLRC" 2>/dev/null; then
-      printf '\n# --- COWORK Multi-Agent Coordination ---\nexport PATH="$HOME/COWORK/AGENTS/bin:$PATH"\n' >> "$SHELLRC"
-      msg_success "Added AGENTS/bin to PATH in $SHELLRC"
+    if ! grep -q 'COWORK/WORKFORCE/bin' "$SHELLRC" 2>/dev/null; then
+      # Clean up legacy AGENTS/bin export if it's still in place.
+      if grep -q 'COWORK/AGENTS/bin' "$SHELLRC" 2>/dev/null; then
+        msg_info "Removing legacy COWORK/AGENTS/bin export from $SHELLRC"
+        # Match the two-line block: comment header + export.
+        sed -i.bak \
+          -e '/# --- COWORK Multi-Agent Coordination ---/{N;/COWORK\/AGENTS\/bin/d;}' \
+          "$SHELLRC"
+        rm -f "$SHELLRC.bak"
+      fi
+      printf '\n# --- COWORK Multi-Agent Coordination ---\nexport PATH="$HOME/COWORK/WORKFORCE/bin:$PATH"\n' >> "$SHELLRC"
+      msg_success "Added WORKFORCE/bin to PATH in $SHELLRC"
     else
-      msg_info "AGENTS/bin already on PATH in $SHELLRC"
+      msg_info "WORKFORCE/bin already on PATH in $SHELLRC"
+    fi
+
+    # Initialize Claude Code auto-memory git-sync (Option A doctrine).
+    # See ~/COWORK/WORKFORCE/FLEETPROJECTS/project-leisure/runtime/decisions/
+    #     2026-05-13__memory-sync-doctrine.md
+    # Script is idempotent: safe on fresh installs (creates empty target +
+    # symlink), on existing real-dir installs (move + symlink), and on
+    # already-initialized machines (no-op).
+    if [ -x "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" ]; then
+      msg_info "Initializing Claude Code auto-memory git-sync..."
+      if "$COWORK_DIR/WORKFORCE/bin/ac-memory-init"; then
+        msg_success "Memory sync initialized (or already in place)."
+      else
+        local rc=$?
+        if [ "$rc" -eq 2 ]; then
+          msg_warn "ac-memory-init: .gitignore excludes the target path. Fix .gitignore then re-run."
+        else
+          msg_warn "ac-memory-init exited non-zero (rc=$rc) — inspect manually."
+        fi
+      fi
+    else
+      msg_info "ac-memory-init not present yet — skipping memory sync init."
     fi
 
     # One-time migration from legacy ~/.agent-coordination/ if present.
@@ -1594,10 +1663,10 @@ EOF
       echo -ne "${YELLOW}Run migrate-from-legacy now? [y/N]: ${NC}"
       read -r REPLY
       if [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        if "$COWORK_DIR/AGENTS/bin/migrate-from-legacy"; then
+        if "$COWORK_DIR/WORKFORCE/bin/migrate-from-legacy"; then
           msg_success "Legacy coordination migrated."
         else
-          msg_warn "Migration failed. Inspect manually: $COWORK_DIR/AGENTS/bin/migrate-from-legacy"
+          msg_warn "Migration failed. Inspect manually: $COWORK_DIR/WORKFORCE/bin/migrate-from-legacy"
         fi
       fi
     fi
