@@ -1694,11 +1694,28 @@ EOF
       _add_wrapper_source "$HOME/.bashrc" "\$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
 
       # Root's shellrcs — use absolute path (root's $HOME is /root, not master's).
+      # Auto-heal: earlier versions of this script wrote the source line
+      # using "$HOME/COWORK/..." which resolves to /root/COWORK on root and
+      # silently fails (the 2>/dev/null hides the error). Detect that broken
+      # form and replace it with the absolute path.
       if sudo -n true 2>/dev/null; then
         local root_abs="$wrapper_file"  # absolute path, master-owned
         for root_rc in /root/.zshrc /root/.bashrc; do
           if sudo test -f "$root_rc"; then
-            if ! sudo grep -qF "$marker" "$root_rc" 2>/dev/null; then
+            if sudo grep -qF "$marker" "$root_rc" 2>/dev/null; then
+              # Marker present — is the source line correct?
+              if sudo grep -qF 'source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"' "$root_rc" 2>/dev/null; then
+                msg_info "Healing broken \$HOME-based wrapper source in $root_rc"
+                # Delete the marker line + the next line (the broken source).
+                # Then re-append with the correct absolute path.
+                sudo sed -i.bak '/# --- COWORK Claude wrapper (root\/master safety) ---/{N;d;}' "$root_rc"
+                sudo rm -f "${root_rc}.bak"
+                sudo bash -c "printf '\n%s\nsource %s 2>/dev/null\n' '$marker' '$root_abs' >> '$root_rc'"
+                msg_success "Healed wrapper source in $root_rc"
+              fi
+              # else: marker + source line both correct, no-op
+            else
+              # Marker absent — fresh append
               sudo bash -c "printf '\n%s\nsource %s 2>/dev/null\n' '$marker' '$root_abs' >> '$root_rc'"
               msg_success "Wired wrapper into $root_rc"
             fi
