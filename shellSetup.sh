@@ -1646,26 +1646,69 @@ EOF
     # Initialize Claude Code auto-memory git-sync (Option A doctrine).
     # See ~/COWORK/WORKFORCE/FLEETPROJECTS/project-leisure/runtime/decisions/
     #     2026-05-13__memory-sync-doctrine.md
-    # Script is idempotent: safe on fresh installs (creates empty target +
-    # symlink), on existing real-dir installs (move + symlink), and on
-    # already-initialized machines (no-op).
+    # Script is idempotent + walks all encoded cwd subdirs Claude Code has
+    # created (master's $HOME, root's $HOME, per-project sessions like
+    # ~/COWORK, etc.), symlinking each into .claude-memory/<host>-<encoded>/.
     if [ -x "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" ]; then
-      msg_info "Initializing Claude Code auto-memory git-sync..."
-      # --auto-commit: if init creates a new per-host memory subdir, stage +
-      # commit + push it so the workspace machine can pull this host's memories.
-      # Only commits the exact target path, no other modified files.
+      msg_info "Initializing Claude Code auto-memory git-sync (all cwd subdirs)..."
       if "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" --auto-commit; then
         msg_success "Memory sync initialized (or already in place)."
       else
         local rc=$?
         if [ "$rc" -eq 2 ]; then
-          msg_warn "ac-memory-init: .gitignore excludes the target path. Fix .gitignore then re-run."
+          msg_warn "ac-memory-init: .gitignore excludes target path. Fix .gitignore then re-run."
         else
           msg_warn "ac-memory-init exited non-zero (rc=$rc) — inspect manually."
         fi
       fi
     else
       msg_info "ac-memory-init not present yet — skipping memory sync init."
+    fi
+
+    # Wire the claude wrapper into master's and root's shellrcs. The
+    # wrapper handles two issues that surface when claude is invoked
+    # under both UIDs on the same host:
+    #   1. Root-mode --permission-mode auto auto-injection (claude refuses
+    #      bypassPermissions when running as root; this overrides at CLI
+    #      level without touching settings.json).
+    #   2. Cross-user flock (master + root share state via symlinks; concurrent
+    #      claude processes can corrupt .credentials.json, sessions, etc).
+    # Idempotent — marker-comment check prevents duplicate appends.
+    local wrapper_file="$COWORK_DIR/WORKFORCE/bin/claude-wrapper.sh"
+    if [ -f "$wrapper_file" ]; then
+      msg_info "Wiring Claude wrapper into master + root shellrcs..."
+      local marker="# --- COWORK Claude wrapper (root/master safety) ---"
+
+      _add_wrapper_source() {
+        local target="$1" source_path="$2"
+        [ -f "$target" ] || return 0  # skip absent shellrc
+        if grep -qF "$marker" "$target" 2>/dev/null; then
+          return 0  # already wired
+        fi
+        printf '\n%s\nsource "%s" 2>/dev/null\n' "$marker" "$source_path" >> "$target"
+        msg_success "Wired wrapper into $target"
+      }
+
+      # Master's shellrcs — use $HOME-relative source.
+      _add_wrapper_source "$HOME/.zshrc"  "\$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
+      _add_wrapper_source "$HOME/.bashrc" "\$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
+
+      # Root's shellrcs — use absolute path (root's $HOME is /root, not master's).
+      if sudo -n true 2>/dev/null; then
+        local root_abs="$wrapper_file"  # absolute path, master-owned
+        for root_rc in /root/.zshrc /root/.bashrc; do
+          if sudo test -f "$root_rc"; then
+            if ! sudo grep -qF "$marker" "$root_rc" 2>/dev/null; then
+              sudo bash -c "printf '\n%s\nsource %s 2>/dev/null\n' '$marker' '$root_abs' >> '$root_rc'"
+              msg_success "Wired wrapper into $root_rc"
+            fi
+          fi
+        done
+      else
+        msg_warn "passwordless sudo unavailable — root shellrcs not wired. Manual: add 'source $wrapper_file' to /root/.zshrc + /root/.bashrc"
+      fi
+    else
+      msg_info "claude-wrapper.sh not present yet — skipping wrapper wiring."
     fi
 
     # One-time migration from legacy ~/.agent-coordination/ if present.
