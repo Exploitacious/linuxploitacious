@@ -330,6 +330,31 @@ EOF
     msg_success "Base packages installed."
   }
 
+  install_cloudflared() {
+    msg_header "Installing cloudflared (Cloudflare Tunnel + Access)"
+    if command -v cloudflared >/dev/null 2>&1; then
+      msg_info "cloudflared already installed: $(cloudflared --version 2>&1 | head -1)"
+      return 0
+    fi
+    local CF_ARCH="amd64"
+    case "$(uname -m)" in
+      aarch64|arm64) CF_ARCH="arm64" ;;
+      x86_64)        CF_ARCH="amd64" ;;
+    esac
+    local CF_TMP
+    CF_TMP=$(mktemp -d)
+    msg_info "Downloading cloudflared-linux-${CF_ARCH} from GitHub releases..."
+    if ! curl -fsSL -o "$CF_TMP/cloudflared" \
+         "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}"; then
+      msg_error "cloudflared download failed."
+      rm -rf "$CF_TMP"
+      return 1
+    fi
+    sudo install -m 0755 "$CF_TMP/cloudflared" /usr/local/bin/cloudflared
+    rm -rf "$CF_TMP"
+    msg_success "cloudflared installed: $(cloudflared --version 2>&1 | head -1)"
+  }
+
   install_brave() {
     msg_header "Installing Brave Browser"
     
@@ -1790,6 +1815,8 @@ EOF
     elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
       install_fedora_base
     fi
+    # OS-agnostic binary install — Cloudflare doesn't ship apt repo for every distro/codename
+    install_cloudflared
   fi
 
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi

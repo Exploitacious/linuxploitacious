@@ -58,7 +58,7 @@ The script uses a two-stage architecture:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, etc.) | ON |
+| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, cloudflared, etc.) | ON |
 | NODE | Node.js via NVM and pnpm (required by openclaw tooling) | ON |
 | PYTHON | Python via pyenv + pip packages | ON |
 | SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
