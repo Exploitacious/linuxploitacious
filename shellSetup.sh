@@ -1798,6 +1798,39 @@ EOF
       fi
     fi
 
+    # --- Skills & commands symlinks (post-pull) ---
+    # deploy_claude_config() may have run before COWORK was pulled, so
+    # the skills/commands dirs didn't exist yet. Create the symlinks now
+    # that COWORK is guaranteed present.
+    local CLAUDE_HOME="$HOME/.claude"
+    local COWORK_CONFIG="$COWORK_DIR/.claude-config"
+    if [ -d "$CLAUDE_HOME" ] && [ -d "$COWORK_CONFIG" ]; then
+      for subdir in skills commands; do
+        local src="$COWORK_CONFIG/$subdir"
+        local tgt="$CLAUDE_HOME/$subdir"
+
+        [ ! -d "$src" ] && continue
+
+        if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
+          msg_info "Already linked: $tgt"
+          continue
+        fi
+
+        # Backup existing real directory
+        if [ -d "$tgt" ] && [ ! -L "$tgt" ]; then
+          local backup="${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
+          mv "$tgt" "$backup"
+          msg_warn "Backed up existing $subdir/ to $backup"
+        fi
+
+        # Remove stale symlink
+        [ -L "$tgt" ] && rm "$tgt"
+
+        ln -s "$src" "$tgt"
+        msg_success "Linked: $tgt -> $src"
+      done
+    fi
+
     msg_success "COWORK deployed. Open a new shell, then test with 'ac-status'."
     msg_info "Activation triggers: type 'ACTIVATE AGENT' or 'ACTIVATE COORDINATOR' in any Claude Code session."
   }
