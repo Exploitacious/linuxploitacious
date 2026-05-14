@@ -170,11 +170,5 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
   unset _tmux_sessions choice name target i s idx
 fi
 
-<<<<<<< Updated upstream
-=======
-# --- COWORK Multi-Agent Coordination ---
-export PATH="$HOME/COWORK/WORKFORCE/bin:$PATH"
-
->>>>>>> Stashed changes
 # --- COWORK Claude wrapper (root/master safety) ---
 source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null

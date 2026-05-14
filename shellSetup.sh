@@ -1530,6 +1530,37 @@ EOF
       ln -s "$source" "$target"
       msg_success "Linked: $target -> $source"
     done
+
+    # --- Skills & commands from COWORK (if deployed) ---
+    # Personal skills/commands live in COWORK/.claude-config/ and get
+    # symlinked into ~/.claude/ so they auto-load in every session.
+    local COWORK_CONFIG="$HOME/COWORK/.claude-config"
+    if [ -d "$COWORK_CONFIG" ]; then
+      for subdir in skills commands; do
+        local src="$COWORK_CONFIG/$subdir"
+        local tgt="$CLAUDE_DIR/$subdir"
+
+        [ ! -d "$src" ] && continue
+
+        if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
+          msg_info "Already linked: $tgt"
+          continue
+        fi
+
+        # Backup existing real directory
+        if [ -d "$tgt" ] && [ ! -L "$tgt" ]; then
+          local backup="${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
+          mv "$tgt" "$backup"
+          msg_warn "Backed up existing $subdir/ to $backup"
+        fi
+
+        # Remove stale symlink
+        [ -L "$tgt" ] && rm "$tgt"
+
+        ln -s "$src" "$tgt"
+        msg_success "Linked: $tgt -> $src"
+      done
+    fi
   }
 
   # --- CLAUDE CODE PLUGINS (runs after config so settings.json exists) ---

@@ -134,9 +134,11 @@ $MenuItems = @(
     [PSCustomObject]@{ Key = 'OMP';     On = $true;  Label = 'Oh My Posh';        Desc = 'Prompt engine + catppuccin theme' }
     [PSCustomObject]@{ Key = 'FONT';    On = $true;  Label = 'JetBrains Mono NF'; Desc = 'Nerd Font with ligatures' }
     [PSCustomObject]@{ Key = 'FETCH';   On = $true;  Label = 'Fastfetch';         Desc = 'System info on shell launch' }
+    [PSCustomObject]@{ Key = 'NODE';    On = $true;  Label = 'Node.js';           Desc = 'fnm + Node LTS + pnpm' }
+    [PSCustomObject]@{ Key = 'PYTHON';  On = $true;  Label = 'Python';            Desc = 'Python 3, pip globals, pipx' }
     [PSCustomObject]@{ Key = 'JQ';      On = $true;  Label = 'jq';               Desc = 'JSON processor (Claude statusline)' }
-    [PSCustomObject]@{ Key = 'CLAUDE';  On = $true;  Label = 'Claude Code';       Desc = 'AI coding assistant' }
-    [PSCustomObject]@{ Key = 'CONFIGS'; On = $true;  Label = 'Deploy configs';    Desc = 'Symlink all dotfiles' }
+    [PSCustomObject]@{ Key = 'CLAUDE';  On = $true;  Label = 'Claude Code';       Desc = 'AI coding assistant + OpenCode' }
+    [PSCustomObject]@{ Key = 'CONFIGS'; On = $true;  Label = 'Deploy configs';    Desc = 'Symlink all dotfiles + Claude config' }
     [PSCustomObject]@{ Key = 'APPS';    On = $false; Label = 'Extra apps';        Desc = 'Browsers, dev tools, productivity' }
     [PSCustomObject]@{ Key = 'TWEAKS';  On = $false; Label = 'System tweaks';     Desc = 'Dark mode, Explorer, taskbar prefs' }
     [PSCustomObject]@{ Key = 'SSHKEY';  On = $false; Label = 'GitHub SSH + CLI';  Desc = 'SSH key, gh auth, key upload' }
@@ -160,7 +162,7 @@ while ($true) {
     }
 
     Write-Host ''
-    $input = Read-Host '  Toggle (1-12 / all / none / q=quit) or Enter to proceed'
+    $input = Read-Host '  Toggle (1-14 / all / none / q=quit) or Enter to proceed'
 
     if ([string]::IsNullOrWhiteSpace($input)) { break }
     if ($input -match '^[Qq]') { Write-Warn 'Aborted by user.'; return }
@@ -221,11 +223,13 @@ function Deploy-Symlink {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
     }
 
-    # Check if symlink already points to correct source
+    # Check if symlink/junction already points to correct source
     if (Test-Path $Target) {
         $item = Get-Item $Target -Force
-        if ($item.LinkType -eq 'SymbolicLink') {
+        if ($item.LinkType -in @('SymbolicLink', 'Junction')) {
             $linkTarget = ($item | Select-Object -ExpandProperty Target) -join ''
+            # Junctions may store \\?\ prefix — normalize for comparison
+            $linkTarget = $linkTarget -replace '^\\\\\?\\', ''
             if ($linkTarget -eq $Source) {
                 Write-Info "Already linked: $Target"
                 return
@@ -242,10 +246,22 @@ function Deploy-Symlink {
         New-Item -ItemType SymbolicLink -Path $Target -Target $Source -Force -ErrorAction Stop | Out-Null
         Write-Success "Symlinked: $Target -> $Source"
     } catch {
-        # Fallback to copy if symlinks unavailable
-        Write-Warn 'Symlink failed (enable Developer Mode or run as Admin). Copying instead.'
-        Copy-Item $Source $Target -Force
-        Write-Success "Copied: $Source -> $Target"
+        $isDir = Test-Path $Source -PathType Container
+        if ($isDir) {
+            # Directories: try NTFS junction (no admin required for local paths)
+            try {
+                New-Item -ItemType Junction -Path $Target -Target $Source -Force -ErrorAction Stop | Out-Null
+                Write-Success "Junction: $Target -> $Source"
+            } catch {
+                Write-Warn 'Symlink & junction failed. Copying directory instead.'
+                Copy-Item $Source $Target -Recurse -Force
+                Write-Success "Copied (dir): $Source -> $Target"
+            }
+        } else {
+            Write-Warn 'Symlink failed (enable Developer Mode or run as Admin). Copying instead.'
+            Copy-Item $Source $Target -Force
+            Write-Success "Copied: $Source -> $Target"
+        }
     }
 }
 
@@ -312,21 +328,162 @@ if ($Selected -contains 'JQ') {
     Install-WingetPackage -Id 'jqlang.jq' -Name 'jq'
 }
 
-if ($Selected -contains 'CLAUDE') {
-    Write-Header 'Claude Code'
-    if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Write-Info 'Claude Code already installed.'
+# ═══════════════════════════════════════════════════════════════════════════════
+#  NODE — fnm + Node LTS + pnpm
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if ($Selected -contains 'NODE') {
+    Write-Header 'Node.js (fnm + LTS + pnpm)'
+
+    # Install fnm (Fast Node Manager) via winget
+    Install-WingetPackage -Id 'Schniz.fnm' -Name 'Fast Node Manager (fnm)'
+    Refresh-Path
+
+    if (Get-Command fnm -ErrorAction SilentlyContinue) {
+        # Configure fnm environment for this session
+        fnm env --use-on-cd --shell power-shell | Out-String | Invoke-Expression
+
+        # Install Node LTS if no default version is set
+        $fnmDefault = fnm current 2>$null
+        if (-not $fnmDefault -or $fnmDefault -eq 'none') {
+            Write-Info 'Installing Node.js LTS...'
+            fnm install --lts
+            fnm default lts-latest
+            Write-Success 'Node LTS installed and set as default.'
+        } else {
+            Write-Info "Node already managed by fnm: $fnmDefault"
+            Write-Info 'Checking for LTS updates...'
+            fnm install --lts 2>$null
+        }
+        Refresh-Path
+
+        # Enable pnpm via corepack
+        if (Get-Command corepack -ErrorAction SilentlyContinue) {
+            Write-Info 'Enabling pnpm via corepack...'
+            $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
+            corepack enable pnpm 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success 'pnpm enabled via corepack.'
+            } else {
+                Write-Warn 'corepack enable pnpm failed. Run manually after restart.'
+            }
+        } else {
+            Write-Warn 'corepack not found — install Node first, then re-run.'
+        }
     } else {
-        Write-Info 'Installing Claude Code...'
-        winget install --id Anthropic.ClaudeCode -e --accept-package-agreements --accept-source-agreements 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warn 'winget install failed. Trying npm...'
+        Write-Warn 'fnm not found after install. Restart terminal and re-run.'
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PYTHON — Python 3, pip globals, pipx
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if ($Selected -contains 'PYTHON') {
+    Write-Header 'Python Environment'
+
+    # Install Python 3 via winget
+    Install-WingetPackage -Id 'Python.Python.3.13' -Name 'Python 3.13'
+    Refresh-Path
+
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $pyVer = python --version 2>$null
+        Write-Info "Python installed: $pyVer"
+
+        # Upgrade pip, setuptools, wheel
+        Write-Info 'Upgrading pip, setuptools, wheel...'
+        python -m pip install --upgrade pip setuptools wheel 2>$null | Out-Null
+
+        # Core global tools (matching Linux shellSetup.sh)
+        Write-Info 'Installing core Python tools...'
+        $pipPackages = @(
+            'pipx', 'poetry', 'virtualenv', 'pre-commit',
+            'black', 'ruff', 'mypy', 'isort',
+            'pytest', 'pytest-cov', 'pytest-asyncio',
+            'ipython', 'requests', 'httpx',
+            'rich', 'typer', 'click',
+            'python-dotenv', 'pyyaml'
+        )
+        python -m pip install --upgrade ($pipPackages -join ' ') 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success 'Core Python tools installed.'
+        } else {
+            Write-Warn 'Some pip packages may have failed. Check output above.'
+        }
+
+        # Ensure pipx is on PATH
+        python -m pipx ensurepath 2>$null | Out-Null
+        Refresh-Path
+
+        # Install isolated tools via pipx
+        Write-Info 'Installing jupyter and pylint via pipx...'
+        foreach ($pkg in @('jupyter', 'pylint')) {
+            python -m pipx install $pkg 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "pipx: $pkg installed."
+            } else {
+                # pipx returns non-zero if already installed
+                Write-Info "pipx: $pkg already installed or skipped."
+            }
+        }
+    } else {
+        Write-Warn 'Python not found after install. Restart terminal and re-run.'
+    }
+}
+
+if ($Selected -contains 'CLAUDE') {
+    Write-Header 'AI Coding Tools (Claude Code + OpenCode)'
+
+    # --- Legacy cleanup (mirrors shellSetup.sh install_ai_tools) ---
+    # Remove old npm/pnpm global installs that conflict with native installers
+    Write-Info 'Cleaning up legacy AI tool installs...'
+    foreach ($legacyPkg in @('@anthropic-ai/claude-code', 'opencode-ai', '@google/gemini-cli')) {
+        if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+            pnpm remove -g $legacyPkg 2>$null | Out-Null
+        }
+        if (Get-Command npm -ErrorAction SilentlyContinue) {
+            npm uninstall -g $legacyPkg 2>$null | Out-Null
+        }
+    }
+    # Remove deprecated ~/.gemini directory
+    $geminiDir = Join-Path $env:USERPROFILE '.gemini'
+    if (Test-Path $geminiDir) {
+        Remove-Item $geminiDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Info 'Removed deprecated ~/.gemini directory.'
+    }
+
+    # --- Claude Code (always refresh — matches Linux behavior) ---
+    Write-Info 'Installing/updating Claude Code...'
+    winget install --id Anthropic.ClaudeCode -e --accept-package-agreements --accept-source-agreements 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        # winget returns non-zero if already up to date — check if it's actually present
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+            Write-Warn 'winget install failed. Trying npm fallback...'
             if (Get-Command npm -ErrorAction SilentlyContinue) {
                 npm install -g @anthropic-ai/claude-code
             } else {
                 Write-Warn 'Install Claude Code manually: https://claude.ai/code'
             }
         }
+    }
+    Refresh-Path
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        Write-Success 'Claude Code ready.'
+    }
+
+    # --- OpenCode ---
+    Write-Info 'Installing/updating OpenCode...'
+    try {
+        Invoke-RestMethod -Uri 'https://opencode.ai/install' | Invoke-Expression 2>$null
+        Refresh-Path
+        if (Get-Command opencode -ErrorAction SilentlyContinue) {
+            Write-Success 'OpenCode ready.'
+        } else {
+            Write-Info 'OpenCode installed (may need terminal restart).'
+        }
+    } catch {
+        Write-Warn "OpenCode install failed: $_"
+        Write-Warn 'Install manually: https://opencode.ai'
     }
 }
 
@@ -351,7 +508,6 @@ if ($Selected -contains 'APPS') {
 
         # --- Dev tools ---
         @{ Id = 'MongoDB.Compass.Full';         Name = 'MongoDB Compass' }
-        @{ Id = 'Schniz.fnm';                   Name = 'Fast Node Manager (fnm)' }
         @{ Id = 'dorssel.usbipd-win';           Name = 'usbipd-win (USB/IP for WSL)' }
         @{ Id = 'Microsoft.WSL';                Name = 'Windows Subsystem for Linux' }
         @{ Id = 'Canonical.Ubuntu';             Name = 'Ubuntu (WSL)' }
@@ -805,16 +961,67 @@ if ($Selected -contains 'CONFIGS') {
         Write-Warn 'Windows Terminal not found — skipping settings deploy.'
     }
 
-    # Claude Code statusline (copy — symlink requires admin in ~/.claude/)
-    $statuslineSource = Join-Path $RepoDir 'claude\.claude\statusline.sh'
-    $statuslineTarget = Join-Path $env:USERPROFILE '.claude\statusline.sh'
-    if (Test-Path (Split-Path $statuslineTarget -Parent)) {
-        if (Test-Path $statuslineSource) {
-            Copy-Item $statuslineSource $statuslineTarget -Force
-            Write-Success "Copied: statusline.sh -> ~/.claude/statusline.sh"
+    # Fastfetch config
+    $ffSource = Join-Path $RepoDir 'fastfetch\.config\fastfetch\config.jsonc'
+    $ffTarget = Join-Path $env:USERPROFILE '.config\fastfetch\config.jsonc'
+    if (Test-Path $ffSource) {
+        Deploy-Symlink -Source $ffSource -Target $ffTarget
+    }
+
+    # --- Claude Code config (CLAUDE.md, settings.json, statusline.sh) ---
+    # Mirrors shellSetup.sh deploy_claude_config() — absolute symlinks.
+    # Deploy-Symlink falls back to copy if Developer Mode is off / not admin.
+    $claudeHome = Join-Path $env:USERPROFILE '.claude'
+    if (-not (Test-Path $claudeHome)) {
+        New-Item -ItemType Directory -Path $claudeHome -Force | Out-Null
+    }
+
+    $claudeSourceDir = Join-Path $RepoDir 'claude\.claude'
+    foreach ($file in @('CLAUDE.md', 'settings.json', 'statusline.sh')) {
+        $src = Join-Path $claudeSourceDir $file
+        $tgt = Join-Path $claudeHome $file
+        if (Test-Path $src) {
+            Deploy-Symlink -Source $src -Target $tgt
+        }
+    }
+
+    # --- Claude Code skills & commands from COWORK (if deployed) ---
+    # Personal skills/commands live in COWORK/.claude-config/ and get
+    # symlinked into ~/.claude/ so they're auto-loaded in every session.
+    $coworkConfigDir = Join-Path $env:USERPROFILE 'COWORK\.claude-config'
+    if (Test-Path $coworkConfigDir) {
+        foreach ($subdir in @('skills', 'commands')) {
+            $src = Join-Path $coworkConfigDir $subdir
+            $tgt = Join-Path $claudeHome $subdir
+            if (Test-Path $src) {
+                Deploy-Symlink -Source $src -Target $tgt
+            }
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CLAUDE PLUGINS — Install after CONFIGS deploys settings.json
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Unconditional — runs whenever claude is in PATH (matches shellSetup.sh behavior).
+# settings.json (deployed above) contains extraKnownMarketplaces for caveman.
+if (Get-Command claude -ErrorAction SilentlyContinue) {
+    Write-Header 'Claude Code Plugins'
+    Write-Info 'Registering caveman plugin marketplace...'
+    $marketplaceOut = & claude plugin marketplace add JuliusBrussee/caveman 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success 'Marketplace registered.'
+        Write-Info 'Installing caveman plugin...'
+        $pluginOut = & claude plugin install caveman@caveman 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success 'Caveman plugin installed.'
+        } else {
+            Write-Warn "Plugin install returned: $pluginOut"
+            Write-Warn 'Run manually: claude plugin install caveman@caveman'
         }
     } else {
-        Write-Warn 'Claude Code not initialized — run claude once first, then re-run setup.'
+        Write-Warn "Marketplace add returned: $marketplaceOut"
     }
 }
 
@@ -839,7 +1046,10 @@ if ($Selected -contains 'CONFIGS') {
     Write-Host '    powershell/profile.ps1      -> Documents/PowerShell/profile.ps1'
     Write-Host '    omp/.config/ohmyposh/*      -> ~/.config/ohmyposh/*'
     Write-Host '    windows-terminal/settings   -> AppData/.../WindowsTerminal/settings.json'
-    Write-Host '    claude/.claude/statusline   -> ~/.claude/statusline.sh'
+    Write-Host '    fastfetch/config.jsonc      -> ~/.config/fastfetch/config.jsonc'
+    Write-Host '    claude/.claude/CLAUDE.md    -> ~/.claude/CLAUDE.md'
+    Write-Host '    claude/.claude/settings.json-> ~/.claude/settings.json'
+    Write-Host '    claude/.claude/statusline.sh-> ~/.claude/statusline.sh'
     Write-Host ''
 }
 
