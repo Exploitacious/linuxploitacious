@@ -1,7 +1,11 @@
-# Linuxploitacious - Linux Shell and Config Setup
+# Linuxploitacious
 
-An interactive provisioning script for deploying a fully configured Linux environment. Optimized for Arch Linux and Debian/Kali (including WSL).
-Centralizes config files and scripts across multiple machines using GNU Stow and Git.
+An opinionated, interactive provisioning system for deploying a fully configured shell environment on **Linux** and **Windows**. The goal: same tools, same config, same experience on every machine.
+
+- **Linux** (`shellSetup.sh`): Arch Linux, Debian/Kali, WSL. Uses GNU Stow for config deployment.
+- **Windows** (`winSetup.ps1`): PowerShell 7, WezTerm, winget-based. Uses symlinks (with junction fallback) for config deployment.
+
+Both scripts are maintained in parallel and should be kept in sync when adding features. See [Keeping scripts in sync](#keeping-scripts-in-sync) below.
 
 ---
 
@@ -86,9 +90,66 @@ Claude Code configuration is deployed in two layers:
 
 **Plugins:** After Claude Code installs (via the always-on vendor installer), the script registers the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
 
+**Portable skills (via COWORK):** If `~/COWORK/.claude-config/skills/` exists, both setup scripts symlink it to `~/.claude/skills/`. Skills placed there are git-synced and auto-loaded in every Claude Code session on every machine. Same for `commands/`. This is how personal skills (like IT Glue Documentation) travel between machines without reinstalling.
+
 **ROOT sharing:** The ROOT option symlinks `~/.claude/` from the user account to `/root`, so both users share the same config, sessions, and credentials. The `claude/` stow package is intentionally excluded from ROOT's stow deployment to avoid conflicting with this symlink.
 
 **Personalizing Claude with a context directory:** The global CLAUDE.md includes a "Context Awareness" section that checks for `~/COWORK/CONTEXT/` at session start. If you fork this repo, replace that path with your own. The idea: keep a directory somewhere on your machine with markdown files that describe who you are, how you communicate, and how you want Claude to behave (`about-me.md`, `brand-voice.md`, `working-preferences.md`, or whatever fits). The global CLAUDE.md points Claude there so every session starts with that context, even when you're working in an unrelated project. You don't need a full COWORK setup -- any directory with a few context files works. Project-level `CLAUDE.md` files then layer on top for project-specific instructions.
+
+---
+
+## Windows Setup (`winSetup.ps1`)
+
+The Windows script mirrors the Linux experience as closely as possible. Run from an elevated PowerShell:
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+.\winSetup.ps1
+```
+
+### Windows Menu Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| PS7 | PowerShell 7 (winget) | ON |
+| WEZTERM | GPU terminal emulator | ON |
+| OMP | Oh My Posh + catppuccin theme | ON |
+| FONT | JetBrains Mono Nerd Font | ON |
+| FETCH | Fastfetch | ON |
+| NODE | fnm + Node LTS + pnpm (via corepack) | ON |
+| PYTHON | Python 3, pip globals, pipx tools | ON |
+| JQ | jq JSON processor (Claude statusline) | ON |
+| CLAUDE | Claude Code + OpenCode + legacy cleanup | ON |
+| CONFIGS | Symlink all dotfiles + Claude config + COWORK skills | ON |
+| APPS | Browsers, dev tools, productivity (opt-in) | OFF |
+| TWEAKS | Dark mode, Explorer, taskbar prefs | OFF |
+| SSHKEY | GitHub SSH + gh auth + key upload | OFF |
+| COWORK | Multi-Agent Coordination (needs SSH) | OFF |
+
+**Always runs (no menu toggle):** Claude Code plugin installation (caveman) after CONFIGS deploys `settings.json`.
+
+### Key differences from Linux
+
+| Concern | Linux | Windows |
+|---------|-------|---------|
+| Config deployment | GNU Stow (relative symlinks) | `Deploy-Symlink` (symlink → junction → copy fallback) |
+| Node version manager | NVM | fnm |
+| Terminal | tmux inside any terminal | WezTerm (native panes) |
+| Shell | Zsh + Oh My Zsh | PowerShell 7 + Oh My Posh |
+| Package manager | apt/pacman | winget |
+| Root sharing | Symlink `~/.claude/` to `/root` | N/A (single-user) |
+
+---
+
+## Keeping Scripts in Sync
+
+`shellSetup.sh` and `winSetup.ps1` are maintained in parallel. When adding a feature to one, check whether the other needs a matching change. The menu items should stay aligned — same names, same defaults, same order where practical.
+
+**What to sync:** Tool installations, config file deployments, Claude Code setup (config, plugins, skills), AI tool management (install, legacy cleanup), menu structure.
+
+**What diverges by design:** Platform-specific tools (tmux vs WezTerm, stow vs Deploy-Symlink, apt vs winget), root/sudo handling (Linux-only), Docker setup (different install paths), swap management (Linux-only).
+
+When reviewing changes, use this mental model: if a user runs `shellSetup.sh` on Linux and `winSetup.ps1` on Windows, they should end up with the same tools, the same Claude Code environment, and the same COWORK integration. The *how* differs; the *what* should match.
 
 ---
 
@@ -163,7 +224,8 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 ```text
 ~/linuxploitacious/
 ├── README.md                          # This documentation (not stowed)
-├── shellSetup.sh                      # Bootstrap script (not stowed)
+├── shellSetup.sh                      # Linux bootstrap script
+├── winSetup.ps1                       # Windows bootstrap script (parallel to shellSetup.sh)
 ├── bash/                              # Package: Bash config
 │   └── .bashrc                        #   -> ~/.bashrc
 ├── zsh/                               # Package: Zsh config
@@ -193,6 +255,12 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── pbcopy                     #   -> ~/.local/bin/pbcopy
 │       ├── pbpaste                    #   -> ~/.local/bin/pbpaste
 │       └── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
+├── powershell/                        # Package: PowerShell profile (Windows)
+│   └── Microsoft.PowerShell_profile.ps1
+├── wezterm/                           # Package: WezTerm config (cross-platform)
+│   └── .wezterm.lua
+├── windows-terminal/                  # Package: Windows Terminal settings
+│   └── settings.json
 └── dockerHost/                        # NOT a stow package (docker infra, unrelated)
     ├── docker-compose.yml
     └── dockerhost.md
