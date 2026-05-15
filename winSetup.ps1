@@ -988,6 +988,8 @@ if ($Selected -contains 'CONFIGS') {
     # --- Claude Code skills & commands from COWORK (if deployed) ---
     # Personal skills/commands live in COWORK/.claude-config/ and get
     # symlinked into ~/.claude/ so they're auto-loaded in every session.
+    # Note: settings.json + CLAUDE.md are Level 1 from linuxploitacious (above).
+    # Auto-memory uses the STOW pattern via ac-memory-init.ps1, not settings.
     $coworkConfigDir = Join-Path $env:USERPROFILE 'COWORK\.claude-config'
     if (Test-Path $coworkConfigDir) {
         foreach ($subdir in @('skills', 'commands')) {

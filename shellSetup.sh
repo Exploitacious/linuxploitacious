@@ -1534,6 +1534,8 @@ EOF
     # --- Skills & commands from COWORK (if deployed) ---
     # Personal skills/commands live in COWORK/.claude-config/ and get
     # symlinked into ~/.claude/ so they auto-load in every session.
+    # Note: settings.json + CLAUDE.md are Level 1 from linuxploitacious (above).
+    # Auto-memory uses the STOW pattern via ac-memory-init, not settings.
     local COWORK_CONFIG="$HOME/COWORK/.claude-config"
     if [ -d "$COWORK_CONFIG" ]; then
       for subdir in skills commands; do
