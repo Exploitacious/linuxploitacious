@@ -861,57 +861,39 @@ if ($Selected -contains 'COWORK') {
     # lives under WORKFORCE\FLEETPROJECTS\<slug>\runtime\ and is created
     # lazily by ac-register, not at clone time.
     if ($canProceed -and (Test-Path (Join-Path $CoworkDir 'WORKFORCE'))) {
-        # Add WORKFORCE/bin to PATH via PS profile (idempotent + clean up legacy AGENTS reference).
-        $workforceBin = Join-Path $CoworkDir 'WORKFORCE\bin'
+        # Legacy cleanup: earlier winSetup versions wired WORKFORCE\bin to
+        # PATH from this section. Now owned by COWORK's deploy.ps1. Strip
+        # any AGENTS\bin block this host may have left behind.
         $profilePath = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'
         if (Test-Path $profilePath) {
             $profileContent = Get-Content $profilePath -Raw
-            $alreadyWired = $profileContent -match 'COWORK.*WORKFORCE.*bin'
-            $hasLegacy    = $profileContent -match 'COWORK.*AGENTS.*bin'
-
-            if ($hasLegacy -and -not $alreadyWired) {
-                # Remove legacy two-line block (header comment + AGENTS\bin export).
+            if ($profileContent -match 'COWORK.*AGENTS.*bin') {
                 Write-Info 'Removing legacy COWORK\AGENTS\bin export from profile.'
                 $cleaned = $profileContent -replace "(?ms)^\s*#\s*---\s*COWORK Multi-Agent Coordination\s*---\s*\r?\n\s*\`$env:Path\s*=.*?AGENTS\\bin.*?(\r?\n)", ''
                 Set-Content -Path $profilePath -Value $cleaned -NoNewline
-                $profileContent = $cleaned
-                $hasLegacy = $false
-            }
-
-            if (-not $alreadyWired) {
-                $pathLine = "`n# --- COWORK Multi-Agent Coordination ---`n`$env:Path = `"$workforceBin;`$env:Path`""
-                Add-Content -Path $profilePath -Value $pathLine
-                Write-Success 'Added WORKFORCE/bin to PATH in PowerShell profile.'
-            } else {
-                Write-Info 'WORKFORCE/bin already on PATH in profile.'
             }
         }
 
-        # Initialize Claude Code auto-memory git-sync (Option A doctrine).
-        # See ~\COWORK\WORKFORCE\FLEETPROJECTS\project-leisure\runtime\decisions\
-        #     2026-05-13__memory-sync-doctrine.md
-        # Script is idempotent: safe on fresh installs, existing dirs, and re-runs.
-        # Requires Windows Developer Mode (Settings → For Developers) OR an elevated
-        # PowerShell session for the symlink creation step.
-        $memInit = Join-Path $CoworkDir 'WORKFORCE\bin\ac-memory-init.ps1'
-        if (Test-Path $memInit) {
-            Write-Info 'Initializing Claude Code auto-memory git-sync...'
+        # Hand off to COWORK's Stage 2 deployer for everything COWORK-internal:
+        # skill + commands symlinks, WORKFORCE\bin PATH wiring,
+        # ac-memory-init.ps1, daily backup scheduled task, plugin install.
+        # See $CoworkDir\DEPLOYMENT.md for the full procedure.
+        $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
+        if (Test-Path $deployScript) {
+            Write-Info 'Invoking COWORK deploy.ps1 for Stage 2 setup...'
             try {
-                # -AutoCommit: if init creates a new per-host memory subdir,
-                # stage + commit + push it. Only commits the exact target path.
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $memInit -AutoCommit
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Success 'Memory sync initialized (or already in place).'
-                } elseif ($LASTEXITCODE -eq 2) {
-                    Write-Warn 'ac-memory-init: .gitignore excludes the target path. Fix .gitignore then re-run.'
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $deployScript
+                if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
+                    Write-Success 'COWORK deploy.ps1 completed.'
                 } else {
-                    Write-Warn "ac-memory-init.ps1 exited non-zero (rc=$LASTEXITCODE). Likely cause: Developer Mode not enabled OR not running as Administrator. Enable Dev Mode (Settings → Update & Security → For Developers) or re-run as admin."
+                    Write-Err "COWORK deploy.ps1 exited rc=$LASTEXITCODE. Re-run manually: $deployScript"
                 }
             } catch {
-                Write-Warn "ac-memory-init.ps1 failed: $_"
+                Write-Err "COWORK deploy.ps1 failed: $_"
             }
         } else {
-            Write-Info 'ac-memory-init.ps1 not present yet — skipping memory sync init.'
+            Write-Warn "COWORK deploy.ps1 not found at $deployScript — Stage 2 skipped."
+            Write-Warn "After fixing, run: $deployScript"
         }
 
         Write-Success 'COWORK deployed.'
@@ -985,21 +967,10 @@ if ($Selected -contains 'CONFIGS') {
         }
     }
 
-    # --- Claude Code skills & commands from COWORK (if deployed) ---
-    # Personal skills/commands live in COWORK/.claude-config/ and get
-    # symlinked into ~/.claude/ so they're auto-loaded in every session.
-    # Note: settings.json + CLAUDE.md are Level 1 from linuxploitacious (above).
-    # Auto-memory uses the STOW pattern via ac-memory-init.ps1, not settings.
-    $coworkConfigDir = Join-Path $env:USERPROFILE 'COWORK\.claude-config'
-    if (Test-Path $coworkConfigDir) {
-        foreach ($subdir in @('skills', 'commands')) {
-            $src = Join-Path $coworkConfigDir $subdir
-            $tgt = Join-Path $claudeHome $subdir
-            if (Test-Path $src) {
-                Deploy-Symlink -Source $src -Target $tgt
-            }
-        }
-    }
+    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
+    # ($USERPROFILE\COWORK\.claude-config\deploy.ps1), NOT this section.
+    # CONFIGS only handles Stage 1 (Level 1 files above). The COWORK menu
+    # item invokes deploy.ps1 automatically after cloning.
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

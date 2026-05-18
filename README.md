@@ -95,17 +95,60 @@ The script uses a two-stage architecture:
 
 ## Claude Code Setup
 
-Claude Code configuration is deployed in two layers:
+Claude Code configuration is deployed in **two stages**. This repo
+(`linuxploitacious`) is **Stage 1** — host setup + Level 1 Claude
+files only. Anything personal / opinionated / multi-machine-state
+belongs in **Stage 2** (your own private repo). Alex's Stage 2 lives
+at [`Exploitacious/COWORK`](https://github.com/Exploitacious/COWORK)
+(private); fork the pattern with your own.
 
-**STOW (global config):** The `claude/` directory deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational compression) and `~/.claude/settings.json` (model, effort level, permissions) using absolute symlinks instead of stow. This is necessary because stow creates relative symlinks that break when chained through the ROOT profile's `~/.claude` → `/home/user/.claude` symlink. These config files apply to every Claude Code session regardless of project directory.
+**Stage 1 — Level 1 files (this repo):** The `claude/` directory
+deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational
+compression), `~/.claude/settings.json` (model, effort level,
+permissions), and `~/.claude/statusline.sh` using absolute symlinks
+instead of stow. Absolute is necessary because stow's relative
+symlinks break when chained through the ROOT profile's `~/.claude` →
+`/home/user/.claude` symlink. These config files apply to every
+Claude Code session regardless of project directory.
 
-**Plugins:** After Claude Code installs (via the always-on vendor installer), the script registers the [caveman](https://github.com/JuliusBrussee/caveman) plugin — an ultra-compressed communication mode that reduces token usage while keeping full technical accuracy. It activates automatically via SessionStart hooks.
+**Stage 1 — Plugins:** After Claude Code installs (via the always-on
+vendor installer), the script registers the
+[caveman](https://github.com/JuliusBrussee/caveman) plugin — an
+ultra-compressed communication mode that reduces token usage while
+keeping full technical accuracy. It activates automatically via
+SessionStart hooks.
 
-**Portable skills (via COWORK):** If `~/COWORK/.claude-config/skills/` exists, both setup scripts symlink it to `~/.claude/skills/`. Skills placed there are git-synced and auto-loaded in every Claude Code session on every machine. Same for `commands/`. This is how personal skills (like IT Glue Documentation) travel between machines without reinstalling.
+**Stage 2 — COWORK (optional):** Selecting `COWORK` in the menu
+clones the user's private workspace repo to `~/COWORK/` and then
+auto-invokes `~/COWORK/.claude-config/deploy.sh`. That Stage 2
+script owns everything COWORK-specific — skills symlink
+(`~/.claude/skills/` → `~/COWORK/SKILLS/`), commands symlink,
+`WORKFORCE/bin` PATH wiring, `claude-wrapper.sh` sourcing for
+master + root rcs, `ac-memory-init` auto-memory git-sync, daily
+backup cron, and additional plugins. **This repo deliberately does
+NOT do any of those steps** — keeping the Stage 1 / Stage 2
+boundary clean means Stage 1 stays usable without a private repo,
+and Stage 2 stays the single source of truth for COWORK content.
 
-**ROOT sharing:** The ROOT option symlinks `~/.claude/` from the user account to `/root`, so both users share the same config, sessions, and credentials. The `claude/` stow package is intentionally excluded from ROOT's stow deployment to avoid conflicting with this symlink.
+**ROOT sharing:** The ROOT option symlinks `~/.claude/` from the
+user account to `/root`, so both users share the same config,
+sessions, and credentials. The `claude/` stow package is
+intentionally excluded from ROOT's stow deployment to avoid
+conflicting with this symlink.
 
-**Personalizing Claude with a context directory:** The global CLAUDE.md includes a "Context Awareness" section that checks for `~/COWORK/CONTEXT/` at session start. If you fork this repo, replace that path with your own. The idea: keep a directory somewhere on your machine with markdown files that describe who you are, how you communicate, and how you want Claude to behave (`about-me.md`, `brand-voice.md`, `working-preferences.md`, or whatever fits). The global CLAUDE.md points Claude there so every session starts with that context, even when you're working in an unrelated project. You don't need a full COWORK setup -- any directory with a few context files works. Project-level `CLAUDE.md` files then layer on top for project-specific instructions.
+**Personalizing Claude with a context directory:** The global
+CLAUDE.md includes a "Context Awareness" section that checks for
+`~/COWORK/CONTEXT/` at session start. If you fork this repo,
+replace that path with your own. The idea: keep a directory
+somewhere on your machine with markdown files that describe who
+you are, how you communicate, and how you want Claude to behave
+(`about-me.md`, `brand-voice.md`, `working-preferences.md`, or
+whatever fits). The global CLAUDE.md points Claude there so every
+session starts with that context, even when you're working in an
+unrelated project. You don't need a full COWORK setup — any
+directory with a few context files works. Project-level
+`CLAUDE.md` files then layer on top for project-specific
+instructions.
 
 ---
 

@@ -1531,38 +1531,10 @@ EOF
       msg_success "Linked: $target -> $source"
     done
 
-    # --- Skills & commands from COWORK (if deployed) ---
-    # Personal skills/commands live in COWORK/.claude-config/ and get
-    # symlinked into ~/.claude/ so they auto-load in every session.
-    # Note: settings.json + CLAUDE.md are Level 1 from linuxploitacious (above).
-    # Auto-memory uses the STOW pattern via ac-memory-init, not settings.
-    local COWORK_CONFIG="$HOME/COWORK/.claude-config"
-    if [ -d "$COWORK_CONFIG" ]; then
-      for subdir in skills commands; do
-        local src="$COWORK_CONFIG/$subdir"
-        local tgt="$CLAUDE_DIR/$subdir"
-
-        [ ! -d "$src" ] && continue
-
-        if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
-          msg_info "Already linked: $tgt"
-          continue
-        fi
-
-        # Backup existing real directory
-        if [ -d "$tgt" ] && [ ! -L "$tgt" ]; then
-          local backup="${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
-          mv "$tgt" "$backup"
-          msg_warn "Backed up existing $subdir/ to $backup"
-        fi
-
-        # Remove stale symlink
-        [ -L "$tgt" ] && rm "$tgt"
-
-        ln -s "$src" "$tgt"
-        msg_success "Linked: $tgt -> $src"
-      done
-    fi
+    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
+    # (~/COWORK/.claude-config/deploy.sh), NOT this function. Stage 1's
+    # job here is strictly Level 1 files (CLAUDE.md, settings.json,
+    # statusline.sh). See COWORK/DEPLOYMENT.md for the contract.
   }
 
   # --- CLAUDE CODE PLUGINS (runs after config so settings.json exists) ---
@@ -1665,133 +1637,30 @@ EOF
       return
     fi
 
-    # Make bin/ scripts executable. Skip non-shell extensions
-    # (.md, .ps1, .json, .yml, .yaml) — chmod +x on those dirties
-    # git status without doing anything useful.
-    if [ -d "$COWORK_DIR/WORKFORCE/bin" ]; then
-      for f in "$COWORK_DIR/WORKFORCE/bin"/*; do
-        [ -f "$f" ] || continue
-        case "$(basename "$f")" in
-          *.md|*.ps1|*.json|*.yml|*.yaml|*.txt) continue ;;
-        esac
-        chmod +x "$f" 2>/dev/null
-      done
-    fi
-
-    # Add WORKFORCE/bin to PATH via shellrc fragment (idempotent).
+    # Legacy cleanup: earlier shellSetup versions wired WORKFORCE/bin
+    # to PATH from this function. Now owned by COWORK's deploy.sh.
+    # Strip any AGENTS/bin block we may have left behind on this host.
     local SHELLRC
     if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
       SHELLRC="$HOME/.zshrc"
     else
       SHELLRC="$HOME/.bashrc"
     fi
-    if ! grep -q 'COWORK/WORKFORCE/bin' "$SHELLRC" 2>/dev/null; then
-      # Clean up legacy AGENTS/bin export if it's still in place.
-      if grep -q 'COWORK/AGENTS/bin' "$SHELLRC" 2>/dev/null; then
-        msg_info "Removing legacy COWORK/AGENTS/bin export from $SHELLRC"
-        # Match the two-line block: comment header + export.
-        sed -i.bak \
-          -e '/# --- COWORK Multi-Agent Coordination ---/{N;/COWORK\/AGENTS\/bin/d;}' \
-          "$SHELLRC"
-        rm -f "$SHELLRC.bak"
-      fi
-      printf '\n# --- COWORK Multi-Agent Coordination ---\nexport PATH="$HOME/COWORK/WORKFORCE/bin:$PATH"\n' >> "$SHELLRC"
-      msg_success "Added WORKFORCE/bin to PATH in $SHELLRC"
-    else
-      msg_info "WORKFORCE/bin already on PATH in $SHELLRC"
-    fi
-
-    # Initialize Claude Code auto-memory git-sync (Option A doctrine).
-    # See ~/COWORK/WORKFORCE/FLEETPROJECTS/project-leisure/runtime/decisions/
-    #     2026-05-13__memory-sync-doctrine.md
-    # Script is idempotent + walks all encoded cwd subdirs Claude Code has
-    # created (master's $HOME, root's $HOME, per-project sessions like
-    # ~/COWORK, etc.), symlinking each into .claude-memory/<host>-<encoded>/.
-    if [ -x "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" ]; then
-      msg_info "Initializing Claude Code auto-memory git-sync (all cwd subdirs)..."
-      if "$COWORK_DIR/WORKFORCE/bin/ac-memory-init" --auto-commit; then
-        msg_success "Memory sync initialized (or already in place)."
-      else
-        local rc=$?
-        if [ "$rc" -eq 2 ]; then
-          msg_warn "ac-memory-init: .gitignore excludes target path. Fix .gitignore then re-run."
-        else
-          msg_warn "ac-memory-init exited non-zero (rc=$rc) — inspect manually."
-        fi
-      fi
-    else
-      msg_info "ac-memory-init not present yet — skipping memory sync init."
-    fi
-
-    # Wire the claude wrapper into master's and root's shellrcs. The
-    # wrapper handles two issues that surface when claude is invoked
-    # under both UIDs on the same host:
-    #   1. Root-mode --permission-mode auto auto-injection (claude refuses
-    #      bypassPermissions when running as root; this overrides at CLI
-    #      level without touching settings.json).
-    #   2. Cross-user flock (master + root share state via symlinks; concurrent
-    #      claude processes can corrupt .credentials.json, sessions, etc).
-    # Idempotent — marker-comment check prevents duplicate appends.
-    local wrapper_file="$COWORK_DIR/WORKFORCE/bin/claude-wrapper.sh"
-    if [ -f "$wrapper_file" ]; then
-      msg_info "Wiring Claude wrapper into master + root shellrcs..."
-      local marker="# --- COWORK Claude wrapper (root/master safety) ---"
-
-      _add_wrapper_source() {
-        local target="$1" source_path="$2"
-        [ -f "$target" ] || return 0  # skip absent shellrc
-        if grep -qF "$marker" "$target" 2>/dev/null; then
-          return 0  # already wired
-        fi
-        printf '\n%s\nsource "%s" 2>/dev/null\n' "$marker" "$source_path" >> "$target"
-        msg_success "Wired wrapper into $target"
-      }
-
-      # Master's shellrcs — use $HOME-relative source.
-      _add_wrapper_source "$HOME/.zshrc"  "\$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
-      _add_wrapper_source "$HOME/.bashrc" "\$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
-
-      # Root's shellrcs — use absolute path (root's $HOME is /root, not master's).
-      # Auto-heal: earlier versions of this script wrote the source line
-      # using "$HOME/COWORK/..." which resolves to /root/COWORK on root and
-      # silently fails (the 2>/dev/null hides the error). Detect that broken
-      # form and replace it with the absolute path.
-      if sudo -n true 2>/dev/null; then
-        local root_abs="$wrapper_file"  # absolute path, master-owned
-        for root_rc in /root/.zshrc /root/.bashrc; do
-          if sudo test -f "$root_rc"; then
-            if sudo grep -qF "$marker" "$root_rc" 2>/dev/null; then
-              # Marker present — is the source line correct?
-              if sudo grep -qF 'source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"' "$root_rc" 2>/dev/null; then
-                msg_info "Healing broken \$HOME-based wrapper source in $root_rc"
-                # Delete the marker line + the next line (the broken source).
-                # Then re-append with the correct absolute path.
-                sudo sed -i.bak '/# --- COWORK Claude wrapper (root\/master safety) ---/{N;d;}' "$root_rc"
-                sudo rm -f "${root_rc}.bak"
-                sudo bash -c "printf '\n%s\nsource %s 2>/dev/null\n' '$marker' '$root_abs' >> '$root_rc'"
-                msg_success "Healed wrapper source in $root_rc"
-              fi
-              # else: marker + source line both correct, no-op
-            else
-              # Marker absent — fresh append
-              sudo bash -c "printf '\n%s\nsource %s 2>/dev/null\n' '$marker' '$root_abs' >> '$root_rc'"
-              msg_success "Wired wrapper into $root_rc"
-            fi
-          fi
-        done
-      else
-        msg_warn "passwordless sudo unavailable — root shellrcs not wired. Manual: add 'source $wrapper_file' to /root/.zshrc + /root/.bashrc"
-      fi
-    else
-      msg_info "claude-wrapper.sh not present yet — skipping wrapper wiring."
+    if grep -q 'COWORK/AGENTS/bin' "$SHELLRC" 2>/dev/null; then
+      msg_info "Removing legacy COWORK/AGENTS/bin export from $SHELLRC"
+      sed -i.bak \
+        -e '/# --- COWORK Multi-Agent Coordination ---/{N;/COWORK\/AGENTS\/bin/d;}' \
+        "$SHELLRC"
+      rm -f "$SHELLRC.bak"
     fi
 
     # Hand off to COWORK's own deploy script for Stage 2 setup.
     # deploy.sh is the single source of truth for everything
-    # COWORK-internal: skill symlinks (~/.claude/skills/ → COWORK/SKILLS/),
-    # commands symlink, WORKFORCE/bin chmod + PATH wiring, Claude Code
-    # plugin install, daily backup cron entry. See
-    # $COWORK_DIR/DEPLOYMENT.md for the full procedure.
+    # COWORK-internal: skill + commands symlinks
+    # (~/.claude/skills/ → COWORK/SKILLS/), WORKFORCE/bin chmod +
+    # PATH wiring, claude-wrapper sourcing (master + root rcs),
+    # ac-memory-init invocation, daily backup cron entry, plugin
+    # install. See $COWORK_DIR/DEPLOYMENT.md for the full procedure.
     local DEPLOY_SCRIPT="$COWORK_DIR/.claude-config/deploy.sh"
     if [ -f "$DEPLOY_SCRIPT" ]; then
       msg_info "Invoking COWORK deploy.sh for Stage 2 setup..."
