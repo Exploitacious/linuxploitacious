@@ -4,21 +4,59 @@
 
 JSON=$(cat)
 
-# --- Parse all values in one jq call ---
-eval $(echo "$JSON" | jq -r '
-  "MODEL='"'"'\(.model.display_name // "unknown")'"'"'",
-  "CTX_USED=\(.context_window.used_percentage // 0)",
-  "CTX_SIZE=\(.context_window.context_window_size // 200000)",
-  "COST=\(.cost.total_cost_usd // 0)",
-  "TOTAL_MS=\(.cost.total_duration_ms // 0)",
-  "API_MS=\(.cost.total_api_duration_ms // 0)",
-  "LINES_ADD=\(.cost.total_lines_added // 0)",
-  "LINES_REM=\(.cost.total_lines_removed // 0)",
-  "CACHE_READ=\(.context_window.current_usage.cache_read_input_tokens // 0)",
-  "CACHE_CREATE=\(.context_window.current_usage.cache_creation_input_tokens // 0)",
-  "RL_5H=\(.rate_limits.five_hour.used_percentage // "")",
-  "RL_7D=\(.rate_limits.seven_day.used_percentage // "")"
-' 2>/dev/null)
+# Fail-safe defaults so downstream arithmetic comparisons never see
+# empty strings (which throw bash arithmetic errors under set -u or
+# when used inside `[ ... -ge ... ]`).
+MODEL="unknown"
+CTX_USED=0
+CTX_SIZE=200000
+COST=0
+TOTAL_MS=0
+API_MS=0
+LINES_ADD=0
+LINES_REM=0
+CACHE_READ=0
+CACHE_CREATE=0
+RL_5H=""
+RL_7D=""
+
+# --- Parse values via NUL-separated jq output ---
+# Old version used `eval $(jq -r '...')` which broke on quotes/newlines
+# in any model display_name and was a shell-injection surface for any
+# tool that could influence the JSON. Read fields into bash vars
+# directly via NUL-terminated jq output.
+if command -v jq >/dev/null 2>&1; then
+  # One line per KEY=value. Values here are numbers or short identifiers
+  # (model display_name) so embedded newlines aren't a real concern;
+  # gsub strips them just in case.
+  while IFS='=' read -r key val; do
+    case "$key" in
+      MODEL|CTX_USED|CTX_SIZE|COST|TOTAL_MS|API_MS|LINES_ADD|LINES_REM|CACHE_READ|CACHE_CREATE|RL_5H|RL_7D)
+        printf -v "$key" '%s' "$val"
+        ;;
+    esac
+  done < <(printf '%s' "$JSON" | jq -r '
+    def s: tostring | gsub("\n"; " ");
+    "MODEL=" + (.model.display_name // "unknown" | s),
+    "CTX_USED=" + (.context_window.used_percentage // 0 | s),
+    "CTX_SIZE=" + (.context_window.context_window_size // 200000 | s),
+    "COST=" + (.cost.total_cost_usd // 0 | s),
+    "TOTAL_MS=" + (.cost.total_duration_ms // 0 | s),
+    "API_MS=" + (.cost.total_api_duration_ms // 0 | s),
+    "LINES_ADD=" + (.cost.total_lines_added // 0 | s),
+    "LINES_REM=" + (.cost.total_lines_removed // 0 | s),
+    "CACHE_READ=" + (.context_window.current_usage.cache_read_input_tokens // 0 | s),
+    "CACHE_CREATE=" + (.context_window.current_usage.cache_creation_input_tokens // 0 | s),
+    "RL_5H=" + (.rate_limits.five_hour.used_percentage // "" | s),
+    "RL_7D=" + (.rate_limits.seven_day.used_percentage // "" | s)
+  ' 2>/dev/null)
+fi
+
+# Defensive: any field still empty after parsing falls back to safe defaults
+# so downstream `[ "$pct" -ge "$crit" ]` arithmetic never sees empty.
+: "${CTX_USED:=0}" "${CTX_SIZE:=200000}" "${COST:=0}"
+: "${TOTAL_MS:=0}" "${API_MS:=0}" "${LINES_ADD:=0}" "${LINES_REM:=0}"
+: "${CACHE_READ:=0}" "${CACHE_CREATE:=0}"
 
 # Colors (use $'...' so ESC is a real byte, not literal backslash text)
 RST=$'\033[0m'

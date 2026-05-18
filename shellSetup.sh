@@ -401,11 +401,19 @@ BRAVEREPO
       sudo dnf install -y btop tmux fzf zsh
     fi
     
-    if ! grep -q "/usr/bin/zsh" /etc/shells; then
-      echo "/usr/bin/zsh" | sudo tee -a /etc/shells
+    # zsh path differs across distros: /usr/bin/zsh (Debian/Ubuntu),
+    # /bin/zsh (Arch), /usr/local/bin/zsh (compiled). Autodetect.
+    local ZSH_BIN
+    ZSH_BIN="$(command -v zsh)"
+    if [[ -z "$ZSH_BIN" ]]; then
+      msg_warn "zsh not on PATH after install — skipping root chsh"
+    else
+      if ! grep -qxF "$ZSH_BIN" /etc/shells; then
+        echo "$ZSH_BIN" | sudo tee -a /etc/shells >/dev/null
+      fi
+      sudo chsh -s "$ZSH_BIN" root
+      msg_success "Root shell set to $ZSH_BIN"
     fi
-    sudo chsh -s /usr/bin/zsh root
-    msg_success "Root shell set to zsh"
     
     # Use `sudo test` — /root isn't readable as the primary user, so a bare
     # `[ -d /root/... ]` always returns false and we end up trying to clone
@@ -530,7 +538,7 @@ ROOTNVM
 export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
-LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
+LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tr -d ' ' | sort -V | tail -1)
 if ! pyenv versions --bare | grep -qF "$LATEST_PY"; then
   pyenv install "$LATEST_PY"
 fi
@@ -1153,7 +1161,7 @@ EOF
 
     # Install latest stable Python 3
     local LATEST_PY
-    LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
+    LATEST_PY=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tr -d ' ' | sort -V | tail -1)
     if pyenv versions --bare | grep -qF "$LATEST_PY"; then
       msg_info "Python $LATEST_PY already installed"
     else
@@ -1371,12 +1379,19 @@ EOF
       mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
     fi
 
-    # Ensure zsh is in allowed shells
-    if ! grep -q "$(which zsh)" /etc/shells; then
-        echo "$(which zsh)" | sudo tee -a /etc/shells
+    # Ensure zsh is in allowed shells. Autodetect path; require non-empty
+    # to avoid `grep -q ""` always-matches when zsh install silently failed.
+    local ZSH_BIN
+    ZSH_BIN="$(command -v zsh)"
+    if [[ -z "$ZSH_BIN" ]]; then
+      msg_warn "zsh not on PATH — skipping chsh"
+    else
+      if ! grep -qxF "$ZSH_BIN" /etc/shells; then
+        echo "$ZSH_BIN" | sudo tee -a /etc/shells >/dev/null
+      fi
+      sudo chsh -s "$ZSH_BIN" "$USER"
+      msg_success "Shell environment configured ($ZSH_BIN)."
     fi
-    sudo chsh -s "$(which zsh)" "$USER"
-    msg_success "Shell environment configured."
   }
 
   # --- STOW DEPLOYMENT ---

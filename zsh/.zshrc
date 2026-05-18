@@ -118,8 +118,10 @@ alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
 # OpenClaw Completion
 [[ -f "${HOME}/.openclaw/completions/openclaw.zsh" ]] && source "${HOME}/.openclaw/completions/openclaw.zsh"
 
-# --- COWORK Multi-Agent Coordination ---
-export PATH="$HOME/COWORK/AGENTS/bin:$PATH"
+# NOTE: WORKFORCE/bin PATH wiring is owned by COWORK's Stage 2 deployer
+# (~/COWORK/.claude-config/deploy.sh). It appends its own tagged block to
+# this file on first run. The old `COWORK/AGENTS/bin` entry was retired
+# during the WORKFORCE rename — do not re-add either form here.
 
 # --- Tmux session picker on SSH login ---
 if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
@@ -165,7 +167,7 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
 fi
 
 # opencode
-export PATH=/root/.opencode/bin:$PATH
+[[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
 
-# --- COWORK Claude wrapper (root/master safety) ---
-source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null
+# NOTE: COWORK claude-wrapper sourcing is owned by Stage 2 deploy.sh.
+# It appends a tagged block here on first run; do not hardcode it.

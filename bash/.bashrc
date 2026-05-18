@@ -46,7 +46,11 @@ fi
 
 # User configuration — put ~/.local/bin first so native binaries (e.g. claude)
 # win over any stale pnpm/npm shims that may linger in PNPM_HOME or npm-global.
-export PATH="$HOME/.local/bin:$PATH"
+# Idempotent: re-sourcing this file (e.g., via the `r` alias) won't duplicate.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
 
 # Shell Aliases
 alias c="clear"
@@ -89,8 +93,8 @@ if [ -f "$HOME/.config/fabric/fabric-bootstrap.inc" ]; then
   . "$HOME/.config/fabric/fabric-bootstrap.inc"
 fi
 
-# Opencode
-export PATH="$HOME/.opencode/bin:$PATH"
+# Opencode (guard so missing install doesn't pollute PATH)
+[ -d "$HOME/.opencode/bin" ] && case ":$PATH:" in *":$HOME/.opencode/bin:"*) :;; *) export PATH="$HOME/.opencode/bin:$PATH";; esac
 
 # Oh My Posh — stowed theme (repo-controlled, survives cache wipes)
 if command -v oh-my-posh >/dev/null 2>&1; then
@@ -117,7 +121,10 @@ case ":$PATH:" in
 esac
 
 # OpenClaw
-export PATH="${HOME}/.npm-global/bin:${PATH}"
+case ":$PATH:" in
+  *":${HOME}/.npm-global/bin:"*) ;;
+  *) export PATH="${HOME}/.npm-global/bin:${PATH}" ;;
+esac
 export NODE_PATH="${HOME}/.npm-global/lib/node_modules"
 export NODE_COMPILE_CACHE="/var/tmp/openclaw-compile-cache"
 export OPENCLAW_NO_RESPAWN=1
@@ -170,5 +177,5 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
   unset _tmux_sessions choice name target i s idx
 fi
 
-# --- COWORK Claude wrapper (root/master safety) ---
-source "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" 2>/dev/null
+# NOTE: COWORK claude-wrapper sourcing is owned by Stage 2 deploy.sh.
+# It appends a tagged block here on first run; do not hardcode it.
