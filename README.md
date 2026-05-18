@@ -24,18 +24,30 @@ If you ever find a stray copy at `~/COWORK/PROJECTS/linuxploitacious/`, delete i
 
 **Remote execution (fresh machine):**
 
-```bash
-wget -qO shellSetup.sh https://shell.ivantsov.tech && bash shellSetup.sh
-```
+Linux (bash/zsh):
 
 ```bash
 curl -fsSL https://shell.ivantsov.tech | bash
 ```
 
+Windows (PowerShell, elevated):
+
+```powershell
+irm https://winshell.ivantsov.tech | iex
+```
+
 **Re-running on an existing machine:**
+
+Linux:
 
 ```bash
 cd ~/linuxploitacious && git pull && bash shellSetup.sh
+```
+
+Windows (PowerShell):
+
+```powershell
+cd $HOME\linuxploitacious; git pull; .\winSetup.ps1
 ```
 
 The script is fully idempotent. It can be re-run at any time without conflicts. Existing configs are backed up automatically and the repository is always deployed as the source of truth.
