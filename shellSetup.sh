@@ -1786,51 +1786,23 @@ EOF
       msg_info "claude-wrapper.sh not present yet — skipping wrapper wiring."
     fi
 
-    # One-time migration from legacy ~/.agent-coordination/ if present.
-    if [ -d "$HOME/.agent-coordination" ]; then
-      msg_info "Legacy ~/.agent-coordination/ detected."
-      echo -ne "${YELLOW}Run migrate-from-legacy now? [y/N]: ${NC}"
-      read -r REPLY
-      if [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        if "$COWORK_DIR/WORKFORCE/bin/migrate-from-legacy"; then
-          msg_success "Legacy coordination migrated."
-        else
-          msg_warn "Migration failed. Inspect manually: $COWORK_DIR/WORKFORCE/bin/migrate-from-legacy"
-        fi
+    # Hand off to COWORK's own deploy script for Stage 2 setup.
+    # deploy.sh is the single source of truth for everything
+    # COWORK-internal: skill symlinks (~/.claude/skills/ → COWORK/SKILLS/),
+    # commands symlink, WORKFORCE/bin chmod + PATH wiring, Claude Code
+    # plugin install, daily backup cron entry. See
+    # $COWORK_DIR/DEPLOYMENT.md for the full procedure.
+    local DEPLOY_SCRIPT="$COWORK_DIR/.claude-config/deploy.sh"
+    if [ -f "$DEPLOY_SCRIPT" ]; then
+      msg_info "Invoking COWORK deploy.sh for Stage 2 setup..."
+      if bash "$DEPLOY_SCRIPT"; then
+        msg_success "COWORK deploy.sh completed."
+      else
+        msg_error "COWORK deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
       fi
-    fi
-
-    # --- Skills & commands symlinks (post-pull) ---
-    # deploy_claude_config() may have run before COWORK was pulled, so
-    # the skills/commands dirs didn't exist yet. Create the symlinks now
-    # that COWORK is guaranteed present.
-    local CLAUDE_HOME="$HOME/.claude"
-    local COWORK_CONFIG="$COWORK_DIR/.claude-config"
-    if [ -d "$CLAUDE_HOME" ] && [ -d "$COWORK_CONFIG" ]; then
-      for subdir in skills commands; do
-        local src="$COWORK_CONFIG/$subdir"
-        local tgt="$CLAUDE_HOME/$subdir"
-
-        [ ! -d "$src" ] && continue
-
-        if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
-          msg_info "Already linked: $tgt"
-          continue
-        fi
-
-        # Backup existing real directory
-        if [ -d "$tgt" ] && [ ! -L "$tgt" ]; then
-          local backup="${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
-          mv "$tgt" "$backup"
-          msg_warn "Backed up existing $subdir/ to $backup"
-        fi
-
-        # Remove stale symlink
-        [ -L "$tgt" ] && rm "$tgt"
-
-        ln -s "$src" "$tgt"
-        msg_success "Linked: $tgt -> $src"
-      done
+    else
+      msg_warn "COWORK deploy.sh not found at $DEPLOY_SCRIPT — Stage 2 skipped."
+      msg_warn "After fixing, run: bash $DEPLOY_SCRIPT"
     fi
 
     msg_success "COWORK deployed. Open a new shell, then test with 'ac-status'."

@@ -7,6 +7,17 @@ An opinionated, interactive provisioning system for deploying a fully configured
 
 Both scripts are maintained in parallel and should be kept in sync when adding features. See [Keeping scripts in sync](#keeping-scripts-in-sync) below.
 
+## Expected Location
+
+This repo must live at **`~/linuxploitacious/`** on both Linux and Windows. The home-folder location is canonical because:
+
+- **Linux**: Stow operates on the home folder. Symlinks expect the repo to be a sibling of `~/.bashrc`, `~/.zshrc`, etc.
+- **Windows**: Symlinks/junctions for the matching configs target the same relative home-folder layout for consistency across OSes.
+
+Do **not** place this repo under `~/COWORK/PROJECTS/` or any other path. It is the outlier in Alex's repo portfolio — it lives outside the standard `PROJECTS/<space>/<repo>/` convention for this reason.
+
+If you ever find a stray copy at `~/COWORK/PROJECTS/linuxploitacious/`, delete it; the canonical clone is `~/linuxploitacious/`.
+
 ---
 
 ## Quick Start
