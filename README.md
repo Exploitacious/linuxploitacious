@@ -85,7 +85,7 @@ The script uses a two-stage architecture:
 | NOPASS | Enable passwordless sudo for current user (drops `/etc/sudoers.d/90-<user>-nopasswd`, visudo-validated) | OFF (hidden when running as root) |
 | SWAP | Create swapfile sized to match RAM (`/swapfile`, `vm.swappiness=10`) | ON (hidden when swap already exists) |
 | SSHKEY | Generate GitHub SSH key, configure SSH, copy to root | OFF |
-| COWORK | Clone COWORK repo + Multi-Agent Coordination (requires SSHKEY) | OFF |
+| COWORK | Clone Alex's private Stage 2 repo (`Exploitacious/COWORK`) and invoke its `deploy.sh`. Requires SSHKEY. Forkers: replace with your own Stage 2 repo (see "Forking this repo" below). | OFF |
 
 **Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
 
@@ -152,6 +152,74 @@ instructions.
 
 ---
 
+---
+
+## Forking this repo
+
+This repo is public + opinionated. The Stage 1 layer (host setup,
+shell config, Level 1 Claude files) is intentionally generic and
+runs cleanly on any machine. The COWORK references that exist are
+pointers to Alex's **private** Stage 2 repo
+(`Exploitacious/COWORK`); they're already self-gating (every
+COWORK code path checks for the directory before doing anything),
+so a fork without your own COWORK works out-of-the-box.
+
+If you want your own Stage 2 layer, here's the complete list of
+things to change in a fork:
+
+1. **`shellSetup.sh::setup_cowork`** (line ~1582) — change
+   `gh repo clone Exploitacious/COWORK` to your own private repo
+   path. The function will clone it to `$HOME/COWORK` and then
+   invoke `$HOME/COWORK/.claude-config/deploy.sh` on completion.
+2. **`winSetup.ps1` COWORK section** (line ~799) — same change,
+   `gh repo clone Exploitacious/COWORK`.
+3. **`claude/.claude/CLAUDE.md`** "COWORK Context Awareness"
+   section — either replace `~/COWORK/` with your own personal
+   context directory path, or delete the section entirely. The
+   rest of the file is generic.
+4. **`claude/.claude/settings.json`** SessionStart hook (line 46)
+   — references `$HOME/COWORK/WORKFORCE/bin/ac-reorient`. The
+   `test -x` guard makes it silent without COWORK, so you can
+   leave it alone. Replace the path if you want the hook to fire
+   from your own Stage 2.
+5. **README references** — search for `COWORK` and replace with
+   your own Stage 2 repo name in user-facing prose.
+
+If you don't want a Stage 2 layer at all, skip steps 1-2-5 and
+just delete the COWORK menu items in `shellSetup.sh` + `winSetup.ps1`
+(or leave them — they're opt-in and fail-safe when the gh CLI
+isn't authenticated).
+
+## Stage 2 contract (what `setup_cowork` assumes)
+
+`setup_cowork` (Linux) and the COWORK menu item (Windows) clone
+the private Stage 2 repo, then invoke its `deploy.{sh,ps1}` to
+finish setup. For that handoff to work, the Stage 2 repo MUST
+expose at minimum:
+
+| Path | Purpose |
+|------|---------|
+| `.claude-config/deploy.sh` (Linux) | Stage 2 entry point. Stage 1 invokes via `bash $COWORK_DIR/.claude-config/deploy.sh`. Idempotent. |
+| `.claude-config/deploy.ps1` (Windows) | Same for Windows. Stage 1 invokes via `powershell.exe -File ...`. Idempotent. |
+| `WORKFORCE/` directory | Existence-checked by Stage 1 before invoking deploy.{sh,ps1}. If absent, Stage 1 skips Stage 2 with a warning. |
+
+Optional (referenced if present; silent otherwise):
+
+| Path | Purpose |
+|------|---------|
+| `WORKFORCE/bin/ac-reorient` | Invoked by SessionStart hook in `claude/.claude/settings.json:46`. Guarded by `test -x`. |
+| `CONTEXT/` directory | Read by Claude Code per `claude/.claude/CLAUDE.md` "COWORK Context Awareness" section. Existence-checked. |
+
+Stage 2 is responsible for everything else — its own symlinks
+(skills, commands), PATH wiring, plugin installs, scheduled
+tasks, auto-memory wiring, claude-wrapper sourcing, etc. Stage 1
+deliberately does NOT do any of that work; the split keeps this
+repo public-safe and Stage 2 the single source of truth for
+private content. See Alex's COWORK `DEPLOYMENT.md` for a working
+example of a Stage 2 implementation.
+
+---
+
 ## Windows Setup (`winSetup.ps1`)
 
 The Windows script mirrors the Linux experience as closely as possible. Run from an elevated PowerShell:
@@ -174,7 +242,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 | PYTHON | Python 3, pip globals, pipx tools | ON |
 | JQ | jq JSON processor (Claude statusline) | ON |
 | CLAUDE | Claude Code + OpenCode + legacy cleanup | ON |
-| CONFIGS | Symlink all dotfiles + Claude config + COWORK skills | ON |
+| CONFIGS | Symlink all dotfiles + Level 1 Claude config (CLAUDE.md, settings.json, statusline.sh). **Does NOT deploy COWORK content** — Stage 2 (`deploy.ps1`) owns that. | ON |
 | APPS | Browsers, dev tools, productivity (opt-in) | OFF |
 | TWEAKS | Dark mode, Explorer, taskbar prefs | OFF |
 | SSHKEY | GitHub SSH + gh auth + key upload | OFF |
@@ -199,7 +267,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 `shellSetup.sh` and `winSetup.ps1` are maintained in parallel. When adding a feature to one, check whether the other needs a matching change. The menu items should stay aligned — same names, same defaults, same order where practical.
 
-**What to sync:** Tool installations, config file deployments, Claude Code setup (config, plugins, skills), AI tool management (install, legacy cleanup), menu structure.
+**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh + caveman plugin), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, WORKFORCE, ac-memory-init) is NOT this repo's responsibility — Stage 2 owns it.
 
 **What diverges by design:** Platform-specific tools (tmux vs WezTerm, stow vs Deploy-Symlink, apt vs winget), root/sudo handling (Linux-only), Docker setup (different install paths), swap management (Linux-only).
 
@@ -296,10 +364,12 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │   └── .config/ohmyposh/
 │       ├── kali.json                  #   -> ~/.config/ohmyposh/kali.json
 │       └── zen.toml                   #   -> ~/.config/ohmyposh/zen.toml
-├── claude/                            # Package: Claude Code global config
-│   └── .claude/
-│       ├── CLAUDE.md                  #   -> ~/.claude/CLAUDE.md
-│       └── settings.json              #   -> ~/.claude/settings.json
+├── claude/                            # NOT a stow package — deployed via
+│   └── .claude/                       # deploy_claude_config() with absolute
+│       ├── CLAUDE.md                  # symlinks. See "Claude Code Setup" §.
+│       ├── settings.json              #   -> ~/.claude/CLAUDE.md
+│       └── statusline.sh              #   -> ~/.claude/settings.json
+│                                      #   -> ~/.claude/statusline.sh
 ├── rustscan/                          # Package: RustScan config
 │   └── .rustscan.toml                 #   -> ~/.rustscan.toml
 ├── scripts/                           # Package: Utility scripts
@@ -385,7 +455,8 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 
 ---
 
-## Tmux
+<details>
+<summary><strong>Tmux</strong> — full reference (collapsed; click to expand)</summary>
 
 ### Configuration
 
@@ -522,9 +593,12 @@ PFX s                               # inside tmux: switch between them
 
 To survive flaky networks, install Mosh on both ends and replace `ssh vm` with `mosh vm -- tmux a -t main`.
 
+</details>
+
 ---
 
-## Snapper Snapshot Guide: Managing System Backups
+<details>
+<summary><strong>Snapper Snapshot Guide</strong> — Arch system backup/rollback reference (collapsed; click to expand)</summary>
 
 This guide explains how to use **Snapper** on your Arch Linux system to create, manage, and restore system snapshots. Your system is configured to take automatic snapshots of the root filesystem (`/`).
 
@@ -617,6 +691,8 @@ Once you have successfully booted and verified the system is working, you can de
 sudo btrfs subvolume delete /mnt/@_broken_YYYYMMDD
 ```
 
+</details>
+
 ---
 
 ## Troubleshooting
@@ -700,8 +776,11 @@ stow -R -t ~ zsh
 # Remove a package's symlinks
 stow -D -t ~ zsh
 
-# Deploy all packages
-for pkg in bash zsh tmux btop fastfetch omp rustscan scripts claude; do
+# Deploy all stow packages
+# (NOTE: `claude/` is intentionally excluded — it is deployed via
+# absolute symlinks in deploy_claude_config(), not stow. See "Claude
+# Code Setup" section above.)
+for pkg in bash zsh tmux btop fastfetch omp rustscan scripts; do
   stow -R -t ~ "$pkg"
 done
 ```

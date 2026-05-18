@@ -2,6 +2,27 @@
 
 These rules apply to every Claude Code session on this machine, regardless of project. Project-level CLAUDE.md files add context on top of these defaults.
 
+<!--
+  ============================================================
+  PERSONAL LAYER — REPLACE IF FORKING
+  ============================================================
+  The "COWORK Context Awareness" section below points Claude at a
+  private personal-context repo (Alex's). It is the ONLY part of
+  this file that isn't generic-safe. If you fork linuxploitacious
+  for your own setup, do one of:
+
+    1. Replace `~/COWORK/` with the path to your own context dir
+       (any directory with markdown files describing you).
+    2. Delete this section entirely — the rest of the file
+       (Behavioral Rules, Conversational Compression, Code &
+       Commit Standards) is intentionally generic and stands
+       alone.
+
+  See linuxploitacious/README.md → "Forking this repo" for the
+  full list of strings to change.
+  ============================================================
+-->
+
 ## COWORK Context Awareness
 
 If `~/COWORK/CONTEXT/` exists on this machine, read `about-me.md`, `brand-voice.md`, and `working-preferences.md` from it at the start of every session. These files define who the operator is, how they communicate, and how you should behave. This applies even when working outside the COWORK directory -- the context files are always relevant to how you should operate.
