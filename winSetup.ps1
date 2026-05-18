@@ -555,18 +555,30 @@ if ($Selected -contains 'CLAUDE') {
     }
 
     # --- OpenCode ---
+    # NOTE: upstream `https://opencode.ai/install` is a bash script.
+    # Piping it through PowerShell's iex tokenizes `usage() { ... }`
+    # as PS syntax errors. Use winget when possible; warn + skip if
+    # unavailable.
     Write-Info 'Installing/updating OpenCode...'
-    try {
-        Invoke-RestMethod -Uri 'https://opencode.ai/install' | Invoke-Expression 2>$null
-        Refresh-Path
-        if (Get-Command opencode -ErrorAction SilentlyContinue) {
-            Write-Success 'OpenCode ready.'
+    $openCodeInstalled = Get-Command opencode -ErrorAction SilentlyContinue
+    if ($openCodeInstalled) {
+        Write-Info 'OpenCode already present. Trying winget upgrade...'
+        winget upgrade --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success 'OpenCode upgrade run (no-op if already current).'
         } else {
-            Write-Info 'OpenCode installed (may need terminal restart).'
+            Write-Info 'OpenCode upgrade returned non-zero -- not necessarily an error (already current?).'
         }
-    } catch {
-        Write-Warn "OpenCode install failed: $_"
-        Write-Warn 'Install manually: https://opencode.ai'
+    } else {
+        Write-Info 'Trying winget install: sst-opencode.opencode'
+        $wingetOut = winget install --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+        if ($LASTEXITCODE -eq 0 -and (Get-Command opencode -ErrorAction SilentlyContinue)) {
+            Refresh-Path
+            Write-Success 'OpenCode installed via winget.'
+        } else {
+            Write-Warn 'OpenCode not available via winget on this machine.'
+            Write-Warn 'Install manually: https://opencode.ai/docs/getting-started (Scoop or direct binary).'
+        }
     }
 }
 
@@ -947,10 +959,20 @@ if ($Selected -contains 'COWORK') {
         # Legacy cleanup: earlier winSetup versions wired WORKFORCE\bin to
         # PATH from this section. Now owned by COWORK's deploy.ps1. Strip
         # any AGENTS\bin block this host may have left behind.
+        # OneDrive can redirect Documents to a renamed path ("Documents 1")
+        # and may also serve files as cloud-only stubs that Test-Path sees
+        # but Get-Content can't open. Treat the legacy cleanup as best-effort:
+        # if we can't read the profile, the AGENTS/bin line either isn't there
+        # or isn't ours to worry about -- skip cleanly.
         $profilePath = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'
         if (Test-Path $profilePath) {
-            $profileContent = Get-Content $profilePath -Raw
-            if ($profileContent -match 'COWORK.*AGENTS.*bin') {
+            $profileContent = $null
+            try {
+                $profileContent = Get-Content $profilePath -Raw -ErrorAction Stop
+            } catch {
+                Write-Info "Legacy-cleanup skipped: couldn't read $profilePath ($($_.Exception.Message))"
+            }
+            if ($profileContent -and $profileContent -match 'COWORK.*AGENTS.*bin') {
                 Write-Info 'Removing legacy COWORK\AGENTS\bin export from profile.'
                 $cleaned = $profileContent -replace "(?ms)^\s*#\s*---\s*COWORK Multi-Agent Coordination\s*---\s*\r?\n\s*\`$env:Path\s*=.*?AGENTS\\bin.*?(\r?\n)", ''
                 Set-Content -Path $profilePath -Value $cleaned -NoNewline
@@ -964,8 +986,14 @@ if ($Selected -contains 'COWORK') {
         $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
         if (Test-Path $deployScript) {
             Write-Info 'Invoking COWORK deploy.ps1 for Stage 2 setup...'
+            # Spawn under the SAME interpreter we're running on (pwsh when
+            # we're on PS7). Hardcoding `powershell.exe` drops to PS5.1,
+            # which mis-decodes any UTF-8 non-ASCII in deploy.ps1 and
+            # cascades parse errors. The PS7+admin gate at the top of this
+            # script guarantees we're on pwsh.exe by the time we get here.
+            $currentInterp = (Get-Process -Id $PID).Path
             try {
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $deployScript
+                & $currentInterp -NoProfile -ExecutionPolicy Bypass -File $deployScript
                 if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
                     Write-Success 'COWORK deploy.ps1 completed.'
                 } else {
