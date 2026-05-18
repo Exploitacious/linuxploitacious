@@ -1,4 +1,4 @@
-# PowerShell Profile — linuxploitacious
+# PowerShell Profile -- linuxploitacious
 # github.com/Exploitacious/linuxploitacious
 
 # --- Encoding (UTF-8 for Nerd Font glyphs + OMP icons) ---

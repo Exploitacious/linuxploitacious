@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Windows Shell Setup — mirrors shellSetup.sh for Linux.
+    Windows Shell Setup -- mirrors shellSetup.sh for Linux.
 .DESCRIPTION
     Deploys a fully configured PowerShell + WezTerm environment on Windows.
-    Idempotent — safe to re-run. Existing configs backed up automatically.
+    Idempotent -- safe to re-run. Existing configs backed up automatically.
 .NOTES
     Created by Alex Ivantsov @Exploitacious
     One-liner: irm https://raw.githubusercontent.com/Exploitacious/linuxploitacious/master/winSetup.ps1 | iex
@@ -37,7 +37,7 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  BOOTSTRAP — REMOTE EXECUTION DETECTION
+#  BOOTSTRAP -- REMOTE EXECUTION DETECTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $ScriptPath = $MyInvocation.MyCommand.Path
@@ -81,7 +81,7 @@ if ($IsRemote) {
             git config --global user.email $email
             Write-Success "Git identity set: $name <$email>"
         } else {
-            Write-Warn 'Git identity not set — configure before committing.'
+            Write-Warn 'Git identity not set -- configure before committing.'
         }
     }
 
@@ -112,7 +112,7 @@ Set-Location $RepoDir
 # --- Auto-sync with upstream ---
 $dirty = git status --porcelain 2>$null
 if ($dirty) {
-    Write-Warn 'Working tree has uncommitted changes — skipping auto-pull.'
+    Write-Warn 'Working tree has uncommitted changes -- skipping auto-pull.'
     Write-Warn 'Commit/stash and re-run to sync with upstream.'
 } else {
     Write-Info 'Syncing with upstream (git pull --ff-only)...'
@@ -125,7 +125,7 @@ if ($dirty) {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MENU — Interactive Component Selector
+#  MENU -- Interactive Component Selector
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $MenuItems = @(
@@ -149,7 +149,7 @@ while ($true) {
     Write-Header 'Select Components'
     Write-Host ''
     Write-Host '  Toggle items by number, then press Enter to proceed.' -ForegroundColor DarkGray
-    Write-Host '  All components are idempotent — safe to re-run.' -ForegroundColor DarkGray
+    Write-Host '  All components are idempotent -- safe to re-run.' -ForegroundColor DarkGray
     Write-Host ''
 
     for ($i = 0; $i -lt $MenuItems.Count; $i++) {
@@ -186,7 +186,7 @@ if (-not $Selected) {
 
 # Auto-enable SSHKEY if COWORK selected (dependency)
 if ($Selected -contains 'COWORK' -and $Selected -notcontains 'SSHKEY') {
-    Write-Warn 'COWORK requires SSHKEY — enabling automatically.'
+    Write-Warn 'COWORK requires SSHKEY -- enabling automatically.'
     $Selected += 'SSHKEY'
 }
 
@@ -228,7 +228,7 @@ function Deploy-Symlink {
         $item = Get-Item $Target -Force
         if ($item.LinkType -in @('SymbolicLink', 'Junction')) {
             $linkTarget = ($item | Select-Object -ExpandProperty Target) -join ''
-            # Junctions may store \\?\ prefix — normalize for comparison
+            # Junctions may store \\?\ prefix -- normalize for comparison
             $linkTarget = $linkTarget -replace '^\\\\\?\\', ''
             if ($linkTarget -eq $Source) {
                 Write-Info "Already linked: $Target"
@@ -329,7 +329,7 @@ if ($Selected -contains 'JQ') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  NODE — fnm + Node LTS + pnpm
+#  NODE -- fnm + Node LTS + pnpm
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'NODE') {
@@ -368,7 +368,7 @@ if ($Selected -contains 'NODE') {
                 Write-Warn 'corepack enable pnpm failed. Run manually after restart.'
             }
         } else {
-            Write-Warn 'corepack not found — install Node first, then re-run.'
+            Write-Warn 'corepack not found -- install Node first, then re-run.'
         }
     } else {
         Write-Warn 'fnm not found after install. Restart terminal and re-run.'
@@ -376,7 +376,7 @@ if ($Selected -contains 'NODE') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PYTHON — Python 3, pip globals, pipx
+#  PYTHON -- Python 3, pip globals, pipx
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'PYTHON') {
@@ -452,11 +452,11 @@ if ($Selected -contains 'CLAUDE') {
         Write-Info 'Removed deprecated ~/.gemini directory.'
     }
 
-    # --- Claude Code (always refresh — matches Linux behavior) ---
+    # --- Claude Code (always refresh -- matches Linux behavior) ---
     Write-Info 'Installing/updating Claude Code...'
     winget install --id Anthropic.ClaudeCode -e --accept-package-agreements --accept-source-agreements 2>$null
     if ($LASTEXITCODE -ne 0) {
-        # winget returns non-zero if already up to date — check if it's actually present
+        # winget returns non-zero if already up to date -- check if it's actually present
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
             Write-Warn 'winget install failed. Trying npm fallback...'
             if (Get-Command npm -ErrorAction SilentlyContinue) {
@@ -488,7 +488,7 @@ if ($Selected -contains 'CLAUDE') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  APPS — Extra Applications via Winget
+#  APPS -- Extra Applications via Winget
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'APPS') {
@@ -539,7 +539,7 @@ if ($Selected -contains 'APPS') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  TWEAKS — Windows System Preferences
+#  TWEAKS -- Windows System Preferences
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'TWEAKS') {
@@ -592,7 +592,7 @@ if ($Selected -contains 'TWEAKS') {
         }
         $current = Get-ItemProperty -Path $t.Key -Name $t.Name -ErrorAction SilentlyContinue
         if ($null -ne $current -and $current.($t.Name) -eq $t.Value) {
-            Write-Info "$($t.Desc) — already set"
+            Write-Info "$($t.Desc) -- already set"
         } else {
             Set-ItemProperty -Path $t.Key -Name $t.Name -Value $t.Value -Type DWord
             Write-Success $t.Desc
@@ -606,7 +606,7 @@ if ($Selected -contains 'TWEAKS') {
             Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction Stop
             Write-Success 'Execution policy set to RemoteSigned (LocalMachine)'
         } catch {
-            Write-Warn 'Execution policy requires admin — run as Administrator to set.'
+            Write-Warn 'Execution policy requires admin -- run as Administrator to set.'
         }
     } else {
         Write-Info 'Execution policy already RemoteSigned'
@@ -623,7 +623,7 @@ if ($Selected -contains 'TWEAKS') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SSHKEY — GitHub SSH Key, CLI & Auth
+#  SSHKEY -- GitHub SSH Key, CLI & Auth
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'SSHKEY') {
@@ -772,7 +772,7 @@ Host ssh.github.com
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  COWORK — Multi-Agent Coordination
+#  COWORK -- Multi-Agent Coordination
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if ($Selected -contains 'COWORK') {
@@ -804,7 +804,7 @@ if ($Selected -contains 'COWORK') {
                 $canProceed = $false
             }
         } else {
-            # Idempotent sync — handles dirty working trees by stashing local
+            # Idempotent sync -- handles dirty working trees by stashing local
             # edits with a labeled timestamp, pulling, then attempting to
             # restore. If restore conflicts, stash stays for manual recovery
             # and setup continues. Never destroys local work silently.
@@ -820,7 +820,7 @@ if ($Selected -contains 'COWORK') {
 
             if ($hasUnstaged -or $hasStaged) {
                 $stashLabel = "setup-auto-" + (Get-Date -Format 'yyyy-MM-ddTHH-mm-ssZ' -AsUTC)
-                Write-Info "Uncommitted changes detected — stashing as '$stashLabel'..."
+                Write-Info "Uncommitted changes detected -- stashing as '$stashLabel'..."
                 git stash push -m $stashLabel 2>$null | Out-Null
                 if ($LASTEXITCODE -ne 0) {
                     Write-Warn "git stash failed. Skipping sync. Inspect: cd $CoworkDir; git status"
@@ -892,7 +892,7 @@ if ($Selected -contains 'COWORK') {
                 Write-Err "COWORK deploy.ps1 failed: $_"
             }
         } else {
-            Write-Warn "COWORK deploy.ps1 not found at $deployScript — Stage 2 skipped."
+            Write-Warn "COWORK deploy.ps1 not found at $deployScript -- Stage 2 skipped."
             Write-Warn "After fixing, run: $deployScript"
         }
 
@@ -926,7 +926,7 @@ if ($Selected -contains 'CONFIGS') {
         Write-Warn "OMP theme directory not found at $ompSourceDir"
     }
 
-    # PowerShell profile — deploy to both PS7 and PS5.1
+    # PowerShell profile -- deploy to both PS7 and PS5.1
     $profileSource = Join-Path $RepoDir 'powershell\Microsoft.PowerShell_profile.ps1'
     $ps7ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell'
     $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell'
@@ -940,7 +940,7 @@ if ($Selected -contains 'CONFIGS') {
     if (Test-Path (Split-Path $wtSettingsTarget -Parent)) {
         Deploy-Symlink -Source $wtSettingsSource -Target $wtSettingsTarget
     } else {
-        Write-Warn 'Windows Terminal not found — skipping settings deploy.'
+        Write-Warn 'Windows Terminal not found -- skipping settings deploy.'
     }
 
     # Fastfetch config
@@ -951,7 +951,7 @@ if ($Selected -contains 'CONFIGS') {
     }
 
     # --- Claude Code config (CLAUDE.md, settings.json, statusline.sh) ---
-    # Mirrors shellSetup.sh deploy_claude_config() — absolute symlinks.
+    # Mirrors shellSetup.sh deploy_claude_config() -- absolute symlinks.
     # Deploy-Symlink falls back to copy if Developer Mode is off / not admin.
     $claudeHome = Join-Path $env:USERPROFILE '.claude'
     if (-not (Test-Path $claudeHome)) {
@@ -974,10 +974,10 @@ if ($Selected -contains 'CONFIGS') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CLAUDE PLUGINS — Install after CONFIGS deploys settings.json
+#  CLAUDE PLUGINS -- Install after CONFIGS deploys settings.json
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Unconditional — runs whenever claude is in PATH (matches shellSetup.sh behavior).
+# Unconditional -- runs whenever claude is in PATH (matches shellSetup.sh behavior).
 # settings.json (deployed above) contains extraKnownMarketplaces for caveman.
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Header 'Claude Code Plugins'
