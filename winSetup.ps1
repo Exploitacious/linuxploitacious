@@ -109,6 +109,89 @@ if ($IsRemote) {
 
 Set-Location $RepoDir
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ENSURE: Administrator + PowerShell 7
+# ═══════════════════════════════════════════════════════════════════════════════
+# Two gates, in this order:
+#   1. PowerShell 7+: PS5.1 reads .ps1 as Windows-1252 (no UTF-8 BOM
+#      detection); a single em-dash inside a "..." string mid-decodes
+#      to a smart-quote and cascades parse errors through the whole
+#      file. PS7+ reads UTF-8 natively. Defense in depth on top of
+#      the ASCII-only file rule.
+#   2. Administrator: most STOW/CONFIGS work requires symlink creation,
+#      which on Windows demands either Developer Mode OR admin. winget
+#      installs that affect Machine scope also need admin.
+# Each gate, when not satisfied, re-launches the script in a new
+# process (under pwsh, elevated if needed) and exits this one.
+
+function Get-Pwsh7Path {
+    $cmd = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $fallback = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+    if (Test-Path $fallback) { return $fallback }
+    return $null
+}
+
+function Test-IsAdmin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($id)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+$isPs7   = $PSVersionTable.PSVersion.Major -ge 7
+$isAdmin = Test-IsAdmin
+
+if (-not $isPs7) {
+    Write-Header 'Switching to PowerShell 7'
+    $pwshPath = Get-Pwsh7Path
+
+    if (-not $pwshPath) {
+        Write-Info 'PowerShell 7 not installed. Installing via winget...'
+        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Write-Err 'winget not found. Install App Installer first, OR install PowerShell 7 manually from https://aka.ms/powershell and re-run.'
+            return
+        }
+        # User scope avoids needing admin for the install itself.
+        winget install --id Microsoft.PowerShell -e --scope user --accept-package-agreements --accept-source-agreements --silent
+        # Refresh PATH so pwsh becomes visible without restarting the shell.
+        $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                     [System.Environment]::GetEnvironmentVariable('Path', 'User')
+        $pwshPath = Get-Pwsh7Path
+        if (-not $pwshPath) {
+            Write-Err 'PowerShell 7 install completed but pwsh.exe still not found. Open a NEW terminal and re-run this script.'
+            return
+        }
+        Write-Success "PowerShell 7 installed at $pwshPath"
+    } else {
+        Write-Info "PowerShell 7 already installed at $pwshPath"
+    }
+
+    $relaunchArgs = @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    if (-not $isAdmin) {
+        Write-Info 'Re-launching under PowerShell 7 with admin elevation (UAC prompt next)...'
+        Start-Process -FilePath $pwshPath -ArgumentList $relaunchArgs -Verb RunAs
+    } else {
+        Write-Info 'Re-launching under PowerShell 7 (already admin)...'
+        Start-Process -FilePath $pwshPath -ArgumentList $relaunchArgs
+    }
+    Write-Info 'This window can now be closed. Continue in the new PowerShell 7 window.'
+    return
+}
+
+if (-not $isAdmin) {
+    Write-Header 'Elevating to Administrator'
+    Write-Info 'Most setup steps need admin (symlinks, machine-scope winget, scheduled tasks).'
+    Write-Info 'Re-launching elevated (UAC prompt next)...'
+    $pwshPath = Get-Pwsh7Path  # we're on PS7 now, this resolves
+    if (-not $pwshPath) { $pwshPath = (Get-Process -Id $PID).Path }
+    $relaunchArgs = @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    Start-Process -FilePath $pwshPath -ArgumentList $relaunchArgs -Verb RunAs
+    Write-Info 'This window can now be closed. Continue in the new elevated window.'
+    return
+}
+
+Write-Success "Running on PowerShell $($PSVersionTable.PSVersion) as Administrator"
+
 # --- Auto-sync with upstream ---
 $dirty = git status --porcelain 2>$null
 if ($dirty) {
