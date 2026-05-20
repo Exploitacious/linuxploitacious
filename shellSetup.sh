@@ -167,6 +167,54 @@ EOF
 
   # --- PACKAGE MANAGERS ---
 
+  ensure_utf8_locale() {
+    # Nerd Font glyphs (and most modern TUIs) require a UTF-8 locale.
+    # Fresh containers / minimal images often default to LANG=C, which
+    # renders icons as boxes or '?'. Make sure en_US.UTF-8 is generated
+    # and set as the system default.
+    msg_header "Ensuring UTF-8 locale (en_US.UTF-8)"
+
+    local CURRENT_LANG="${LANG:-C}"
+    if [[ "$CURRENT_LANG" == *"UTF-8"* || "$CURRENT_LANG" == *"utf8"* ]] \
+       && locale -a 2>/dev/null | grep -qiE '^en_US\.utf-?8$'; then
+      msg_info "UTF-8 locale already active ($CURRENT_LANG). Skipping."
+      return 0
+    fi
+
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      sudo apt-get install -y locales >/dev/null 2>&1 || msg_warn "Could not install 'locales' package."
+      if [ -f /etc/locale.gen ]; then
+        sudo sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+      fi
+      sudo locale-gen en_US.UTF-8 >/dev/null 2>&1
+      sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+    elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      if [ -f /etc/locale.gen ]; then
+        sudo sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+      fi
+      sudo locale-gen >/dev/null 2>&1
+      echo "LANG=en_US.UTF-8" | sudo tee /etc/locale.conf >/dev/null
+    elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+      sudo dnf install -y glibc-langpack-en >/dev/null 2>&1 || msg_warn "Could not install 'glibc-langpack-en'."
+      if command -v localectl &> /dev/null; then
+        sudo localectl set-locale LANG=en_US.UTF-8 2>/dev/null || \
+          echo "LANG=en_US.UTF-8" | sudo tee /etc/locale.conf >/dev/null
+      else
+        echo "LANG=en_US.UTF-8" | sudo tee /etc/locale.conf >/dev/null
+      fi
+    else
+      msg_warn "Unknown OS family; skipping locale setup."
+      return 0
+    fi
+
+    # Apply to the current shell so the remainder of this script (and any
+    # fc-cache / font rendering checks) sees the UTF-8 locale immediately.
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+
+    msg_success "UTF-8 locale configured. Re-login for it to take effect in new shells."
+  }
+
   install_nerd_fonts() {
     local FONT_DIR="/usr/local/share/fonts/NerdFonts"
     if [ -d "$FONT_DIR" ] && fc-list | grep -qi "Nerd Font"; then
@@ -199,6 +247,7 @@ EOF
 
   install_debian_base() {
     msg_header "Configuring Debian/Kali base"
+    ensure_utf8_locale
     sudo apt-get update
 
     # Ensure software-properties-common is installed first
@@ -261,6 +310,7 @@ EOF
 
   install_arch_base() {
     msg_header "Configuring Arch base"
+    ensure_utf8_locale
     sudo pacman -Syu --noconfirm
     
     local ARCH_PKGS=(zsh stow git curl wget unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel jq btop tree)
@@ -282,6 +332,7 @@ EOF
 
   install_fedora_base() {
     msg_header "Configuring Fedora/RHEL base"
+    ensure_utf8_locale
     sudo dnf upgrade -y
 
     local FEDORA_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip nmap wget jq btop tree)
