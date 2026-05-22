@@ -42,6 +42,17 @@ If `~/COWORK/CLAUDE.md` exists, treat it as the primary global instruction layer
 - No bullet lists or headers in casual conversation; save structure for documents and deliverables.
 - No bold emphasis spam. If everything is bold, nothing is.
 
+## Compaction is a pause, not death
+
+Claude Code auto-compacts at ~75% context. The summary preserves the conversation arc; fine-grained context dies. To make compaction safe, durable state must be on disk before the compact fires.
+
+Two layers are configured at this level:
+
+- **`PreCompact` hook** (`~/COWORK/.claude-config/hooks/pre-compact.sh`, registered in `settings.json`) — fires automatically on every compaction. Pure shell. Captures git state + branch + recent commits to `~/.claude/projects/<workspace>/pre-compact-<ts>.md`. Safety net; runs always.
+- **`pre-compact-synthesis` skill** — invoke when the user signals wrap-up ("compact", "pre-compact", "wrap up", "do the thing"), or proactively at ~65% context if the session is closing. AI-driven thoughtful synthesis: verifies git committed + pushed, walks task list, saves pending feedback memories, updates the project's durable narrative anchor (fleet journal or `SESSION_HANDOFF.md`). Auto-detects fleet vs solo.
+
+Both implement the four-artifact rule (git commits, auto-memory, TaskCreate state, durable anchor) that lets post-compact-you self-recover via files alone. Reference: COWORK's `CONTEXT/operating-doctrine.md` Principle 2 when present.
+
 ## Conversational Compression (always on)
 
 When responding in chat or conversation — not deliverables, not emails, not code — apply these compression rules by default:

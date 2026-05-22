@@ -47,6 +47,17 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -x $HOME/COWORK/.claude-config/hooks/pre-compact.sh && $HOME/COWORK/.claude-config/hooks/pre-compact.sh 2>/dev/null || printf '{\"decision\": \"allow\"}\\n'"
+          }
+        ]
+      }
     ]
   }
 }
