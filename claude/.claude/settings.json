@@ -11,36 +11,15 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "model": "claude-opus-4-7",
-  "statusLine": {
-    "type": "command",
-    "command": "bash \"$HOME/.claude/statusline.sh\"",
-    "refreshInterval": 5
-  },
-  "enabledPlugins": {
-    "caveman@caveman": true
-  },
-  "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      }
-    }
-  },
-  "spinnerTipsEnabled": false,
-  "effortLevel": "high",
-  "autoMemoryEnabled": true,
-  "autoDreamEnabled": true,
-  "skipDangerousModePermissionPrompt": true,
-  "theme": "dark",
-  "skipAutoPermissionPrompt": true,
-  "agentPushNotifEnabled": true,
   "hooks": {
     "SessionStart": [
       {
         "matcher": ".*",
         "hooks": [
+          {
+            "type": "command",
+            "command": "test -x $HOME/COWORK/.claude-config/hooks/foreman-charter.sh && $HOME/COWORK/.claude-config/hooks/foreman-charter.sh 2>/dev/null || true"
+          },
           {
             "type": "command",
             "command": "test -x $HOME/COWORK/WORKFORCE/bin/ac-reorient && $HOME/COWORK/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
@@ -63,5 +42,29 @@
         ]
       }
     ]
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline.sh\"",
+    "refreshInterval": 5
+  },
+  "enabledPlugins": {
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    }
+  },
+  "spinnerTipsEnabled": false,
+  "effortLevel": "xhigh",
+  "autoMemoryEnabled": true,
+  "autoDreamEnabled": true,
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
