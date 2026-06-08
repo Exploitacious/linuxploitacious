@@ -76,3 +76,25 @@ Keep articles (a/an/the). Keep full sentences. Keep professional register. This 
 - Subject line 50 chars when possible, hard cap 72. No trailing period.
 - Commit body only when the "why" isn't obvious from the subject.
 - No AI attribution in commits.
+
+## Subagents on the personal profile (1M credit gate)
+
+This profile (`clawd`, `~/.claude-personal`) pins every model alias to the
+`[1m]` 1M-context variant. Spawning subagents at 1M trips a pay-as-you-go
+credit gate this account doesn't have enabled, so `Agent`/Task calls with
+`model: "opus"` or `model: "sonnet"` (both resolve to `[1m]`) die with:
+`API Error: Usage credits required for 1M context`. The work profile
+(`claude`, `~/.claude`) has credits on, so 1M subagents work there.
+
+**Workaround — launch subagents with `model: "haiku"`.** That alias is
+repurposed in `settings.json` to standard-context Sonnet 4.6
+(`claude-sonnet-4-6`, no `[1m]`): a capable 200k-context worker with no
+credit gate. Use it for all subagent fan-out on this profile (investigators,
+builders, reviewers — 200k is ample for a single subagent's scope).
+
+- `model: "haiku"` → standard Sonnet 4.6, **no gate** — the default for fan-out here.
+- `model: "opus"` / `"sonnet"` → 1M, **gated** until `/usage-credits` is enabled on this account.
+- The main session keeps 1M Opus (uses the OPUS alias) regardless.
+
+To restore real Haiku or get 1M subagents: enable `/usage-credits` on the
+`clawd` account, or re-point `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
