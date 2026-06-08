@@ -171,3 +171,6 @@ fi
 
 # NOTE: COWORK claude-wrapper sourcing is owned by Stage 2 deploy.sh.
 # It appends a tagged block here on first run; do not hardcode it.
+
+# --- COWORK clawd (personal Claude profile) ---
+clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )

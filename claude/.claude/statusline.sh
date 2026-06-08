@@ -166,8 +166,15 @@ COST_FMT=$(printf '%.2f' "$COST")
 
 # === Build cells ===
 
-# Row 1: model+badges  │  context bar  │  time
-R1_C1="${B}${PUR}${MODEL}${RST}${CAVEMAN}"
+# Profile tag — which account this session burns. CLAUDE_CONFIG_DIR is
+# unset for work (default) and ~/.claude-personal for the `clawd` launcher.
+case "${CLAUDE_CONFIG_DIR:-}" in
+    */.claude-personal) PROFILE="${B}${YEL}PERSONAL${RST} " ;;
+    *)                  PROFILE="${B}${CYN}WORK${RST} " ;;
+esac
+
+# Row 1: profile+model+badges  │  context bar  │  time
+R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${CAVEMAN}"
 R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}"
 R1_C3="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}     ${GRY}${API_TIME}${RST} ${D}api${RST}"
 
