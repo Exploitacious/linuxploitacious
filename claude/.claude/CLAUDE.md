@@ -79,22 +79,33 @@ Keep articles (a/an/the). Keep full sentences. Keep professional register. This 
 
 ## Subagents on the personal profile (1M credit gate)
 
-This profile (`clawd`, `~/.claude-personal`) pins every model alias to the
-`[1m]` 1M-context variant. Spawning subagents at 1M trips a pay-as-you-go
-credit gate this account doesn't have enabled, so `Agent`/Task calls with
-`model: "opus"` or `model: "sonnet"` (both resolve to `[1m]`) die with:
+This profile (`clawd`, `~/.claude-personal`) runs the interactive session on
+1M-context Opus. But **spawning a subagent at 1M context** trips a
+pay-as-you-go credit gate this account doesn't have enabled — the
+interactive session is entitled to 1M, a spawned agent at 1M is not. So any
+`Agent`/Task call that resolves to a `[1m]` model dies with:
 `API Error: Usage credits required for 1M context`. The work profile
 (`claude`, `~/.claude`) has credits on, so 1M subagents work there.
 
-**Workaround — launch subagents with `model: "haiku"`.** That alias is
-repurposed in `settings.json` to standard-context Sonnet 4.6
-(`claude-sonnet-4-6`, no `[1m]`): a capable 200k-context worker with no
-credit gate. Use it for all subagent fan-out on this profile (investigators,
-builders, reviewers — 200k is ample for a single subagent's scope).
+The gate is purely on **1M-context model resolution** — NOT on agent type.
+(Earlier folklore blamed the `Explore` agent type for "forcing 1M"; that's
+wrong — `Explore` + a non-`[1m]` alias runs fine. The model alias is the only
+lever.) So the fix is to spawn subagents on a non-`[1m]` alias. The aliases in
+`settings.json` are repointed to give two ungated 200k-context tiers:
 
-- `model: "haiku"` → standard Sonnet 4.6, **no gate** — the default for fan-out here.
-- `model: "opus"` / `"sonnet"` → 1M, **gated** until `/usage-credits` is enabled on this account.
-- The main session keeps 1M Opus (uses the OPUS alias) regardless.
+| `model:` | resolves to | context | gate |
+|---|---|---|---|
+| `"haiku"` | `claude-sonnet-4-6` | 200k | **ungated** — light/fast worker |
+| `"sonnet"` | `claude-opus-4-8` | 200k | **ungated** — heavy Opus worker |
+| `"opus"` | `claude-opus-4-8[1m]` | 1M | **gated** — main session only; subagents fail until credits |
 
-To restore real Haiku or get 1M subagents: enable `/usage-credits` on the
-`clawd` account, or re-point `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+**Rule of thumb on this profile:** fan out with `model: "haiku"` for routine
+investigation/build/review (cheap, ample); reach for `model: "sonnet"` (=
+standard Opus) when a subagent needs more reasoning muscle. Never spawn
+`model: "opus"` here — it's 1M and will fail. Any agent type works with the
+ungated aliases. The main interactive session keeps 1M Opus regardless (it
+uses the OPUS alias, unchanged).
+
+To get 1M subagents (or restore literal Sonnet/Haiku naming): enable
+`/usage-credits` on the `clawd` account, or re-point the
+`ANTHROPIC_DEFAULT_*_MODEL` env keys.
