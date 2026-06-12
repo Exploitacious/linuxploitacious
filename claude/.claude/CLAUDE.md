@@ -97,11 +97,13 @@ lever.) So the fix is to spawn subagents on a non-`[1m]` alias. The aliases in
 |---|---|---|---|
 | `"haiku"` | `claude-sonnet-4-6` | 200k | **ungated** — light/fast worker |
 | `"sonnet"` | `claude-opus-4-8` | 200k | **ungated** — heavy Opus worker |
+| `"fable"` | Fable 5 (non-1M) | 200k | **ungated** — VERIFIED 2026-06-11 by live spawn (no credit error); strongest available worker while Fable 5 access lasts |
 | `"opus"` | `claude-opus-4-8[1m]` | 1M | **gated** — main session only; subagents fail until credits |
 
 **Rule of thumb on this profile:** fan out with `model: "haiku"` for routine
-investigation/build/review (cheap, ample); reach for `model: "sonnet"` (=
-standard Opus) when a subagent needs more reasoning muscle. Never spawn
+investigation/build/review (cheap, ample); `model: "fable"` for the demanding
+lanes (security-sensitive builds, audits, research studies, anything needing
+top judgment); `model: "sonnet"` (= standard Opus) as the mid tier. Never spawn
 `model: "opus"` here — it's 1M and will fail. Any agent type works with the
 ungated aliases. The main interactive session keeps 1M Opus regardless (it
 uses the OPUS alias, unchanged).
