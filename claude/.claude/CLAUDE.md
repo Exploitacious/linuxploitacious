@@ -90,23 +90,27 @@ interactive session is entitled to 1M, a spawned agent at 1M is not. So any
 The gate is purely on **1M-context model resolution** — NOT on agent type.
 (Earlier folklore blamed the `Explore` agent type for "forcing 1M"; that's
 wrong — `Explore` + a non-`[1m]` alias runs fine. The model alias is the only
-lever.) So the fix is to spawn subagents on a non-`[1m]` alias. The aliases in
-`settings.json` are repointed to give two ungated 200k-context tiers:
+lever.) The aliases in `settings.json` are set to standard models — Opus and
+Sonnet, with Haiku aliased to Sonnet (no Haiku model in use):
 
 | `model:` | resolves to | context | gate |
 |---|---|---|---|
-| `"haiku"` | `claude-sonnet-4-6` | 200k | **ungated** — light/fast worker |
-| `"sonnet"` | `claude-opus-4-8` | 200k | **ungated** — heavy Opus worker |
-| `"fable"` | Fable 5 (non-1M) | 200k | **ungated** — VERIFIED 2026-06-11 by live spawn (no credit error); strongest available worker while Fable 5 access lasts |
-| `"opus"` | `claude-opus-4-8[1m]` | 1M | **gated** — main session only; subagents fail until credits |
+| `"haiku"` | `claude-sonnet-4-6` | 200k | **ungated** — light/fast worker (no Haiku model; aliased to Sonnet) |
+| `"sonnet"` | `claude-sonnet-4-6` | 200k | **ungated** — standard Sonnet worker |
+| `"opus"` | `claude-opus-4-8[1m]` | 1M | main-session 1M; subagents resolve to `[1m]` so they **work on the work profile** (`claude`, credits on) but **fail on the personal profile** (`clawd`, no credits) |
 
-**Rule of thumb on this profile:** fan out with `model: "haiku"` for routine
-investigation/build/review (cheap, ample); `model: "fable"` for the demanding
-lanes (security-sensitive builds, audits, research studies, anything needing
-top judgment); `model: "sonnet"` (= standard Opus) as the mid tier. Never spawn
-`model: "opus"` here — it's 1M and will fail. Any agent type works with the
-ungated aliases. The main interactive session keeps 1M Opus regardless (it
-uses the OPUS alias, unchanged).
+> **Fable 5 access has ended** — the `"fable"` alias is dead and a spawn returns
+> `Claude Fable 5 is currently unavailable`. Do not spawn `model: "fable"`.
+
+**Rule of thumb:** fan out with `model: "sonnet"` (or `"haiku"` — same Sonnet
+model) for routine investigation/build/review (cheap, ample); use
+`model: "opus"` for the demanding lanes (security-sensitive builds, audits,
+research studies, anything needing top judgment). On this **work profile**
+(`claude`, `~/.claude`) `model: "opus"` subagents work because credits are on;
+on the **personal profile** (`clawd`) `model: "opus"` resolves to `[1m]` and
+will fail the credit gate, so stick to `"sonnet"` there. Any agent type works
+with any alias. The main interactive session keeps 1M Opus regardless (it uses
+the OPUS alias, unchanged).
 
 To get 1M subagents (or restore literal Sonnet/Haiku naming): enable
 `/usage-credits` on the `clawd` account, or re-point the

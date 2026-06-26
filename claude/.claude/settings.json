@@ -4,7 +4,7 @@
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6"
   },
   "attribution": {
@@ -34,6 +34,10 @@
           {
             "type": "command",
             "command": "test -x $HOME/COWORK/.claude-config/hooks/handoff-check.sh && $HOME/COWORK/.claude-config/hooks/handoff-check.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "test -x $HOME/COWORK/.claude-config/hooks/memory-index.sh && $HOME/COWORK/.claude-config/hooks/memory-index.sh 2>/dev/null || true"
           }
         ]
       }
@@ -67,12 +71,11 @@
     }
   },
   "spinnerTipsEnabled": false,
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "model": "claude-fable-5[1m]"
+  "skipAutoPermissionPrompt": true
 }
