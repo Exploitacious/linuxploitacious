@@ -2,7 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 30,
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
+    "DISABLE_AUTO_COMPACT": "1",
+    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6"
@@ -72,6 +73,9 @@
   },
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
+  "autoCompactEnabled": false,
+  "remoteControlAtStartup": true,
+  "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
