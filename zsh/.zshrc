@@ -151,8 +151,14 @@ fi
 # opencode
 [[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
 
-# NOTE: COWORK claude-wrapper sourcing is owned by Stage 2 deploy.sh.
-# It appends a tagged block here on first run; do not hardcode it.
-
 # --- COWORK clawd (personal Claude profile) ---
 clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
+
+# Machine-local overrides (untracked; survive git sync of this public repo).
+# Host-/operator-specific shell config that must NOT live in this public repo
+# goes here. COWORK Stage-2 (deploy.sh) writes operator-only Claude config —
+# e.g. the always-on ultracode claude() shim — into ~/.zshrc.local. It does
+# NOT edit this tracked file: ~/.zshrc is a stow symlink to the repo, so any
+# append here dirties the public repo and is wiped on the next sync. Generic
+# seam, no external assumptions; keep last so locals win.
+[ -r "${HOME}/.zshrc.local" ] && . "${HOME}/.zshrc.local"
