@@ -26,6 +26,10 @@
           },
           {
             "type": "command",
+            "command": "test -x $HOME/COWORK/.claude-config/hooks/session-briefing.sh && $HOME/COWORK/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
             "command": "test -x $HOME/COWORK/WORKFORCE/bin/ac-reorient && $HOME/COWORK/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
           },
           {
