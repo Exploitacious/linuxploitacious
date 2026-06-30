@@ -95,8 +95,8 @@ Sonnet, with Haiku aliased to Sonnet (no Haiku model in use):
 
 | `model:` | resolves to | context | gate |
 |---|---|---|---|
-| `"haiku"` | `claude-sonnet-4-6` | 200k | **ungated** — light/fast worker (no Haiku model; aliased to Sonnet) |
-| `"sonnet"` | `claude-sonnet-4-6` | 200k | **ungated** — standard Sonnet worker |
+| `"haiku"` | `claude-sonnet-5` | 200k | **ungated** — light/fast worker (no Haiku model; aliased to Sonnet) |
+| `"sonnet"` | `claude-sonnet-5` | 200k | **ungated** — primary worker (Sonnet 5, replaced 4.6 2026-06-30; live-probe-verified ID) |
 | `"opus"` | `claude-opus-4-8[1m]` | 1M | main-session 1M; subagents resolve to `[1m]` so they **work on the work profile** (`claude`, credits on) but **fail on the personal profile** (`clawd`, no credits) |
 
 > **Fable 5 access has ended** — the `"fable"` alias is dead and a spawn returns
