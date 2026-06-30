@@ -77,7 +77,7 @@ SEP="${GRY}│${RST}"
 SEP_WRAP="      ${SEP}      "
 
 # Column widths (visible chars, before separator)
-COL1_W=44
+COL1_W=46
 COL2_W=52
 
 # Progress bar
@@ -234,8 +234,8 @@ if [ -n "$RL_7D" ]; then
     RL7_BAR=$(make_bar "$rl7" 10)
     RL7C=$(pct_color "$rl7" 50 80)
 fi
-R3_C1="${D}Capacity${RST}      ${D}5h${RST} ${RL5C}${RL5_BAR}   ${rl5}%${RST}${RL5_TTL:+   ${D}↻${RST}${GRY}${RL5_TTL}${RST}}"
-R3_C2="${D}7d${RST} ${RL7C}${RL7_BAR}   ${rl7}%${RST}${RL7_TTL:+   ${D}↻${RST}${GRY}${RL7_TTL}${RST}}"
+R3_C1="${D}Capacity${RST}      ${D}5h${RST} ${RL5C}${RL5_BAR}   ${rl5}%${RST}${RL5_TTL:+   ${D}↻ ${RST}${GRY}${RL5_TTL}${RST}}"
+R3_C2="${D}7d${RST} ${RL7C}${RL7_BAR}   ${rl7}%${RST}${RL7_TTL:+   ${D}↻ ${RST}${GRY}${RL7_TTL}${RST}}"
 
 # === Render ===
 
