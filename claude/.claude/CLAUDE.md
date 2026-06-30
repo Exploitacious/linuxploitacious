@@ -77,41 +77,41 @@ Keep articles (a/an/the). Keep full sentences. Keep professional register. This 
 - Commit body only when the "why" isn't obvious from the subject.
 - No AI attribution in commits.
 
-## Subagents on the personal profile (1M credit gate)
+## Subagent model tiers (1M fan-out works on BOTH profiles)
 
-This profile (`clawd`, `~/.claude-personal`) runs the interactive session on
-1M-context Opus. But **spawning a subagent at 1M context** trips a
-pay-as-you-go credit gate this account doesn't have enabled — the
-interactive session is entitled to 1M, a spawned agent at 1M is not. So any
-`Agent`/Task call that resolves to a `[1m]` model dies with:
-`API Error: Usage credits required for 1M context`. The work profile
-(`claude`, `~/.claude`) has credits on, so 1M subagents work there.
+Both profiles — `claude`/`~/.claude` (work) and `clawd`/`~/.claude-personal`
+(personal) — run 1M-context subagents. The pay-as-you-go credit gate that
+**used to** kill `[1m]`-context subagents on the personal profile
+(`API Error: Usage credits required for 1M context`) **no longer fires as of
+2026-06-30**, verified live: 10/10 Opus-1M *and* Sonnet-1M subagents booted
+clean on `clawd` via both the Agent tool and the Workflow tool — while
+`oauthAccount.hasExtraUsageEnabled` is still `false`
+(`cachedExtraUsageDisabledReason: "org_level_disabled"`). So this is a
+**platform change, NOT a credit flip** — the account still has extra usage
+disabled, yet 1M subagents work. (Conditional: if 1M spawns ever start failing
+again with the credit error, the old cap returns — re-point the SONNET/OPUS
+aliases below to non-`[1m]` models until it's resolved.)
 
-The gate is purely on **1M-context model resolution** — NOT on agent type.
-(Earlier folklore blamed the `Explore` agent type for "forcing 1M"; that's
-wrong — `Explore` + a non-`[1m]` alias runs fine. The model alias is the only
-lever.) The aliases in `settings.json` are set to standard models — Opus and
-Sonnet, with Haiku aliased to Sonnet (no Haiku model in use):
+The earlier folklore blaming the `Explore` agent type for "forcing 1M" is
+wrong — agent type is irrelevant; the model alias is the only lever.
 
-| `model:` | resolves to | context | gate |
+**Worker-model policy (operator directive 2026-06-30 — same on BOTH profiles):**
+
+| `model:` | resolves to | context | use for |
 |---|---|---|---|
-| `"haiku"` | `claude-sonnet-5` | 200k | **ungated** — light/fast worker (no Haiku model; aliased to Sonnet) |
-| `"sonnet"` | `claude-sonnet-5` | 200k | **ungated** — primary worker (Sonnet 5, replaced 4.6 2026-06-30; live-probe-verified ID) |
-| `"opus"` | `claude-opus-4-8[1m]` | 1M | main-session 1M; subagents resolve to `[1m]` so they **work on the work profile** (`claude`, credits on) but **fail on the personal profile** (`clawd`, no credits) |
+| `"haiku"` | `claude-sonnet-5` | 200K | easiest / mechanical lanes — no Haiku model in use; Sonnet 5 is the floor |
+| `"sonnet"` | `claude-sonnet-5[1m]` | 1M | **default worker** — Sonnet 5 at 1M; the 1M price premium only applies past 200K input, so the headroom is ~free for normal work |
+| `"opus"` | `claude-opus-4-8[1m]` | 1M | hardest lanes — security-sensitive builds, audits, research, top-judgment work |
 
 > **Fable 5 access has ended** — the `"fable"` alias is dead and a spawn returns
 > `Claude Fable 5 is currently unavailable`. Do not spawn `model: "fable"`.
 
-**Rule of thumb:** fan out with `model: "sonnet"` (or `"haiku"` — same Sonnet
-model) for routine investigation/build/review (cheap, ample); use
-`model: "opus"` for the demanding lanes (security-sensitive builds, audits,
-research studies, anything needing top judgment). On this **work profile**
-(`claude`, `~/.claude`) `model: "opus"` subagents work because credits are on;
-on the **personal profile** (`clawd`) `model: "opus"` resolves to `[1m]` and
-will fail the credit gate, so stick to `"sonnet"` there. Any agent type works
-with any alias. The main interactive session keeps 1M Opus regardless (it uses
-the OPUS alias, unchanged).
+**Rule of thumb:** default to `model: "sonnet"` (Sonnet 5 1M) for routine
+investigation/build/review; drop to `model: "haiku"` (Sonnet 5 200K) for
+trivial/mechanical lanes where 1M context is wasted; escalate to
+`model: "opus"` (Opus 4.8 1M) for the demanding lanes. No profile-specific cap
+anymore — the same tiers apply on `claude` and `clawd`. Any agent type works
+with any alias. The main interactive session stays 1M Opus (OPUS alias).
 
-To get 1M subagents (or restore literal Sonnet/Haiku naming): enable
-`/usage-credits` on the `clawd` account, or re-point the
-`ANTHROPIC_DEFAULT_*_MODEL` env keys.
+To change tiers, re-point the `ANTHROPIC_DEFAULT_*_MODEL` env keys in the
+shared `settings.json`.
