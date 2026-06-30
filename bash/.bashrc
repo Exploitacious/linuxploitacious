@@ -88,11 +88,6 @@ if command -v fastfetch >/dev/null 2>&1; then
   fastfetch
 fi
 
-# Fabric Bootstrap
-if [ -f "$HOME/.config/fabric/fabric-bootstrap.inc" ]; then 
-  . "$HOME/.config/fabric/fabric-bootstrap.inc"
-fi
-
 # Opencode (guard so missing install doesn't pollute PATH)
 [ -d "$HOME/.opencode/bin" ] && case ":$PATH:" in *":$HOME/.opencode/bin:"*) :;; *) export PATH="$HOME/.opencode/bin:$PATH";; esac
 
@@ -119,19 +114,6 @@ case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
-
-# OpenClaw
-case ":$PATH:" in
-  *":${HOME}/.npm-global/bin:"*) ;;
-  *) export PATH="${HOME}/.npm-global/bin:${PATH}" ;;
-esac
-export NODE_PATH="${HOME}/.npm-global/lib/node_modules"
-export NODE_COMPILE_CACHE="/var/tmp/openclaw-compile-cache"
-export OPENCLAW_NO_RESPAWN=1
-alias openclaw-update='pnpm add -g openclaw@latest && systemctl --user restart openclaw-gateway.service'
-alias openclaw-logs='openclaw logs --follow'
-alias openclaw-status='openclaw gateway status'
-alias openclaw-backup='${HOME}/bin/backup-openclaw.sh'
 
 # --- Tmux session picker on SSH login ---
 if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then

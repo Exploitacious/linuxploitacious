@@ -165,6 +165,9 @@ EOF
     if ! command -v whiptail &> /dev/null; then sudo dnf install -y newt; fi
   fi
 
+  # --- STOW PACKAGES (single source of truth; deploy_stow + setup_root_profile both reference this) ---
+  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+
   # --- PACKAGE MANAGERS ---
 
   ensure_utf8_locale() {
@@ -506,7 +509,7 @@ BRAVEREPO
     cd "$REPO_DIR" || exit 1
 
     # NOTE: claude/ is excluded — ROOT shares ~/.claude via symlink (AI_DIRS block below)
-    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+    local PACKAGES=("${STOW_PACKAGES[@]}")
     local TS_ROOT
     TS_ROOT="$(date +%Y%m%d_%H%M%S)"
     for pkg in "${PACKAGES[@]}"; do
@@ -1535,7 +1538,7 @@ EOF
 
     # NOTE: claude/ is excluded from stow — uses absolute symlinks instead (see deploy_claude_config)
     # Stow's relative symlinks break through chained symlinks (user -> root sharing via AI_DIRS)
-    local PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+    local PACKAGES=("${STOW_PACKAGES[@]}")
 
     for pkg in "${PACKAGES[@]}"; do
       if [ -d "$pkg" ]; then

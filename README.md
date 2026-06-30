@@ -179,11 +179,11 @@ so a fork without your own COWORK works out-of-the-box.
 If you want your own Stage 2 layer, here's the complete list of
 things to change in a fork:
 
-1. **`shellSetup.sh::setup_cowork`** (line ~1582) — change
+1. **`shellSetup.sh::setup_cowork`** (line ~1632) — change
    `gh repo clone Exploitacious/COWORK` to your own private repo
    path. The function will clone it to `$HOME/COWORK` and then
    invoke `$HOME/COWORK/.claude-config/deploy.sh` on completion.
-2. **`winSetup.ps1` COWORK section** (line ~799) — same change,
+2. **`winSetup.ps1` COWORK section** (line ~873) — same change,
    `gh repo clone Exploitacious/COWORK`.
 3. **`claude/.claude/CLAUDE.md`** "COWORK Context Awareness"
    section — either replace `~/COWORK/` with your own personal
@@ -414,7 +414,7 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 |-------|---------|-------------|
 | `c` | `clear` | Clear the terminal |
 | `x` | `exit` | Exit the shell |
-| `e` | `code -n ~/ ~/.zshrc ...` | Open home dir and shell config in VS Code |
+| `e` | `nano ~/.zshrc` / `nano ~/.bashrc` | Open shell config in nano |
 | `r` | `source ~/.zshrc` / `source ~/.bashrc` | Reload shell configuration |
 | `h` | `history -10` | Show last 10 history entries |
 | `hc` | `history -c` | Clear shell history |
@@ -431,7 +431,7 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `ll` | (same as `lsa`) | Alias for `lsa` (muscle-memory shortcut) |
 | `cd..` | `cd ..` | Go up one directory (typo-friendly) |
 | `cd...` | `cd .. && cd ..` | Go up two directories |
-| `vsc` | `cd /mnt/c/users/Alex/VSCODE` | Jump to VS Code workspace (WSL) |
+
 
 ### Package Management
 
@@ -792,6 +792,7 @@ stow -D -t ~ zsh
 # (NOTE: `claude/` is intentionally excluded — it is deployed via
 # absolute symlinks in deploy_claude_config(), not stow. See "Claude
 # Code Setup" section above.)
+# NOTE: this list must match STOW_PACKAGES in shellSetup.sh
 for pkg in bash zsh tmux btop fastfetch omp rustscan scripts; do
   stow -R -t ~ "$pkg"
 done

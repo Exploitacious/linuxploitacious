@@ -541,12 +541,8 @@ if ($Selected -contains 'CLAUDE') {
     if ($LASTEXITCODE -ne 0) {
         # winget returns non-zero if already up to date -- check if it's actually present
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-            Write-Warn 'winget install failed. Trying npm fallback...'
-            if (Get-Command npm -ErrorAction SilentlyContinue) {
-                npm install -g @anthropic-ai/claude-code
-            } else {
-                Write-Warn 'Install Claude Code manually: https://claude.ai/code'
-            }
+            Write-Warn 'winget install failed and Claude Code not found.'
+            Write-Warn 'Install manually: https://claude.ai/code'
         }
     }
     Refresh-Path
@@ -983,6 +979,15 @@ if ($Selected -contains 'COWORK') {
         # skill + commands symlinks, WORKFORCE\bin PATH wiring,
         # ac-memory-init.ps1, daily backup scheduled task, plugin install.
         # See $CoworkDir\DEPLOYMENT.md for the full procedure.
+        # Stage 2 symlinks land under ~/.claude/; this block can run BEFORE the
+        # CONFIGS block (which also creates ~/.claude) or when CONFIGS isn't
+        # selected, so ensure the dir exists first. Mirrors the New-Item guard
+        # in the CONFIGS block. (Full Level-1-files-before-Stage-2 reorder is a
+        # deferred Windows-live task — see infra worklist WS-9.)
+        $claudeHomeEnsure = Join-Path $env:USERPROFILE '.claude'
+        if (-not (Test-Path $claudeHomeEnsure)) {
+            New-Item -ItemType Directory -Path $claudeHomeEnsure -Force | Out-Null
+        }
         $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
         if (Test-Path $deployScript) {
             Write-Info 'Invoking COWORK deploy.ps1 for Stage 2 setup...'
