@@ -863,6 +863,76 @@ Host ssh.github.com
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  DEPLOY CONFIGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if ($Selected -contains 'CONFIGS') {
+    Write-Header 'Deploying Configs'
+
+    # WezTerm config
+    Deploy-Symlink `
+        -Source (Join-Path $RepoDir 'wezterm\.wezterm.lua') `
+        -Target (Join-Path $env:USERPROFILE '.wezterm.lua')
+
+    # Oh My Posh themes (reuse existing repo configs)
+    $ompSourceDir = Join-Path $RepoDir 'omp\.config\ohmyposh'
+    $ompTargetDir = Join-Path $env:USERPROFILE '.config\ohmyposh'
+    if (Test-Path $ompSourceDir) {
+        Get-ChildItem $ompSourceDir -File | ForEach-Object {
+            Deploy-Symlink -Source $_.FullName -Target (Join-Path $ompTargetDir $_.Name)
+        }
+    } else {
+        Write-Warn "OMP theme directory not found at $ompSourceDir"
+    }
+
+    # PowerShell profile -- deploy to both PS7 and PS5.1
+    $profileSource = Join-Path $RepoDir 'powershell\Microsoft.PowerShell_profile.ps1'
+    $ps7ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell'
+    $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell'
+
+    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
+    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
+
+    # Windows Terminal settings (Catppuccin Mocha, font, opacity, acrylic)
+    $wtSettingsSource = Join-Path $RepoDir 'windows-terminal\settings.json'
+    $wtSettingsTarget = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+    if (Test-Path (Split-Path $wtSettingsTarget -Parent)) {
+        Deploy-Symlink -Source $wtSettingsSource -Target $wtSettingsTarget
+    } else {
+        Write-Warn 'Windows Terminal not found -- skipping settings deploy.'
+    }
+
+    # Fastfetch config
+    $ffSource = Join-Path $RepoDir 'fastfetch\.config\fastfetch\config.jsonc'
+    $ffTarget = Join-Path $env:USERPROFILE '.config\fastfetch\config.jsonc'
+    if (Test-Path $ffSource) {
+        Deploy-Symlink -Source $ffSource -Target $ffTarget
+    }
+
+    # --- Claude Code config (CLAUDE.md, settings.json, statusline.sh) ---
+    # Mirrors shellSetup.sh deploy_claude_config() -- absolute symlinks.
+    # Deploy-Symlink falls back to copy if Developer Mode is off / not admin.
+    $claudeHome = Join-Path $env:USERPROFILE '.claude'
+    if (-not (Test-Path $claudeHome)) {
+        New-Item -ItemType Directory -Path $claudeHome -Force | Out-Null
+    }
+
+    $claudeSourceDir = Join-Path $RepoDir 'claude\.claude'
+    foreach ($file in @('CLAUDE.md', 'settings.json', 'statusline.sh')) {
+        $src = Join-Path $claudeSourceDir $file
+        $tgt = Join-Path $claudeHome $file
+        if (Test-Path $src) {
+            Deploy-Symlink -Source $src -Target $tgt
+        }
+    }
+
+    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
+    # ($USERPROFILE\COWORK\.claude-config\deploy.ps1), NOT this section.
+    # CONFIGS only handles Stage 1 (Level 1 files above). The COWORK menu
+    # item invokes deploy.ps1 automatically after cloning.
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  COWORK -- Multi-Agent Coordination
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1017,76 +1087,6 @@ if ($Selected -contains 'COWORK') {
     } elseif ($canProceed) {
         Write-Warn 'COWORK/WORKFORCE/ not present in this branch. Skipping coordination setup.'
     }
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  DEPLOY CONFIGS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-if ($Selected -contains 'CONFIGS') {
-    Write-Header 'Deploying Configs'
-
-    # WezTerm config
-    Deploy-Symlink `
-        -Source (Join-Path $RepoDir 'wezterm\.wezterm.lua') `
-        -Target (Join-Path $env:USERPROFILE '.wezterm.lua')
-
-    # Oh My Posh themes (reuse existing repo configs)
-    $ompSourceDir = Join-Path $RepoDir 'omp\.config\ohmyposh'
-    $ompTargetDir = Join-Path $env:USERPROFILE '.config\ohmyposh'
-    if (Test-Path $ompSourceDir) {
-        Get-ChildItem $ompSourceDir -File | ForEach-Object {
-            Deploy-Symlink -Source $_.FullName -Target (Join-Path $ompTargetDir $_.Name)
-        }
-    } else {
-        Write-Warn "OMP theme directory not found at $ompSourceDir"
-    }
-
-    # PowerShell profile -- deploy to both PS7 and PS5.1
-    $profileSource = Join-Path $RepoDir 'powershell\Microsoft.PowerShell_profile.ps1'
-    $ps7ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell'
-    $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell'
-
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
-
-    # Windows Terminal settings (Catppuccin Mocha, font, opacity, acrylic)
-    $wtSettingsSource = Join-Path $RepoDir 'windows-terminal\settings.json'
-    $wtSettingsTarget = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
-    if (Test-Path (Split-Path $wtSettingsTarget -Parent)) {
-        Deploy-Symlink -Source $wtSettingsSource -Target $wtSettingsTarget
-    } else {
-        Write-Warn 'Windows Terminal not found -- skipping settings deploy.'
-    }
-
-    # Fastfetch config
-    $ffSource = Join-Path $RepoDir 'fastfetch\.config\fastfetch\config.jsonc'
-    $ffTarget = Join-Path $env:USERPROFILE '.config\fastfetch\config.jsonc'
-    if (Test-Path $ffSource) {
-        Deploy-Symlink -Source $ffSource -Target $ffTarget
-    }
-
-    # --- Claude Code config (CLAUDE.md, settings.json, statusline.sh) ---
-    # Mirrors shellSetup.sh deploy_claude_config() -- absolute symlinks.
-    # Deploy-Symlink falls back to copy if Developer Mode is off / not admin.
-    $claudeHome = Join-Path $env:USERPROFILE '.claude'
-    if (-not (Test-Path $claudeHome)) {
-        New-Item -ItemType Directory -Path $claudeHome -Force | Out-Null
-    }
-
-    $claudeSourceDir = Join-Path $RepoDir 'claude\.claude'
-    foreach ($file in @('CLAUDE.md', 'settings.json', 'statusline.sh')) {
-        $src = Join-Path $claudeSourceDir $file
-        $tgt = Join-Path $claudeHome $file
-        if (Test-Path $src) {
-            Deploy-Symlink -Source $src -Target $tgt
-        }
-    }
-
-    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
-    # ($USERPROFILE\COWORK\.claude-config\deploy.ps1), NOT this section.
-    # CONFIGS only handles Stage 1 (Level 1 files above). The COWORK menu
-    # item invokes deploy.ps1 automatically after cloning.
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
