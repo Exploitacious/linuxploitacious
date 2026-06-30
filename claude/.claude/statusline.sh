@@ -19,6 +19,8 @@ CACHE_READ=0
 CACHE_CREATE=0
 RL_5H=""
 RL_7D=""
+RL_5H_RESET=""
+RL_7D_RESET=""
 
 # --- Parse values via NUL-separated jq output ---
 # Old version used `eval $(jq -r '...')` which broke on quotes/newlines
@@ -31,7 +33,7 @@ if command -v jq >/dev/null 2>&1; then
   # gsub strips them just in case.
   while IFS='=' read -r key val; do
     case "$key" in
-      MODEL|CTX_USED|CTX_SIZE|COST|TOTAL_MS|API_MS|LINES_ADD|LINES_REM|CACHE_READ|CACHE_CREATE|RL_5H|RL_7D)
+      MODEL|CTX_USED|CTX_SIZE|COST|TOTAL_MS|API_MS|LINES_ADD|LINES_REM|CACHE_READ|CACHE_CREATE|RL_5H|RL_7D|RL_5H_RESET|RL_7D_RESET)
         printf -v "$key" '%s' "$val"
         ;;
     esac
@@ -48,7 +50,9 @@ if command -v jq >/dev/null 2>&1; then
     "CACHE_READ=" + (.context_window.current_usage.cache_read_input_tokens // 0 | s),
     "CACHE_CREATE=" + (.context_window.current_usage.cache_creation_input_tokens // 0 | s),
     "RL_5H=" + (.rate_limits.five_hour.used_percentage // "" | s),
-    "RL_7D=" + (.rate_limits.seven_day.used_percentage // "" | s)
+    "RL_7D=" + (.rate_limits.seven_day.used_percentage // "" | s),
+    "RL_5H_RESET=" + (.rate_limits.five_hour.resets_at // "" | s),
+    "RL_7D_RESET=" + (.rate_limits.seven_day.resets_at // "" | s)
   ' 2>/dev/null)
 fi
 
@@ -73,8 +77,8 @@ SEP="${GRY}│${RST}"
 SEP_WRAP="      ${SEP}      "
 
 # Column widths (visible chars, before separator)
-COL1_W=38
-COL2_W=35
+COL1_W=44
+COL2_W=52
 
 # Progress bar
 make_bar() {
@@ -110,6 +114,17 @@ fmt_time() {
     fi
 }
 
+# Time-to-reset formatter: seconds -> "2d 5h" / "3h 20m" / "45m" / "now".
+# Used for rate-limit reset countdowns (resets_at is Unix epoch seconds).
+fmt_ttl() {
+    local s=$1
+    [ "$s" -le 0 ] 2>/dev/null && { printf "now"; return; }
+    local d=$(( s / 86400 )) h=$(( (s % 86400) / 3600 )) m=$(( (s % 3600) / 60 ))
+    if [ "$d" -gt 0 ]; then printf '%dd %dh' "$d" "$h"
+    elif [ "$h" -gt 0 ]; then printf '%dh %dm' "$h" "$m"
+    else printf '%dm' "$m"; fi
+}
+
 # Strip ANSI escapes to measure visible length
 strip_ansi() {
     printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g'
@@ -127,6 +142,32 @@ pad_to() {
 }
 
 # === Compute values ===
+
+# Posture badge — autocompact + effort, read from the ACTIVE profile's
+# settings.json (CLAUDE_CONFIG_DIR resolves per profile; both symlink to the
+# same source). Not in the statusline JSON, so we read the config directly.
+# Gives the operator a persistent, visible "autocompact is off" indicator the
+# TUI otherwise never surfaces.
+POSTURE=""
+SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+if [ -r "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+    # NOTE: read autoCompactEnabled WITHOUT jq's `//` operator — `//` treats
+    # both null AND false as empty, so `.autoCompactEnabled // empty` would
+    # swallow an explicit `false` and wrongly report "on". Plain `.x` yields
+    # the literal "false"/"true"/"null".
+    ac=$(jq -r '.autoCompactEnabled' "$SETTINGS_FILE" 2>/dev/null)
+    eff=$(jq -r '.effortLevel // empty' "$SETTINGS_FILE" 2>/dev/null)
+    # autoCompactEnabled absent (null) => Claude default ON; explicit false => OFF.
+    if [ "$ac" = "false" ]; then ac_txt="off"; ac_c="$GRN"; else ac_txt="on"; ac_c="$YEL"; fi
+    [ -n "$eff" ] || eff="default"
+    POSTURE="   ${D}AC:${RST}${ac_c}${ac_txt}${RST} ${D}·${RST} ${CYN}${eff}${RST}"
+fi
+
+# Rate-limit reset countdowns (resets_at = Unix epoch seconds).
+NOW_EPOCH=$(date +%s 2>/dev/null || echo 0)
+RL5_TTL=""; RL7_TTL=""
+case "$RL_5H_RESET" in ''|*[!0-9]*) ;; *) RL5_TTL=$(fmt_ttl $(( RL_5H_RESET - NOW_EPOCH )) ) ;; esac
+case "$RL_7D_RESET" in ''|*[!0-9]*) ;; *) RL7_TTL=$(fmt_ttl $(( RL_7D_RESET - NOW_EPOCH )) ) ;; esac
 
 # Context
 ctx_pct=${CTX_USED%.*}
@@ -175,7 +216,7 @@ esac
 
 # Row 1: profile+model+badges  │  context bar  │  time
 R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${CAVEMAN}"
-R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}"
+R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}${POSTURE}"
 R1_C3="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}     ${GRY}${API_TIME}${RST} ${D}api${RST}"
 
 # Row 2: Usage  $cost  cache%  │  (blank)  │  +/- lines
@@ -193,8 +234,8 @@ if [ -n "$RL_7D" ]; then
     RL7_BAR=$(make_bar "$rl7" 10)
     RL7C=$(pct_color "$rl7" 50 80)
 fi
-R3_C1="${D}Capacity${RST}      ${D}5h${RST} ${RL5C}${RL5_BAR}   ${rl5}%${RST}"
-R3_C2="${D}7d${RST} ${RL7C}${RL7_BAR}   ${rl7}%${RST}"
+R3_C1="${D}Capacity${RST}      ${D}5h${RST} ${RL5C}${RL5_BAR}   ${rl5}%${RST}${RL5_TTL:+   ${D}↻${RST}${GRY}${RL5_TTL}${RST}}"
+R3_C2="${D}7d${RST} ${RL7C}${RL7_BAR}   ${rl7}%${RST}${RL7_TTL:+   ${D}↻${RST}${GRY}${RL7_TTL}${RST}}"
 
 # === Render ===
 
