@@ -44,11 +44,11 @@ If `~/COWORK/CLAUDE.md` exists, treat it as the primary global instruction layer
 
 ## Compaction is a pause, not death
 
-Claude Code auto-compacts at ~75% context. The summary preserves the conversation arc; fine-grained context dies. To make compaction safe, durable state must be on disk before the compact fires.
+Stock Claude Code auto-compacts around ~75% context by default — but that default is turned off here. `settings.json` sets `DISABLE_AUTO_COMPACT: "1"` and `autoCompactEnabled: false`, so nothing compacts automatically on this machine. Compaction only happens when someone triggers it on purpose: the user runs `/compact`, or the `pre-compact-synthesis` skill decides the session is wrapping up and fires its proactive wrap-up. Either way, once a compact does run, the summary that comes out preserves the conversation arc while fine-grained context dies — so durable state has to be on disk *before* that compact runs, manual or not.
 
 Two layers are configured at this level:
 
-- **`PreCompact` hook** (`~/COWORK/.claude-config/hooks/pre-compact.sh`, registered in `settings.json`) — fires automatically on every compaction. Pure shell. Captures git state + branch + recent commits to `~/.claude/projects/<workspace>/pre-compact-<ts>.md`. Safety net; runs always.
+- **`PreCompact` hook** (`~/COWORK/.claude-config/hooks/pre-compact.sh`, registered in `settings.json`) — fires automatically on every compaction that does happen, which here always means a manual `/compact` or a skill-triggered one. Pure shell. Captures git state + branch + recent commits to `~/.claude/projects/<workspace>/pre-compact-<ts>.md`. Safety net; runs always.
 - **`pre-compact-synthesis` skill** — invoke when the user signals wrap-up ("compact", "pre-compact", "wrap up", "do the thing"), or proactively at ~65% context if the session is closing. AI-driven thoughtful synthesis: verifies git committed + pushed, walks task list, saves pending feedback memories, updates the project's durable narrative anchor (fleet journal or `SESSION_HANDOFF.md`). Auto-detects fleet vs solo.
 
 Both implement the four-artifact rule (git commits, auto-memory, TaskCreate state, durable anchor) that lets post-compact-you self-recover via files alone. Reference: COWORK's `CONTEXT/operating-doctrine.md` Principle 2 when present.
@@ -103,8 +103,17 @@ wrong — agent type is irrelevant; the model alias is the only lever.
 | `"sonnet"` | `claude-sonnet-5[1m]` | 1M | **default worker** — Sonnet 5 at 1M; the 1M price premium only applies past 200K input, so the headroom is ~free for normal work |
 | `"opus"` | `claude-opus-4-8[1m]` | 1M | hardest lanes — security-sensitive builds, audits, research, top-judgment work |
 
-> **Fable 5 access has ended** — the `"fable"` alias is dead and a spawn returns
-> `Claude Fable 5 is currently unavailable`. Do not spawn `model: "fable"`.
+> **Fable 5 is a temporary main-session model, not a worker alias** — it ran as
+> the interactive main-session model for a short window (through roughly
+> 2026-07-07); after that it's retired like any other model past EOL. The
+> `"fable"` **worker** alias has been dead since 2026-06-18 and stays dead
+> regardless of what the main session is running — never spawn
+> `model: "fable"` subagents. If a model pin in `settings.json` ever names a
+> model that's gone unavailable, remove the top-level `"model"` key entirely
+> rather than guessing a replacement; Claude Code then falls back to the
+> `ANTHROPIC_DEFAULT_*_MODEL` aliases below. On any model's EOL, check
+> `settings.json` first for a stale top-level `"model"` pin — tonight's audit
+> caught exactly that.
 
 **Rule of thumb:** default to `model: "sonnet"` (Sonnet 5 1M) for routine
 investigation/build/review; drop to `model: "haiku"` (Sonnet 5 200K) for

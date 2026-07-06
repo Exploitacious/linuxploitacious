@@ -86,7 +86,7 @@ The script uses a two-stage architecture:
 | Option | Description | Default |
 |--------|-------------|---------|
 | BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, cloudflared, etc.) | ON |
-| NODE | Node.js via NVM and pnpm (required by openclaw tooling) | ON |
+| NODE | Node.js via NVM and pnpm | ON |
 | PYTHON | Python via pyenv + pip packages | ON |
 | SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
@@ -179,18 +179,21 @@ so a fork without your own COWORK works out-of-the-box.
 If you want your own Stage 2 layer, here's the complete list of
 things to change in a fork:
 
-1. **`shellSetup.sh::setup_cowork`** (line ~1632) — change
+1. **`shellSetup.sh::setup_cowork`** (the `gh repo clone` call
+   inside this function) — change
    `gh repo clone Exploitacious/COWORK` to your own private repo
    path. The function will clone it to `$HOME/COWORK` and then
    invoke `$HOME/COWORK/.claude-config/deploy.sh` on completion.
-2. **`winSetup.ps1` COWORK section** (line ~873) — same change,
+2. **`winSetup.ps1` COWORK section** (the `gh repo clone` call in
+   the COWORK block) — same change,
    `gh repo clone Exploitacious/COWORK`.
 3. **`claude/.claude/CLAUDE.md`** "COWORK Context Awareness"
    section — either replace `~/COWORK/` with your own personal
    context directory path, or delete the section entirely. The
    rest of the file is generic.
-4. **`claude/.claude/settings.json`** SessionStart hook (line 46)
-   — references `$HOME/COWORK/WORKFORCE/bin/ac-reorient`. The
+4. **`claude/.claude/settings.json`** SessionStart hook (in the
+   SessionStart hooks array) — references
+   `$HOME/COWORK/WORKFORCE/bin/ac-reorient`. The
    `test -x` guard makes it silent without COWORK, so you can
    leave it alone. Replace the path if you want the hook to fire
    from your own Stage 2.
@@ -219,7 +222,7 @@ Optional (referenced if present; silent otherwise):
 
 | Path | Purpose |
 |------|---------|
-| `WORKFORCE/bin/ac-reorient` | Invoked by SessionStart hook in `claude/.claude/settings.json:46`. Guarded by `test -x`. |
+| `WORKFORCE/bin/ac-reorient` | Invoked by the SessionStart hooks array in `claude/.claude/settings.json`. Guarded by `test -x`. |
 | `CONTEXT/` directory | Read by Claude Code per `claude/.claude/CLAUDE.md` "COWORK Context Awareness" section. Existence-checked. |
 
 Stage 2 is responsible for everything else — its own symlinks
@@ -463,6 +466,10 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `start-kex` | Manages Kali Win-KeX sessions (ESM/VNC/RDP) for WSL |
 | `usb-attach` | Forwards USB devices from Windows to WSL via `usbip` |
 | `pbcopy` / `pbpaste` | macOS-style clipboard commands using `xclip` |
+| `pbhistory` | fzf picker over `~/.clipboard_history` (populated by `pbcopy`, capped at 500 entries) — select an entry to re-copy it to the clipboard |
+| `pubip` | Public IP lookup, caches to `~/.cache/pubip` for 5 minutes so repeated callers (like the tmux status bar) don't hit api.ipify.org every refresh |
+| `netdot` | Prints just the colored online/offline dot (calls `pubip`) — used in the tmux status-right widget |
+| `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
 | `launch_nordvpn` | Self-provisioning NordVPN OpenVPN wrapper with random server selection |
 
 ---
@@ -497,7 +504,6 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `tmux-plugins/tmux-yank` | `y` in copy mode + mouse-drag → system clipboard via OSC52 (works through Termius → Windows) |
 | `tmux-plugins/tmux-prefix-highlight` | Status-bar indicator that lights up when prefix is active or in copy/sync mode |
 | `tmux-plugins/tmux-cpu` | CPU / RAM widgets for status bar |
-| `tmux-plugins/tmux-online-status` | Green/red dot showing internet reachability |
 
 ### Status bar (right side)
 

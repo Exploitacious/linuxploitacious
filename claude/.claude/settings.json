@@ -57,6 +57,28 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -x $HOME/COWORK/.claude-config/hooks/secrets-guard.sh ] || $HOME/COWORK/.claude-config/hooks/secrets-guard.sh pre"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -x $HOME/COWORK/.claude-config/hooks/secrets-guard.sh ] || $HOME/COWORK/.claude-config/hooks/secrets-guard.sh post"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -77,13 +99,13 @@
   },
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
-  "autoCompactEnabled": false,
-  "remoteControlAtStartup": true,
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
+  "autoCompactEnabled": false,
+  "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true
 }
