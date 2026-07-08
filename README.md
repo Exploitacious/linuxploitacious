@@ -97,7 +97,7 @@ The script uses a two-stage architecture:
 | NOPASS | Enable passwordless sudo for current user (drops `/etc/sudoers.d/90-<user>-nopasswd`, visudo-validated) | OFF (hidden when running as root) |
 | SWAP | Create swapfile sized to match RAM (`/swapfile`, `vm.swappiness=10`) | ON (hidden when swap already exists) |
 | SSHKEY | Generate GitHub SSH key, configure SSH, copy to root | OFF |
-| COWORK | Clone Alex's private Stage 2 repo (`Exploitacious/COWORK`) and invoke its `deploy.sh`. Requires SSHKEY. Forkers: replace with your own Stage 2 repo (see "Forking this repo" below). | OFF |
+| HARNESS | Deploy the Stage 2 AI harness and invoke its `deploy.sh`. Auto-detects: with access to the private `Exploitacious/COWORK` it deploys that (Alex's machines); otherwise it walks you through [`Exploitacious/OPS`](https://github.com/Exploitacious/OPS) — the public template — creating your OWN private copy from it (`gh repo create <name> --template Exploitacious/OPS --private`). Requires SSHKEY. | OFF |
 
 **Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
 
@@ -112,7 +112,9 @@ Claude Code configuration is deployed in **two stages**. This repo
 files only. Anything personal / opinionated / multi-machine-state
 belongs in **Stage 2** (your own private repo). Alex's Stage 2 lives
 at [`Exploitacious/COWORK`](https://github.com/Exploitacious/COWORK)
-(private); fork the pattern with your own.
+(private). A public template of that harness ships as
+[`Exploitacious/OPS`](https://github.com/Exploitacious/OPS) — the
+HARNESS menu option sets you up with your own private copy of it.
 
 **Stage 1 — Level 1 files (this repo):** The `claude/` directory
 deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational
@@ -130,17 +132,21 @@ ultra-compressed communication mode that reduces token usage while
 keeping full technical accuracy. It activates automatically via
 SessionStart hooks.
 
-**Stage 2 — COWORK (optional):** Selecting `COWORK` in the menu
-clones the user's private workspace repo to `~/COWORK/` and then
-auto-invokes `~/COWORK/.claude-config/deploy.sh`. That Stage 2
-script owns everything COWORK-specific — skills symlink
-(`~/.claude/skills/` → `~/COWORK/SKILLS/`), commands symlink,
+**Stage 2 — HARNESS (optional):** Selecting `HARNESS` in the menu
+deploys the workspace repo — `~/COWORK/` (private, if your gh auth
+can see it) or `~/OPS/` (your private copy of the public template,
+created for you from `Exploitacious/OPS` if you don't have one) —
+then auto-invokes its `.claude-config/deploy.sh`. That Stage 2
+script owns everything harness-specific — skills symlink
+(`~/.claude/skills/` → `<harness>/SKILLS/`), commands symlink,
 `WORKFORCE/bin` PATH wiring, `claude-wrapper.sh` sourcing for
 master + root rcs, `ac-memory-init` auto-memory git-sync, daily
-backup cron, and additional plugins. **This repo deliberately does
-NOT do any of those steps** — keeping the Stage 1 / Stage 2
-boundary clean means Stage 1 stays usable without a private repo,
-and Stage 2 stays the single source of truth for COWORK content.
+backup cron, and additional plugins. Fresh OPS copies run a
+BOOTSTRAP interview on their first Claude Code session to
+personalize the harness. **This repo deliberately does NOT do any
+of those steps** — keeping the Stage 1 / Stage 2 boundary clean
+means Stage 1 stays usable without a Stage 2 repo, and Stage 2
+stays the single source of truth for harness content.
 
 **ROOT sharing:** The ROOT option symlinks `~/.claude/` from the
 user account to `/root`, so both users share the same config,
@@ -150,8 +156,9 @@ conflicting with this symlink.
 
 **Personalizing Claude with a context directory:** The global
 CLAUDE.md includes a "Context Awareness" section that checks for
-`~/COWORK/CONTEXT/` at session start. If you fork this repo,
-replace that path with your own. The idea: keep a directory
+`~/COWORK/CONTEXT/` (falling back to `~/OPS/CONTEXT/`) at session
+start. If you fork this repo with a different harness path,
+replace it with your own. The idea: keep a directory
 somewhere on your machine with markdown files that describe who
 you are, how you communicate, and how you want Claude to behave
 (`about-me.md`, `brand-voice.md`, `working-preferences.md`, or
@@ -168,49 +175,44 @@ instructions.
 
 ## Forking this repo
 
-This repo is public + opinionated. The Stage 1 layer (host setup,
-shell config, Level 1 Claude files) is intentionally generic and
-runs cleanly on any machine. The COWORK references that exist are
-pointers to Alex's **private** Stage 2 repo
-(`Exploitacious/COWORK`); they're already self-gating (every
-COWORK code path checks for the directory before doing anything),
-so a fork without your own COWORK works out-of-the-box.
+This repo is public + opinionated, and since the
+[`Exploitacious/OPS`](https://github.com/Exploitacious/OPS) public
+template exists, **most people don't need to fork at all**: the
+HARNESS menu option detects that you don't have access to the
+author's private `Exploitacious/COWORK` and walks you through
+creating your own private harness repo from the OPS template — no
+string changes anywhere. The Stage 1 layer (host setup, shell
+config, Level 1 Claude files) is generic and runs cleanly on any
+machine; every harness code path self-gates on directory existence.
 
-If you want your own Stage 2 layer, here's the complete list of
-things to change in a fork:
+Fork only if you want to change Stage 1 itself, or point the
+HARNESS flow at a different template/private repo:
 
-1. **`shellSetup.sh::setup_cowork`** (the `gh repo clone` call
-   inside this function) — change
-   `gh repo clone Exploitacious/COWORK` to your own private repo
-   path. The function will clone it to `$HOME/COWORK` and then
-   invoke `$HOME/COWORK/.claude-config/deploy.sh` on completion.
-2. **`winSetup.ps1` COWORK section** (the `gh repo clone` call in
-   the COWORK block) — same change,
-   `gh repo clone Exploitacious/COWORK`.
-3. **`claude/.claude/CLAUDE.md`** "COWORK Context Awareness"
-   section — either replace `~/COWORK/` with your own personal
-   context directory path, or delete the section entirely. The
-   rest of the file is generic.
-4. **`claude/.claude/settings.json`** SessionStart hook (in the
-   SessionStart hooks array) — references
-   `$HOME/COWORK/WORKFORCE/bin/ac-reorient`. The
-   `test -x` guard makes it silent without COWORK, so you can
-   leave it alone. Replace the path if you want the hook to fire
-   from your own Stage 2.
-5. **README references** — search for `COWORK` and replace with
-   your own Stage 2 repo name in user-facing prose.
+1. **`shellSetup.sh::setup_harness` + `acquire_ops_repo`** — the
+   detection call (`gh repo view Exploitacious/COWORK`) and the
+   template source (`Exploitacious/OPS`). Swap for your own repos.
+2. **`winSetup.ps1` HARNESS section** — same two references.
+3. **`claude/.claude/CLAUDE.md`** "Harness Context Awareness"
+   section — checks `~/COWORK/` then `~/OPS/`. Replace with your
+   own harness path, or delete the section; the rest of the file
+   is generic.
+4. **`claude/.claude/settings.json`** hooks — resolve
+   `$HOME/COWORK` falling back to `$HOME/OPS`. The `test -x`
+   guards make them silent without a harness; replace the paths
+   only for a custom harness location.
+5. **README references** — search for `COWORK`/`OPS` in
+   user-facing prose.
 
-If you don't want a Stage 2 layer at all, skip steps 1-2-5 and
-just delete the COWORK menu items in `shellSetup.sh` + `winSetup.ps1`
-(or leave them — they're opt-in and fail-safe when the gh CLI
-isn't authenticated).
+If you don't want a Stage 2 layer at all, just don't select
+HARNESS (it's opt-in and fail-safe when the gh CLI isn't
+authenticated).
 
-## Stage 2 contract (what `setup_cowork` assumes)
+## Stage 2 contract (what `setup_harness` assumes)
 
-`setup_cowork` (Linux) and the COWORK menu item (Windows) clone
-the private Stage 2 repo, then invoke its `deploy.{sh,ps1}` to
-finish setup. For that handoff to work, the Stage 2 repo MUST
-expose at minimum:
+`setup_harness` (Linux) and the HARNESS menu item (Windows) clone
+the Stage 2 repo — private COWORK or your private OPS copy — then
+invoke its `deploy.{sh,ps1}` to finish setup. For that handoff to
+work, the Stage 2 repo MUST expose at minimum:
 
 | Path | Purpose |
 |------|---------|

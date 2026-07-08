@@ -4,30 +4,25 @@ These rules apply to every Claude Code session on this machine, regardless of pr
 
 <!--
   ============================================================
-  PERSONAL LAYER — REPLACE IF FORKING
+  HARNESS LAYER — POINTS AT YOUR STAGE 2 REPO
   ============================================================
-  The "COWORK Context Awareness" section below points Claude at a
-  private personal-context repo (Alex's). It is the ONLY part of
-  this file that isn't generic-safe. If you fork linuxploitacious
-  for your own setup, do one of:
-
-    1. Replace `~/COWORK/` with the path to your own context dir
-       (any directory with markdown files describing you).
-    2. Delete this section entirely — the rest of the file
-       (Behavioral Rules, Conversational Compression, Code &
-       Commit Standards) is intentionally generic and stands
-       alone.
-
-  See linuxploitacious/README.md → "Forking this repo" for the
-  full list of strings to change.
+  The "Harness Context Awareness" section below points Claude at
+  the Stage 2 harness repo: `~/COWORK/` (the author's private
+  harness) or `~/OPS/` (your private copy of the public
+  Exploitacious/OPS template — the HARNESS menu option sets this
+  up). If you keep your harness at a different path, replace the
+  paths below; if you don't run a harness, delete this section —
+  the rest of the file (Behavioral Rules, Conversational
+  Compression, Code & Commit Standards) is intentionally generic
+  and stands alone.
   ============================================================
 -->
 
-## COWORK Context Awareness
+## Harness Context Awareness
 
-If `~/COWORK/CONTEXT/` exists on this machine, read `about-me.md`, `brand-voice.md`, and `working-preferences.md` from it at the start of every session. These files define who the operator is, how they communicate, and how you should behave. This applies even when working outside the COWORK directory -- the context files are always relevant to how you should operate.
+If `~/COWORK/CONTEXT/` exists on this machine — or, failing that, `~/OPS/CONTEXT/` — read `about-me.md`, `brand-voice.md`, and `working-preferences.md` from it at the start of every session. These files define who the operator is, how they communicate, and how you should behave. This applies even when working outside the harness directory -- the context files are always relevant to how you should operate.
 
-If `~/COWORK/CLAUDE.md` exists, treat it as the primary global instruction layer. Its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`) take precedence over anything below. This file is the host-specific fallback for systems where COWORK is not deployed. When COWORK is present, the rules below still apply but COWORK's rules layer on top -- its instructions are a superset.
+If `~/COWORK/CLAUDE.md` (or `~/OPS/CLAUDE.md`) exists, treat it as the primary global instruction layer. Its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`) take precedence over anything below. This file is the host-specific fallback for systems where no harness is deployed. When a harness is present, the rules below still apply but the harness's rules layer on top -- its instructions are a superset.
 
 ## Behavioral Rules
 

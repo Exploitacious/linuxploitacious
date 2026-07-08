@@ -225,7 +225,7 @@ $MenuItems = @(
     [PSCustomObject]@{ Key = 'APPS';    On = $false; Label = 'Extra apps';        Desc = 'Browsers, dev tools, productivity' }
     [PSCustomObject]@{ Key = 'TWEAKS';  On = $false; Label = 'System tweaks';     Desc = 'Dark mode, Explorer, taskbar prefs' }
     [PSCustomObject]@{ Key = 'SSHKEY';  On = $false; Label = 'GitHub SSH + CLI';  Desc = 'SSH key, gh auth, key upload' }
-    [PSCustomObject]@{ Key = 'COWORK';  On = $false; Label = 'COWORK';            Desc = 'Multi-Agent Coordination (needs SSH)' }
+    [PSCustomObject]@{ Key = 'HARNESS'; On = $false; Label = 'AI Harness';        Desc = 'OPS template / private COWORK (needs SSH)' }
 )
 
 while ($true) {
@@ -267,9 +267,9 @@ if (-not $Selected) {
     return
 }
 
-# Auto-enable SSHKEY if COWORK selected (dependency)
-if ($Selected -contains 'COWORK' -and $Selected -notcontains 'SSHKEY') {
-    Write-Warn 'COWORK requires SSHKEY -- enabling automatically.'
+# Auto-enable SSHKEY if HARNESS selected (dependency)
+if ($Selected -contains 'HARNESS' -and $Selected -notcontains 'SSHKEY') {
+    Write-Warn 'HARNESS requires SSHKEY -- enabling automatically.'
     $Selected += 'SSHKEY'
 }
 
@@ -926,50 +926,116 @@ if ($Selected -contains 'CONFIGS') {
         }
     }
 
-    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
-    # ($USERPROFILE\COWORK\.claude-config\deploy.ps1), NOT this section.
-    # CONFIGS only handles Stage 1 (Level 1 files above). The COWORK menu
+    # Skills + commands symlinks are owned by the harness's Stage 2 deployer
+    # ($USERPROFILE\{COWORK|OPS}\.claude-config\deploy.ps1), NOT this section.
+    # CONFIGS only handles Stage 1 (Level 1 files above). The HARNESS menu
     # item invokes deploy.ps1 automatically after cloning.
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  COWORK -- Multi-Agent Coordination
+#  HARNESS -- AI Harness: COWORK (private) / OPS (public template)
+#  Access-based detection: gh users who can see Exploitacious/COWORK get the
+#  private harness; everyone else gets their own PRIVATE copy of the public
+#  OPS template (never a fork -- forks can't be made private).
 # ═══════════════════════════════════════════════════════════════════════════════
 
-if ($Selected -contains 'COWORK') {
-    Write-Header 'Deploying COWORK (Multi-Agent Coordination)'
-
-    $CoworkDir = Join-Path $env:USERPROFILE 'COWORK'
+if ($Selected -contains 'HARNESS') {
+    Write-Header 'Deploying AI Harness (COWORK / OPS)'
 
     # Verify gh is available and authenticated
     $canProceed = $true
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-        Write-Warn 'gh CLI not installed. Enable SSHKEY first. Skipping COWORK.'
+        Write-Warn 'gh CLI not installed. Enable SSHKEY first. Skipping harness.'
         $canProceed = $false
     } else {
         gh auth status 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            Write-Warn 'gh CLI not authenticated. Re-run with SSHKEY enabled. Skipping COWORK.'
+            Write-Warn 'gh CLI not authenticated. Re-run with SSHKEY enabled. Skipping harness.'
             $canProceed = $false
         }
     }
 
+    # Detect which harness this user gets.
+    $CoworkDir = Join-Path $env:USERPROFILE 'COWORK'
+    $hasPrivate = $false
+    if ($canProceed) {
+        gh repo view Exploitacious/COWORK --json name 2>$null | Out-Null
+        $hasPrivate = ($LASTEXITCODE -eq 0)
+        if (-not $hasPrivate) { $CoworkDir = Join-Path $env:USERPROFILE 'OPS' }
+    }
+
     if ($canProceed) {
         if (-not (Test-Path (Join-Path $CoworkDir '.git'))) {
-            Write-Info "Cloning Exploitacious/COWORK to $CoworkDir..."
-            gh repo clone Exploitacious/COWORK $CoworkDir
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success 'COWORK cloned.'
+            if ($hasPrivate) {
+                Write-Info "Cloning Exploitacious/COWORK to $CoworkDir..."
+                gh repo clone Exploitacious/COWORK $CoworkDir
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success 'COWORK cloned.'
+                } else {
+                    Write-Err 'COWORK clone failed. Verify gh auth covers private repos.'
+                    $canProceed = $false
+                }
             } else {
-                Write-Err 'COWORK clone failed. Verify gh auth covers private repos.'
-                $canProceed = $false
+                # Public path: set the user up with their OWN private copy of
+                # the OPS template. The harness becomes their memory + context,
+                # so it must never live in a public repo.
+                Write-Info 'Setting up the OPS AI harness (public template).'
+                Write-Host 'OPS becomes your personal memory + context -- it must live in a PRIVATE repo you own.'
+                Write-Host '  1) Create my private copy from the template (recommended)'
+                Write-Host '  2) Clone a private copy I already have'
+                Write-Host '  3) Read-only look at the public template'
+                $opsChoice = Read-Host 'Choice [1/2/3, default 1]'
+                $ghUser = (gh api user -q .login 2>$null)
+                switch ($opsChoice) {
+                    '2' {
+                        $target = Read-Host "owner/repo of your private harness copy (default: $ghUser/OPS)"
+                        if (-not $target) { $target = "$ghUser/OPS" }
+                        gh repo clone $target $CoworkDir
+                        if ($LASTEXITCODE -ne 0) { Write-Err 'Clone failed. Verify the repo name and gh auth.'; $canProceed = $false }
+                    }
+                    '3' {
+                        git clone --depth 1 https://github.com/Exploitacious/OPS $CoworkDir
+                        if ($LASTEXITCODE -ne 0) { Write-Err 'Clone failed.'; $canProceed = $false }
+                        else {
+                            Write-Warn 'TRYOUT mode: this is the PUBLIC template. Do no personal work in it --'
+                            Write-Warn 're-run this option and CREATE a private copy when you adopt it.'
+                        }
+                    }
+                    default {
+                        $name = Read-Host 'Name for your private harness repo (default: OPS)'
+                        if (-not $name) { $name = 'OPS' }
+                        Write-Info "Creating $ghUser/$name (private) from template Exploitacious/OPS..."
+                        gh repo create $name --template Exploitacious/OPS --private | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            Write-Err 'Repo creation failed. Check: gh auth status (needs repo scope).'
+                            $canProceed = $false
+                        } else {
+                            # Template generation is async on GitHub's side -- retry
+                            # the clone until content lands (BOOTSTRAP.md sentinel).
+                            $cloned = $false
+                            foreach ($attempt in 1..5) {
+                                if (Test-Path $CoworkDir) { Remove-Item -Recurse -Force $CoworkDir }
+                                gh repo clone "$ghUser/$name" $CoworkDir 2>$null | Out-Null
+                                if (($LASTEXITCODE -eq 0) -and (Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md'))) { $cloned = $true; break }
+                                Write-Info "Waiting for GitHub to generate the repo (attempt $attempt/5)..."
+                                Start-Sleep -Seconds 4
+                            }
+                            if ($cloned) {
+                                Write-Success "Private harness created + cloned: $ghUser/$name -> $CoworkDir"
+                            } else {
+                                Write-Err "Clone came up empty. Run manually: gh repo clone $ghUser/$name $CoworkDir"
+                                $canProceed = $false
+                            }
+                        }
+                    }
+                }
             }
         } else {
             # Idempotent sync -- handles dirty working trees by stashing local
             # edits with a labeled timestamp, pulling, then attempting to
             # restore. If restore conflicts, stash stays for manual recovery
             # and setup continues. Never destroys local work silently.
-            Write-Info 'COWORK already cloned; syncing...'
+            Write-Info "$(Split-Path $CoworkDir -Leaf) already cloned; syncing..."
             Push-Location $CoworkDir
 
             $stashLabel = ''
@@ -992,7 +1058,7 @@ if ($Selected -contains 'COWORK') {
 
             git pull --ff-only 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) {
-                Write-Success 'COWORK synced to origin.'
+                Write-Success 'Synced to origin.'
             } else {
                 Write-Warn 'git pull --ff-only failed (diverged history, detached HEAD, or remote config?). Continuing with local HEAD.'
                 Write-Info "Inspect manually: cd $CoworkDir; git status; git log --oneline -5"
@@ -1060,7 +1126,7 @@ if ($Selected -contains 'COWORK') {
         }
         $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
         if (Test-Path $deployScript) {
-            Write-Info 'Invoking COWORK deploy.ps1 for Stage 2 setup...'
+            Write-Info 'Invoking harness deploy.ps1 for Stage 2 setup...'
             # Spawn under the SAME interpreter we're running on (pwsh when
             # we're on PS7). Hardcoding `powershell.exe` drops to PS5.1,
             # which mis-decodes any UTF-8 non-ASCII in deploy.ps1 and
@@ -1070,22 +1136,26 @@ if ($Selected -contains 'COWORK') {
             try {
                 & $currentInterp -NoProfile -ExecutionPolicy Bypass -File $deployScript
                 if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
-                    Write-Success 'COWORK deploy.ps1 completed.'
+                    Write-Success 'Harness deploy.ps1 completed.'
                 } else {
-                    Write-Err "COWORK deploy.ps1 exited rc=$LASTEXITCODE. Re-run manually: $deployScript"
+                    Write-Err "Harness deploy.ps1 exited rc=$LASTEXITCODE. Re-run manually: $deployScript"
                 }
             } catch {
-                Write-Err "COWORK deploy.ps1 failed: $_"
+                Write-Err "Harness deploy.ps1 failed: $_"
             }
         } else {
-            Write-Warn "COWORK deploy.ps1 not found at $deployScript -- Stage 2 skipped."
+            Write-Warn "deploy.ps1 not found at $deployScript -- Stage 2 skipped."
             Write-Warn "After fixing, run: $deployScript"
         }
 
-        Write-Success 'COWORK deployed.'
+        Write-Success "Harness deployed at $CoworkDir."
+        if ((Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md')) -and -not (Test-Path (Join-Path $CoworkDir 'CONTEXT\.bootstrapped'))) {
+            Write-Info "Fresh OPS copy detected: your FIRST Claude Code session in $CoworkDir"
+            Write-Info 'will run the BOOTSTRAP interview to personalize the harness. Just launch and follow along.'
+        }
         Write-Info 'Activation triggers: type ACTIVATE AGENT or ACTIVATE COORDINATOR in any Claude Code session.'
     } elseif ($canProceed) {
-        Write-Warn 'COWORK/WORKFORCE/ not present in this branch. Skipping coordination setup.'
+        Write-Warn 'WORKFORCE/ not present in this branch. Skipping coordination setup.'
     }
 }
 

@@ -1600,10 +1600,10 @@ EOF
       msg_success "Linked: $target -> $source"
     done
 
-    # Skills + commands symlinks are owned by COWORK's Stage 2 deployer
-    # (~/COWORK/.claude-config/deploy.sh), NOT this function. Stage 1's
-    # job here is strictly Level 1 files (CLAUDE.md, settings.json,
-    # statusline.sh). See COWORK/DEPLOYMENT.md for the contract.
+    # Skills + commands symlinks are owned by the harness's Stage 2
+    # deployer (~/COWORK or ~/OPS .claude-config/deploy.sh), NOT this
+    # function. Stage 1's job here is strictly Level 1 files (CLAUDE.md,
+    # settings.json, statusline.sh). See the harness DEPLOYMENT.md.
   }
 
   # --- CLAUDE CODE PLUGINS (runs after config so settings.json exists) ---
@@ -1630,79 +1630,162 @@ EOF
     fi
   }
 
-  # --- COWORK + AGENT COORDINATION (private repo; needs gh auth from SSHKEY first) ---
+  # --- AI HARNESS: COWORK (private) / OPS (public template) ---
+  # Access-based detection: if the authenticated gh user can see the
+  # operator's private Exploitacious/COWORK, that's the harness. Everyone
+  # else gets OPS — the public template (github.com/Exploitacious/OPS) —
+  # via their OWN private copy of it. Repo access IS the identity check;
+  # no usernames hardcoded.
 
-  setup_cowork() {
-    msg_header "Deploying COWORK (Multi-Agent Coordination)"
+  sync_harness_repo() {
+    # Idempotent sync — handles dirty working trees by stashing local edits
+    # with a labeled timestamp, pulling, then attempting to restore.
+    # If restore conflicts, the stash stays in `git stash list` for manual
+    # recovery and setup continues. Never destroys local work silently.
+    local repo_dir="$1"
+    msg_info "$(basename "$repo_dir") already cloned; syncing..."
+    (
+      cd "$repo_dir" || exit 1
 
-    local COWORK_DIR="$HOME/COWORK"
+      local stash_label=""
+      # Detect modified-tracked OR staged-but-uncommitted changes.
+      if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        stash_label="setup-auto-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+        msg_info "Uncommitted changes detected — stashing as '$stash_label'..."
+        if ! git stash push -m "$stash_label" >/dev/null 2>&1; then
+          msg_warn "git stash failed. Skipping sync. Inspect: cd $repo_dir && git status"
+          exit 1
+        fi
+      fi
+
+      if git pull --ff-only 2>/dev/null; then
+        msg_success "Synced to origin."
+      else
+        msg_warn "git pull --ff-only failed (diverged history, detached HEAD, or remote config?). Continuing with local HEAD."
+        msg_info "Inspect manually: cd $repo_dir && git status && git log --oneline -5"
+      fi
+
+      # Restore stash if we made one.
+      if [ -n "$stash_label" ]; then
+        local stash_ref
+        stash_ref=$(git stash list 2>/dev/null | grep -F "$stash_label" | head -1 | sed -E 's/^([^:]+):.*/\1/')
+        if [ -n "$stash_ref" ]; then
+          if git stash pop "$stash_ref" >/dev/null 2>&1; then
+            msg_success "Local changes restored from stash."
+          else
+            # Pop conflicted — leave the stash in place + tell user.
+            msg_warn "Stash pop conflicted. Local changes preserved in stash '$stash_label'."
+            msg_info "Recover with: cd $repo_dir && git stash list && git stash apply <stash@{N}>"
+          fi
+        fi
+      fi
+    )
+  }
+
+  acquire_ops_repo() {
+    # Public path: the user needs their OWN PRIVATE copy of the OPS
+    # template — the harness becomes their memory + context, so it must
+    # never live in a public repo. Never fork (GitHub forks can't be made
+    # private); create from template instead. TRYOUT is a read-only look.
+    local harness_dir="$1"
+    local gh_user choice name target attempt
+    gh_user=$(gh api user -q .login 2>/dev/null)
+
+    choice=$(whiptail --title "OPS AI Harness" --menu \
+      "OPS becomes your personal memory + context — it must live in a PRIVATE repo you own.\nHow do you want to set it up?" 16 74 3 \
+      "CREATE"   "Create my private copy from the template (recommended)" \
+      "EXISTING" "Clone a private copy I already have" \
+      "TRYOUT"   "Read-only look at the public template" 3>&1 1>&2 2>&3) || { msg_warn "OPS setup cancelled."; return 1; }
+
+    case "$choice" in
+      CREATE)
+        name=$(whiptail --title "OPS AI Harness" --inputbox \
+          "Name for your private harness repo:" 10 60 "OPS" 3>&1 1>&2 2>&3) || return 1
+        msg_info "Creating ${gh_user}/${name} (private) from template Exploitacious/OPS..."
+        if ! gh repo create "$name" --template Exploitacious/OPS --private >/dev/null; then
+          msg_error "Repo creation failed. Check: gh auth status (needs repo scope)."
+          return 1
+        fi
+        target="${gh_user}/${name}"
+        # Template generation is async on GitHub's side — retry the clone
+        # until content lands (BOOTSTRAP.md is the sentinel file).
+        for attempt in 1 2 3 4 5; do
+          rm -rf "$harness_dir"
+          if gh repo clone "$target" "$harness_dir" -- --quiet 2>/dev/null && [ -f "$harness_dir/BOOTSTRAP.md" ]; then
+            break
+          fi
+          msg_info "Waiting for GitHub to generate the repo (attempt $attempt/5)..."
+          sleep 4
+        done
+        if [ ! -f "$harness_dir/BOOTSTRAP.md" ]; then
+          msg_error "Clone came up empty. Run manually: gh repo clone $target $harness_dir"
+          return 1
+        fi
+        msg_success "Private harness created + cloned: $target -> $harness_dir"
+        ;;
+      EXISTING)
+        target=$(whiptail --title "OPS AI Harness" --inputbox \
+          "owner/repo of your private harness copy:" 10 60 "${gh_user}/OPS" 3>&1 1>&2 2>&3) || return 1
+        if ! gh repo clone "$target" "$harness_dir"; then
+          msg_error "Clone failed. Verify the repo name and gh auth."
+          return 1
+        fi
+        msg_success "Cloned $target -> $harness_dir"
+        ;;
+      TRYOUT)
+        if ! git clone --depth 1 https://github.com/Exploitacious/OPS "$harness_dir"; then
+          msg_error "Clone failed."
+          return 1
+        fi
+        msg_warn "TRYOUT mode: this is the PUBLIC template. Don't do personal work in it —"
+        msg_warn "re-run this option and CREATE a private copy when you adopt it."
+        ;;
+    esac
+    return 0
+  }
+
+  setup_harness() {
+    msg_header "Deploying AI Harness (COWORK / OPS)"
 
     if ! command -v gh &> /dev/null; then
-      msg_warn "gh CLI not installed. Enable SSHKEY first. Skipping COWORK."
+      msg_warn "gh CLI not installed. Enable SSHKEY first. Skipping harness."
       return
     fi
     if ! gh auth status &> /dev/null; then
-      msg_warn "gh CLI not authenticated. Re-run with SSHKEY enabled. Skipping COWORK."
+      msg_warn "gh CLI not authenticated. Re-run with SSHKEY enabled. Skipping harness."
       return
     fi
 
-    if [ ! -d "$COWORK_DIR/.git" ]; then
-      msg_info "Cloning Exploitacious/COWORK to $COWORK_DIR..."
-      if gh repo clone Exploitacious/COWORK "$COWORK_DIR"; then
-        msg_success "COWORK cloned."
+    local HARNESS_DIR
+    if gh repo view Exploitacious/COWORK --json name >/dev/null 2>&1; then
+      # Operator machine: private COWORK access confirmed.
+      HARNESS_DIR="$HOME/COWORK"
+      if [ ! -d "$HARNESS_DIR/.git" ]; then
+        msg_info "Cloning Exploitacious/COWORK to $HARNESS_DIR..."
+        if gh repo clone Exploitacious/COWORK "$HARNESS_DIR"; then
+          msg_success "COWORK cloned."
+        else
+          msg_error "COWORK clone failed. Verify gh auth covers private repos."
+          return
+        fi
       else
-        msg_error "COWORK clone failed. Verify gh auth covers private repos."
-        return
+        sync_harness_repo "$HARNESS_DIR"
       fi
     else
-      # Idempotent sync — handles dirty working trees by stashing local edits
-      # with a labeled timestamp, pulling, then attempting to restore.
-      # If restore conflicts, the stash stays in `git stash list` for manual
-      # recovery and setup continues. Never destroys local work silently.
-      msg_info "COWORK already cloned; syncing..."
-      (
-        cd "$COWORK_DIR" || exit 1
-
-        local stash_label=""
-        # Detect modified-tracked OR staged-but-uncommitted changes.
-        if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-          stash_label="setup-auto-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-          msg_info "Uncommitted changes detected — stashing as '$stash_label'..."
-          if ! git stash push -m "$stash_label" >/dev/null 2>&1; then
-            msg_warn "git stash failed. Skipping sync. Inspect: cd $COWORK_DIR && git status"
-            exit 1
-          fi
-        fi
-
-        if git pull --ff-only 2>/dev/null; then
-          msg_success "COWORK synced to origin."
-        else
-          msg_warn "git pull --ff-only failed (diverged history, detached HEAD, or remote config?). Continuing with local HEAD."
-          msg_info "Inspect manually: cd $COWORK_DIR && git status && git log --oneline -5"
-        fi
-
-        # Restore stash if we made one.
-        if [ -n "$stash_label" ]; then
-          local stash_ref
-          stash_ref=$(git stash list 2>/dev/null | grep -F "$stash_label" | head -1 | sed -E 's/^([^:]+):.*/\1/')
-          if [ -n "$stash_ref" ]; then
-            if git stash pop "$stash_ref" >/dev/null 2>&1; then
-              msg_success "Local changes restored from stash."
-            else
-              # Pop conflicted — leave the stash in place + tell user.
-              msg_warn "Stash pop conflicted. Local changes preserved in stash '$stash_label'."
-              msg_info "Recover with: cd $COWORK_DIR && git stash list && git stash apply <stash@{N}>"
-            fi
-          fi
-        fi
-      )
+      # No private access: public OPS template flow.
+      HARNESS_DIR="$HOME/OPS"
+      if [ -d "$HARNESS_DIR/.git" ]; then
+        sync_harness_repo "$HARNESS_DIR"
+      else
+        acquire_ops_repo "$HARNESS_DIR" || return
+      fi
     fi
 
     # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
     # lives under WORKFORCE/FLEETPROJECTS/<slug>/runtime/ and is created
     # lazily by ac-register, not at clone time.
-    if [ ! -d "$COWORK_DIR/WORKFORCE" ]; then
-      msg_warn "COWORK/WORKFORCE/ not present in this branch. Skipping coordination setup."
+    if [ ! -d "$HARNESS_DIR/WORKFORCE" ]; then
+      msg_warn "$(basename "$HARNESS_DIR")/WORKFORCE/ not present in this branch. Skipping coordination setup."
       return
     fi
 
@@ -1723,27 +1806,31 @@ EOF
       rm -f "$SHELLRC.bak"
     fi
 
-    # Hand off to COWORK's own deploy script for Stage 2 setup.
+    # Hand off to the harness's own deploy script for Stage 2 setup.
     # deploy.sh is the single source of truth for everything
-    # COWORK-internal: skill + commands symlinks
-    # (~/.claude/skills/ → COWORK/SKILLS/), WORKFORCE/bin chmod +
-    # PATH wiring, claude-wrapper sourcing (master + root rcs),
-    # ac-memory-init invocation, daily backup cron entry, plugin
-    # install. See $COWORK_DIR/DEPLOYMENT.md for the full procedure.
-    local DEPLOY_SCRIPT="$COWORK_DIR/.claude-config/deploy.sh"
+    # harness-internal: skill + commands symlinks
+    # (~/.claude/skills/ → <harness>/SKILLS/), WORKFORCE/bin chmod +
+    # PATH wiring, claude-wrapper sourcing, ac-memory-init invocation,
+    # daily backup cron entry, plugin install. See the harness's
+    # DEPLOYMENT.md for the full procedure.
+    local DEPLOY_SCRIPT="$HARNESS_DIR/.claude-config/deploy.sh"
     if [ -f "$DEPLOY_SCRIPT" ]; then
-      msg_info "Invoking COWORK deploy.sh for Stage 2 setup..."
+      msg_info "Invoking harness deploy.sh for Stage 2 setup..."
       if bash "$DEPLOY_SCRIPT"; then
-        msg_success "COWORK deploy.sh completed."
+        msg_success "Harness deploy.sh completed."
       else
-        msg_error "COWORK deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
+        msg_error "Harness deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
       fi
     else
-      msg_warn "COWORK deploy.sh not found at $DEPLOY_SCRIPT — Stage 2 skipped."
+      msg_warn "deploy.sh not found at $DEPLOY_SCRIPT — Stage 2 skipped."
       msg_warn "After fixing, run: bash $DEPLOY_SCRIPT"
     fi
 
-    msg_success "COWORK deployed. Open a new shell, then test with 'ac-status'."
+    msg_success "Harness deployed at $HARNESS_DIR. Open a new shell, then test with 'ac-status'."
+    if [ -f "$HARNESS_DIR/BOOTSTRAP.md" ] && [ ! -f "$HARNESS_DIR/CONTEXT/.bootstrapped" ]; then
+      msg_info "Fresh OPS copy detected: your FIRST Claude Code session in $HARNESS_DIR"
+      msg_info "will run the BOOTSTRAP interview to personalize the harness. Just launch and follow along."
+    fi
     msg_info "Activation triggers: type 'ACTIVATE AGENT' or 'ACTIVATE COORDINATOR' in any Claude Code session."
   }
 
@@ -1772,7 +1859,7 @@ EOF
     MENU_ITEMS+=("SWAP" "Create ${_RAM_GB}G swapfile (matches RAM, none currently)" ON)
   fi
   MENU_ITEMS+=("SSHKEY" "GitHub SSH key, CLI & auth" OFF)
-  MENU_ITEMS+=("COWORK" "COWORK repo + Multi-Agent Coordination (needs SSHKEY)" OFF)
+  MENU_ITEMS+=("HARNESS" "AI Harness — OPS template / private COWORK (needs SSHKEY)" OFF)
 
   CHOICES=$(whiptail --title "Linux Environment Setup" --checklist \
     "Select components to install/deploy (Space to toggle, Enter to confirm):" 26 78 11 \
@@ -1817,8 +1904,9 @@ EOF
   if [[ $CHOICES == *"NOPASS"* ]]; then configure_passwordless_sudo; fi
   if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
 
-  # COWORK runs LAST — requires gh auth established by SSHKEY (private repo)
-  if [[ $CHOICES == *"COWORK"* ]]; then setup_cowork; fi
+  # HARNESS runs LAST — requires gh auth established by SSHKEY. Deploys
+  # private COWORK when the gh user has access, public OPS otherwise.
+  if [[ $CHOICES == *"HARNESS"* ]]; then setup_harness; fi
 
   echo -e "\n${GREEN}Setup complete. Restart your terminal to apply shell changes.${NC}"
 }

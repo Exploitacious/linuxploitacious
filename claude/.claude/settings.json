@@ -22,27 +22,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/foreman-charter.sh && $HOME/COWORK/.claude-config/hooks/foreman-charter.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/foreman-charter.sh && $H/.claude-config/hooks/foreman-charter.sh 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/session-briefing.sh && $HOME/COWORK/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-briefing.sh && $H/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/WORKFORCE/bin/ac-reorient && $HOME/COWORK/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/WORKFORCE/bin/ac-reorient && $H/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/post-compact-resume.sh && $HOME/COWORK/.claude-config/hooks/post-compact-resume.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/post-compact-resume.sh && $H/.claude-config/hooks/post-compact-resume.sh 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/handoff-check.sh && $HOME/COWORK/.claude-config/hooks/handoff-check.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/handoff-check.sh && $H/.claude-config/hooks/handoff-check.sh 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/memory-index.sh && $HOME/COWORK/.claude-config/hooks/memory-index.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/memory-index.sh && $H/.claude-config/hooks/memory-index.sh 2>/dev/null || true"
           }
         ]
       }
@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -x $HOME/COWORK/.claude-config/hooks/pre-compact.sh && $HOME/COWORK/.claude-config/hooks/pre-compact.sh 2>/dev/null || true"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/pre-compact.sh && $H/.claude-config/hooks/pre-compact.sh 2>/dev/null || true"
           }
         ]
       }
@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -x $HOME/COWORK/.claude-config/hooks/secrets-guard.sh ] || $HOME/COWORK/.claude-config/hooks/secrets-guard.sh pre"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/secrets-guard.sh ] || $H/.claude-config/hooks/secrets-guard.sh pre"
           }
         ]
       },
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -x $HOME/COWORK/.claude-config/hooks/git-guard.sh ] || $HOME/COWORK/.claude-config/hooks/git-guard.sh"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/git-guard.sh ] || $H/.claude-config/hooks/git-guard.sh"
           }
         ]
       }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -x $HOME/COWORK/.claude-config/hooks/secrets-guard.sh ] || $HOME/COWORK/.claude-config/hooks/secrets-guard.sh post"
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/secrets-guard.sh ] || $H/.claude-config/hooks/secrets-guard.sh post"
           }
         ]
       }
