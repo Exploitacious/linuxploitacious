@@ -43,6 +43,10 @@
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/memory-index.sh && $H/.claude-config/hooks/memory-index.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/remote-session-register.sh && $H/.claude-config/hooks/remote-session-register.sh 2>/dev/null || true"
           }
         ]
       }
