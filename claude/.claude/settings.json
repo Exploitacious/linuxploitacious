@@ -92,6 +92,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/context-watch.sh && $H/.claude-config/hooks/context-watch.sh 2>/dev/null || true"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
