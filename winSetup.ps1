@@ -409,6 +409,69 @@ function Refresh-Path {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  CRITICAL DEPENDENCY -- Git Bash (always, regardless of selected components)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Git Bash is the shell for EVERY Claude Code hook, the statusLine, the Bash
+# tool, and the daily-backup task. Without it the whole behavioral layer is
+# dead. The install used to live ONLY in the remote-bootstrap branch, so a
+# local re-run never guaranteed it and it was never fire-verified (gap #5).
+# Ensure + verify + pin here on every local run.
+
+function Get-GitBashPath {
+    # Prefer the Git-root <root>\bin\bash.exe (the wrapper Claude Code
+    # auto-detects) over whatever `bash` happens to be on PATH (often the
+    # usr\bin variant). Walk up from git.exe to the true root.
+    $g = Get-Command git -ErrorAction SilentlyContinue
+    if ($g) {
+        $dir = Split-Path $g.Source -Parent
+        for ($i = 0; $i -lt 4 -and $dir; $i++) {
+            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                $c = Join-Path $dir $rel
+                if (Test-Path $c) { return $c }
+            }
+            $dir = Split-Path $dir -Parent
+        }
+    }
+    foreach ($c in @("$env:ProgramFiles\Git\bin\bash.exe",
+                     "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+                     "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    $b = Get-Command bash -ErrorAction SilentlyContinue
+    if ($b -and $b.Source -like '*\Git\*') { return $b.Source }
+    return $null
+}
+
+Write-Header 'Git Bash (critical dependency)'
+if (-not (Get-Command bash -ErrorAction SilentlyContinue) -and -not (Get-GitBashPath)) {
+    Write-Info 'Git Bash not found -- installing Git for Windows...'
+    Install-WingetPackage -Id 'Git.Git' -Name 'Git for Windows' | Out-Null
+    Refresh-Path
+}
+$gitBash = Get-GitBashPath
+$bashOk = $false
+if ($gitBash -and (Test-Path $gitBash)) {
+    $bashVer = & $gitBash -lc 'bash --version' 2>$null | Select-Object -First 1
+    if ($bashVer) {
+        Write-Success "Git Bash verified: $gitBash"
+        Write-Info "  $bashVer"
+        # Pin CLAUDE_CODE_GIT_BASH_PATH as a User env var (machine-local) so
+        # Claude Code never mis-detects the shell. NOT written into the tracked
+        # settings.json -- that is a symlink into this PUBLIC repo, and a
+        # machine path there would dirty it (the gap-#2 class of bug).
+        [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $gitBash, 'User')
+        $env:CLAUDE_CODE_GIT_BASH_PATH = $gitBash
+        Write-Success 'Pinned CLAUDE_CODE_GIT_BASH_PATH (User env).'
+        $bashOk = $true
+    }
+}
+if (-not $bashOk) {
+    Write-Err 'Git Bash NOT available. Claude Code hooks, statusLine, the Bash'
+    Write-Err 'tool, and the daily-backup task will be DEAD until it is installed.'
+    Write-Err 'Install manually: winget install --id Git.Git -e'
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  INSTALL COMPONENTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
