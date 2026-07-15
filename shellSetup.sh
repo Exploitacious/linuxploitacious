@@ -1650,6 +1650,65 @@ EOF
   # via their OWN private copy of it. Repo access IS the identity check;
   # no usernames hardcoded.
 
+  ensure_git_identity() {
+    # The harness's core value (git-synced memory + daily backup) needs a
+    # commit identity. The bootstrap preamble prompts for one, but a local
+    # re-run or a manually-cloned setup can reach here without it — so make
+    # the harness path self-sufficient. Defaults derive from the gh account;
+    # email defaults to GitHub's noreply form so no real address is required.
+    local n e ghlogin ghname ghid def_email
+    n=$(git config --global user.name 2>/dev/null)
+    e=$(git config --global user.email 2>/dev/null)
+    if [ -n "$n" ] && [ -n "$e" ]; then
+      return 0
+    fi
+    msg_warn "Git commit identity is not fully set — the harness needs it to sync memory."
+    ghlogin=$(gh api user -q .login 2>/dev/null)
+    ghname=$(gh api user -q '.name // .login' 2>/dev/null)
+    ghid=$(gh api user -q .id 2>/dev/null)
+    if [ -n "$ghid" ] && [ -n "$ghlogin" ]; then
+      def_email="${ghid}+${ghlogin}@users.noreply.github.com"
+    fi
+    if [ -z "$n" ]; then
+      read -r -p "Git user name [${ghname}]: " n
+      n=${n:-$ghname}
+    fi
+    if [ -z "$e" ]; then
+      read -r -p "Git email [${def_email}]: " e
+      e=${e:-$def_email}
+    fi
+    if [ -n "$n" ] && [ -n "$e" ]; then
+      git config --global user.name "$n"
+      git config --global user.email "$e"
+      msg_success "Git identity set: $n <$e>"
+    else
+      msg_warn "Git identity still unset — set it before committing (git config --global user.name/email)."
+    fi
+  }
+
+  detect_harness_access() {
+    # Classify the operator-vs-public decision robustly. A bare
+    # `gh repo view COWORK` failure conflates two very different cases:
+    #   - genuine no-access (404)         -> the user should get OPS
+    #   - transient error (net/rate/auth) -> we must NOT guess
+    # A control probe against the always-visible account disambiguates: if
+    # COWORK is invisible but `gh api user` works, gh is healthy and the user
+    # simply lacks access (-> OPS, return 1); if the control ALSO fails, it's
+    # transient (-> return 2 and the caller declines to guess).
+    # Known limit: GitHub returns 404 (not 403) for a private repo the token
+    # can't see, so a genuinely-no-access user and an operator whose token
+    # merely lacks `repo` scope are indistinguishable here — both route to OPS.
+    # SSHKEY's `gh auth login` grants `repo` scope, which is what avoids that.
+    # return 0 = COWORK access, 1 = no access (OPS), 2 = indeterminate.
+    if gh repo view Exploitacious/COWORK --json name >/dev/null 2>&1; then
+      return 0
+    fi
+    if gh api user >/dev/null 2>&1; then
+      return 1
+    fi
+    return 2
+  }
+
   sync_harness_repo() {
     # Idempotent sync — handles dirty working trees by stashing local edits
     # with a labeled timestamp, pulling, then attempting to restore.
@@ -1714,12 +1773,32 @@ EOF
       CREATE)
         name=$(whiptail --title "OPS AI Harness" --inputbox \
           "Name for your private harness repo:" 10 60 "OPS" 3>&1 1>&2 2>&3) || return 1
-        msg_info "Creating ${gh_user}/${name} (private) from template Exploitacious/OPS..."
+        target="${gh_user}/${name}"
+        # If the repo already exists on the account, don't hard-fail on
+        # create — offer to clone the existing copy instead.
+        if gh repo view "$target" --json name >/dev/null 2>&1; then
+          if whiptail --title "OPS AI Harness" --yesno \
+            "${target} already exists on your account.\nClone that copy instead of creating a new one?" 10 68 3>&1 1>&2 2>&3; then
+            # Clear any leftover dir first — this path is reached precisely
+            # when ~/OPS exists without a .git (interrupted prior run), and
+            # git clone refuses a non-empty target.
+            rm -rf "$harness_dir"
+            if ! gh repo clone "$target" "$harness_dir"; then
+              msg_error "Clone failed. Verify the repo name and gh auth."
+              return 1
+            fi
+            msg_success "Cloned existing $target -> $harness_dir"
+            return 0
+          else
+            msg_warn "Pick a different name and re-run CREATE, or choose EXISTING."
+            return 1
+          fi
+        fi
+        msg_info "Creating ${target} (private) from template Exploitacious/OPS..."
         if ! gh repo create "$name" --template Exploitacious/OPS --private >/dev/null; then
           msg_error "Repo creation failed. Check: gh auth status (needs repo scope)."
           return 1
         fi
-        target="${gh_user}/${name}"
         # Template generation is async on GitHub's side — retry the clone
         # until content lands (BOOTSTRAP.md is the sentinel file).
         for attempt in 1 2 3 4 5; do
@@ -1769,30 +1848,52 @@ EOF
       return
     fi
 
-    local HARNESS_DIR
-    if gh repo view Exploitacious/COWORK --json name >/dev/null 2>&1; then
-      # Operator machine: private COWORK access confirmed.
-      HARNESS_DIR="$HOME/COWORK"
-      if [ ! -d "$HARNESS_DIR/.git" ]; then
-        msg_info "Cloning Exploitacious/COWORK to $HARNESS_DIR..."
-        if gh repo clone Exploitacious/COWORK "$HARNESS_DIR"; then
-          msg_success "COWORK cloned."
-        else
-          msg_error "COWORK clone failed. Verify gh auth covers private repos."
-          return
-        fi
-      else
-        sync_harness_repo "$HARNESS_DIR"
-      fi
-    else
-      # No private access: public OPS template flow.
-      HARNESS_DIR="$HOME/OPS"
-      if [ -d "$HARNESS_DIR/.git" ]; then
-        sync_harness_repo "$HARNESS_DIR"
-      else
-        acquire_ops_repo "$HARNESS_DIR" || return
-      fi
+    local HARNESS_DIR access
+    detect_harness_access; access=$?
+    if [ "$access" -eq 2 ]; then
+      # Couldn't reach GitHub to confirm access — retry once rather than
+      # silently provisioning the wrong harness (e.g. OPS on the operator's
+      # own box during a network blip / rate-limit).
+      msg_warn "Couldn't confirm harness access (network/auth/rate-limit). Retrying in 4s..."
+      sleep 4
+      detect_harness_access; access=$?
     fi
+    if [ "$access" -eq 2 ]; then
+      msg_error "Could not reach GitHub to determine harness access after retry."
+      msg_warn  "Skipping harness setup rather than guess. Re-run HARNESS once connectivity/auth is restored."
+      return
+    fi
+
+    # access is 0 (COWORK) or 1 (OPS) — ensure a commit identity before the
+    # harness starts git-syncing memory (matches the Windows-side ordering).
+    ensure_git_identity
+
+    case "$access" in
+      0)
+        # Operator machine: private COWORK access confirmed.
+        HARNESS_DIR="$HOME/COWORK"
+        if [ ! -d "$HARNESS_DIR/.git" ]; then
+          msg_info "Cloning Exploitacious/COWORK to $HARNESS_DIR..."
+          if gh repo clone Exploitacious/COWORK "$HARNESS_DIR"; then
+            msg_success "COWORK cloned."
+          else
+            msg_error "COWORK clone failed. Verify gh auth covers private repos."
+            return
+          fi
+        else
+          sync_harness_repo "$HARNESS_DIR"
+        fi
+        ;;
+      1)
+        # No private access: public OPS template flow.
+        HARNESS_DIR="$HOME/OPS"
+        if [ -d "$HARNESS_DIR/.git" ]; then
+          sync_harness_repo "$HARNESS_DIR"
+        else
+          acquire_ops_repo "$HARNESS_DIR" || return
+        fi
+        ;;
+    esac
 
     # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
     # lives under WORKFORCE/FLEETPROJECTS/<slug>/runtime/ and is created

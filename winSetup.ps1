@@ -942,6 +942,30 @@ if ($Selected -contains 'CONFIGS') {
 if ($Selected -contains 'HARNESS') {
     Write-Header 'Deploying AI Harness (COWORK / OPS)'
 
+    # The harness's core value (git-synced memory + daily backup) needs a
+    # commit identity. The bootstrap preamble prompts for one, but a local
+    # re-run can reach here without it -- make the harness path self-sufficient.
+    function Ensure-GitIdentity {
+        $n = git config --global user.name 2>$null
+        $e = git config --global user.email 2>$null
+        if ($n -and $e) { return }
+        Write-Warn 'Git commit identity is not fully set -- the harness needs it to sync memory.'
+        $ghlogin = (gh api user -q .login 2>$null)
+        $ghname  = (gh api user -q '.name // .login' 2>$null)
+        $ghid    = (gh api user -q .id 2>$null)
+        $defEmail = ''
+        if ($ghid -and $ghlogin) { $defEmail = "$ghid+$ghlogin@users.noreply.github.com" }
+        if (-not $n) { $n = Read-Host "Git user name [$ghname]"; if (-not $n) { $n = $ghname } }
+        if (-not $e) { $e = Read-Host "Git email [$defEmail]"; if (-not $e) { $e = $defEmail } }
+        if ($n -and $e) {
+            git config --global user.name $n
+            git config --global user.email $e
+            Write-Success "Git identity set: $n <$e>"
+        } else {
+            Write-Warn 'Git identity still unset -- set it before committing.'
+        }
+    }
+
     # Verify gh is available and authenticated
     $canProceed = $true
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -955,18 +979,50 @@ if ($Selected -contains 'HARNESS') {
         }
     }
 
-    # Detect which harness this user gets.
+    # Detect which harness this user gets. A bare `gh repo view COWORK`
+    # failure conflates genuine no-access (404 -> OPS) with a transient error
+    # (network/rate/auth -> must NOT guess). A control probe against the
+    # always-visible account disambiguates: if COWORK is invisible but
+    # `gh api user` works, the user simply lacks access; if it also fails,
+    # it's transient and we skip rather than provision the wrong harness.
+    # Known limit: GitHub returns 404 (not 403) for a private repo the token
+    # can't see, so no-access and a token merely missing `repo` scope look
+    # identical here -- both route to OPS. SSHKEY's gh auth grants that scope.
     $CoworkDir = Join-Path $env:USERPROFILE 'COWORK'
-    $hasPrivate = $false
+    $access = 'indeterminate'   # 'cowork' | 'ops' | 'indeterminate'
     if ($canProceed) {
         gh repo view Exploitacious/COWORK --json name 2>$null | Out-Null
-        $hasPrivate = ($LASTEXITCODE -eq 0)
-        if (-not $hasPrivate) { $CoworkDir = Join-Path $env:USERPROFILE 'OPS' }
+        if ($LASTEXITCODE -eq 0) {
+            $access = 'cowork'
+        } else {
+            gh api user 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { $access = 'ops' }
+        }
+        if ($access -eq 'indeterminate') {
+            Write-Warn "Couldn't confirm harness access (network/auth/rate-limit). Retrying in 4s..."
+            Start-Sleep -Seconds 4
+            gh repo view Exploitacious/COWORK --json name 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $access = 'cowork'
+            } else {
+                gh api user 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) { $access = 'ops' }
+            }
+        }
+        if ($access -eq 'ops') { $CoworkDir = Join-Path $env:USERPROFILE 'OPS' }
+    }
+
+    if ($canProceed -and $access -eq 'indeterminate') {
+        Write-Err 'Could not reach GitHub to determine harness access after retry.'
+        Write-Warn 'Skipping harness setup rather than guess. Re-run HARNESS once connectivity/auth is restored.'
+        $canProceed = $false
     }
 
     if ($canProceed) {
+        # Ensure a commit identity before anything the harness will git-sync.
+        Ensure-GitIdentity
         if (-not (Test-Path (Join-Path $CoworkDir '.git'))) {
-            if ($hasPrivate) {
+            if ($access -eq 'cowork') {
                 Write-Info "Cloning Exploitacious/COWORK to $CoworkDir..."
                 gh repo clone Exploitacious/COWORK $CoworkDir
                 if ($LASTEXITCODE -eq 0) {
@@ -1004,27 +1060,46 @@ if ($Selected -contains 'HARNESS') {
                     default {
                         $name = Read-Host 'Name for your private harness repo (default: OPS)'
                         if (-not $name) { $name = 'OPS' }
-                        Write-Info "Creating $ghUser/$name (private) from template Exploitacious/OPS..."
-                        gh repo create $name --template Exploitacious/OPS --private | Out-Null
-                        if ($LASTEXITCODE -ne 0) {
-                            Write-Err 'Repo creation failed. Check: gh auth status (needs repo scope).'
-                            $canProceed = $false
-                        } else {
-                            # Template generation is async on GitHub's side -- retry
-                            # the clone until content lands (BOOTSTRAP.md sentinel).
-                            $cloned = $false
-                            foreach ($attempt in 1..5) {
-                                if (Test-Path $CoworkDir) { Remove-Item -Recurse -Force $CoworkDir }
-                                gh repo clone "$ghUser/$name" $CoworkDir 2>$null | Out-Null
-                                if (($LASTEXITCODE -eq 0) -and (Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md'))) { $cloned = $true; break }
-                                Write-Info "Waiting for GitHub to generate the repo (attempt $attempt/5)..."
-                                Start-Sleep -Seconds 4
-                            }
-                            if ($cloned) {
-                                Write-Success "Private harness created + cloned: $ghUser/$name -> $CoworkDir"
-                            } else {
-                                Write-Err "Clone came up empty. Run manually: gh repo clone $ghUser/$name $CoworkDir"
+                        $target = "$ghUser/$name"
+                        # If the repo already exists, offer to clone it rather than hard-fail.
+                        gh repo view $target --json name 2>$null | Out-Null
+                        $exists = ($LASTEXITCODE -eq 0)
+                        if ($exists) {
+                            $ans = Read-Host "$target already exists. Clone it instead? [Y/n]"
+                            if ($ans -match '^[Nn]') {
+                                Write-Warn 'Pick a different name and re-run, or choose option 2 (EXISTING).'
                                 $canProceed = $false
+                            } else {
+                                # Clear any leftover dir first -- this path is reached
+                                # when ~/OPS exists without a .git; clone refuses non-empty.
+                                if (Test-Path $CoworkDir) { Remove-Item -Recurse -Force $CoworkDir }
+                                gh repo clone $target $CoworkDir
+                                if ($LASTEXITCODE -ne 0) { Write-Err 'Clone failed. Verify the repo name and gh auth.'; $canProceed = $false }
+                                else { Write-Success "Cloned existing $target -> $CoworkDir" }
+                            }
+                        } else {
+                            Write-Info "Creating $target (private) from template Exploitacious/OPS..."
+                            gh repo create $name --template Exploitacious/OPS --private | Out-Null
+                            if ($LASTEXITCODE -ne 0) {
+                                Write-Err 'Repo creation failed. Check: gh auth status (needs repo scope).'
+                                $canProceed = $false
+                            } else {
+                                # Template generation is async on GitHub's side -- retry
+                                # the clone until content lands (BOOTSTRAP.md sentinel).
+                                $cloned = $false
+                                foreach ($attempt in 1..5) {
+                                    if (Test-Path $CoworkDir) { Remove-Item -Recurse -Force $CoworkDir }
+                                    gh repo clone $target $CoworkDir 2>$null | Out-Null
+                                    if (($LASTEXITCODE -eq 0) -and (Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md'))) { $cloned = $true; break }
+                                    Write-Info "Waiting for GitHub to generate the repo (attempt $attempt/5)..."
+                                    Start-Sleep -Seconds 4
+                                }
+                                if ($cloned) {
+                                    Write-Success "Private harness created + cloned: $target -> $CoworkDir"
+                                } else {
+                                    Write-Err "Clone came up empty. Run manually: gh repo clone $target $CoworkDir"
+                                    $canProceed = $false
+                                }
                             }
                         }
                     }
