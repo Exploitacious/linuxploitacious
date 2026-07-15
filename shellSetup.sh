@@ -885,6 +885,19 @@ EOF
 
     msg_success "Wrote $UNIT_FILE"
 
+    # Per-pane memory cap: a leaking process in any tmux pane (observed with
+    # Claude Code 2.1.x, which can balloon a session to 7GB+ and swap-storm
+    # the host) hits cgroup-OOM at 6G and dies alone instead of taking the
+    # box down. Prefix drop-in applies to every tmux-spawn-*.scope.
+    local CAP_DIR="$UNIT_DIR/tmux-spawn-.scope.d"
+    mkdir -p "$CAP_DIR"
+    cat > "$CAP_DIR/memory-cap.conf" <<'EOF'
+[Scope]
+MemoryMax=6G
+MemorySwapMax=2G
+EOF
+    msg_success "Wrote $CAP_DIR/memory-cap.conf (6G per-pane memory cap)"
+
     systemctl --user daemon-reload
     systemctl --user enable --now tmux-main.service && \
       msg_success "tmux-main.service enabled + started" || \
