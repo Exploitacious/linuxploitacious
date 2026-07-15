@@ -348,6 +348,61 @@ function Deploy-Symlink {
     }
 }
 
+function Deploy-ProfileShim {
+    # Deploy the PowerShell profile as a REAL, host-local shim (NOT a symlink
+    # into the repo). A symlinked $PROFILE means anything that writes to
+    # $PROFILE -- Intelligent Terminal's shell-integration, COWORK deploy.ps1's
+    # clawd launcher -- dirties the PUBLIC linuxploitacious repo and freezes
+    # the Stage-1 auto-sync on re-run. The shim keeps $PROFILE machine-local
+    # and sources the tracked shared profile, which in turn loads the untracked
+    # profile.local.ps1 seam at its end. Mirrors the Linux ~/.<shell>rc.local
+    # model (deploy.sh). Idempotent via the managed marker.
+    param(
+        [string]$RepoProfile,
+        [string]$Target
+    )
+    $parent = Split-Path $Target -Parent
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    $shimMarker = '# --- linuxploitacious profile bootstrap (managed by winSetup) ---'
+    $shimBody = @"
+$shimMarker
+# Real, host-local file (NOT a symlink into the repo) so tools that write to
+# `$PROFILE (Intelligent Terminal, COWORK deploy.ps1) never dirty the public
+# linuxploitacious repo. Sources the tracked shared profile, which loads the
+# untracked profile.local.ps1 seam at its end.
+`$__repoProfile = '$RepoProfile'
+if (Test-Path -LiteralPath `$__repoProfile) { . `$__repoProfile }
+Remove-Variable __repoProfile -ErrorAction SilentlyContinue
+"@
+
+    if (Test-Path $Target) {
+        $item = Get-Item $Target -Force
+        if ($item.LinkType -in @('SymbolicLink', 'Junction')) {
+            Write-Warn "Replacing legacy symlinked profile with host-local shim: $Target"
+            Remove-Item $Target -Force
+            Set-Content -Path $Target -Value $shimBody -Encoding UTF8
+            Write-Success "Profile shim written: $Target"
+            return
+        }
+        $existing = Get-Content $Target -Raw -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Contains($shimMarker)) {
+            Write-Info "Profile shim already present: $Target"
+            return
+        }
+        # Real, non-shim profile (user-authored or tool-injected). Preserve it:
+        # back it up, then write shim + prior content so nothing local is lost.
+        $backup = "${Target}.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $Target $backup -Force
+        Write-Warn "Backed up existing profile -> $backup (content preserved in shim)"
+        Set-Content -Path $Target -Value ($shimBody + "`r`n`r`n" + $existing) -Encoding UTF8
+        Write-Success "Profile shim written (existing content preserved): $Target"
+        return
+    }
+    Set-Content -Path $Target -Value $shimBody -Encoding UTF8
+    Write-Success "Profile shim written: $Target"
+}
+
 function Refresh-Path {
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                  [System.Environment]::GetEnvironmentVariable('Path', 'User')
@@ -882,13 +937,16 @@ if ($Selected -contains 'CONFIGS') {
         Write-Warn "OMP theme directory not found at $ompSourceDir"
     }
 
-    # PowerShell profile -- deploy to both PS7 and PS5.1
+    # PowerShell profile -- deploy a REAL host-local shim (NOT a symlink) to
+    # both PS7 and PS5.1 so tools that write to $PROFILE never dirty this
+    # public repo. The shim sources the tracked profile, which loads the
+    # untracked profile.local.ps1 seam. See Deploy-ProfileShim.
     $profileSource = Join-Path $RepoDir 'powershell\Microsoft.PowerShell_profile.ps1'
     $ps7ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell'
     $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell'
 
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
+    Deploy-ProfileShim -RepoProfile $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
+    Deploy-ProfileShim -RepoProfile $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
 
     # Windows Terminal settings (Catppuccin Mocha, font, opacity, acrylic)
     $wtSettingsSource = Join-Path $RepoDir 'windows-terminal\settings.json'
