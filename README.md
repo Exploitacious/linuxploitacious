@@ -119,11 +119,19 @@ HARNESS menu option sets you up with your own private copy of it.
 **Stage 1 — Level 1 files (this repo):** The `claude/` directory
 deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational
 compression), `~/.claude/settings.json` (model, effort level,
-permissions), and `~/.claude/statusline.sh` using absolute symlinks
-instead of stow. Absolute is necessary because stow's relative
+permissions), and `~/.claude/statusline.sh`. On Linux all three use
+absolute symlinks instead of stow (necessary because stow's relative
 symlinks break when chained through the ROOT profile's `~/.claude` →
-`/home/user/.claude` symlink. These config files apply to every
-Claude Code session regardless of project directory.
+`/home/user/.claude` symlink). On Windows `CLAUDE.md` + `statusline.sh`
+are symlinks, but `settings.json` is **materialized as a real file
+deep-merged from the tracked base** (base wins on managed keys,
+local-only keys preserved) — Claude Code has no user-level
+`settings.local.json` for plugin keys, so a symlink there would let a
+local tool's plugin injection dirty this public repo. The PowerShell
+`$PROFILE` is likewise a real host-local shim (not a symlink) that
+sources the tracked profile + an untracked `profile.local.ps1` seam.
+These config files apply to every Claude Code session regardless of
+project directory.
 
 **Stage 1 — Plugins:** After Claude Code installs (via the always-on
 vendor installer), the script registers the

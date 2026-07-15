@@ -67,3 +67,12 @@ function gcu {
 
 # --- Fastfetch on Launch ---
 if (Get-Command fastfetch -ErrorAction SilentlyContinue) { fastfetch }
+
+# --- Machine-local overrides (untracked seam; mirrors ~/.<shell>rc.local) ---
+# Host-specific content — COWORK deploy.ps1's clawd launcher + WORKFORCE/bin
+# PATH, and third-party tools like Intelligent Terminal — is written to the
+# untracked profile.local.ps1 beside this file, NEVER into this tracked public
+# profile. Sourced last so local definitions win; silent no-op when absent.
+$__localProfile = Join-Path (Split-Path -Parent $PROFILE) 'profile.local.ps1'
+if (Test-Path -LiteralPath $__localProfile) { . $__localProfile }
+Remove-Variable __localProfile -ErrorAction SilentlyContinue

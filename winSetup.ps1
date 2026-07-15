@@ -348,9 +348,195 @@ function Deploy-Symlink {
     }
 }
 
+function Merge-JsonObject {
+    # Deep-merge $Base over $Local: $Base wins on conflicts; keys only in $Local
+    # are preserved. Nested objects merge recursively. Used to keep the tracked
+    # settings.json canonical while preserving machine-local additions (e.g. an
+    # Intelligent Terminal plugin/marketplace the tool injected locally).
+    param([object]$Local, [object]$Base)
+    $result = [ordered]@{}
+    if ($Local) { foreach ($p in $Local.PSObject.Properties) { $result[$p.Name] = $p.Value } }
+    if ($Base) {
+        foreach ($p in $Base.PSObject.Properties) {
+            if ($result.Contains($p.Name) -and ($result[$p.Name] -is [pscustomobject]) -and ($p.Value -is [pscustomobject])) {
+                $result[$p.Name] = Merge-JsonObject -Local $result[$p.Name] -Base $p.Value
+            }
+            else {
+                $result[$p.Name] = $p.Value   # Base wins
+            }
+        }
+    }
+    return [pscustomobject]$result
+}
+
+function Deploy-MergedSettings {
+    # Materialize ~/.claude/settings.json as a REAL file merged from the tracked
+    # base, NOT a symlink into this public repo. A symlinked settings.json means
+    # anything that writes to it (Intelligent Terminal's Claude plugin, Claude
+    # Code itself) dirties the repo and freezes Stage-1 auto-sync. Claude Code
+    # has no user-level settings.local.json for plugin keys, so copy-and-merge is
+    # the supported path (matches the harness-update doctrine). Backup + validate
+    # before replacing so a bad merge can never brick the operator's config.
+    param([string]$BaseFile, [string]$Target)
+    $baseRaw = Get-Content $BaseFile -Raw
+    try { $base = $baseRaw | ConvertFrom-Json } catch { Write-Warn "Tracked settings.json is invalid JSON -- skipping."; return }
+
+    $tgtItem = if (Test-Path $Target) { Get-Item $Target -Force } else { $null }
+
+    if ($tgtItem -and ($tgtItem.LinkType -in @('SymbolicLink', 'Junction'))) {
+        # Currently a symlink into the repo; its content IS the base (same file),
+        # so there are no local-only keys to preserve. Replace with a real file.
+        Remove-Item $Target -Force
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        Write-Success "Materialized settings.json (was symlinked into the repo) -> real host-local file."
+        return
+    }
+    if (-not $tgtItem) {
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        Write-Success "settings.json written (base)."
+        return
+    }
+    # Real file already present: merge base over it, preserving local-only keys.
+    $local = $null
+    try { $local = Get-Content $Target -Raw | ConvertFrom-Json } catch {
+        Write-Warn "Local settings.json is invalid JSON -- overwriting with base."
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        return
+    }
+    $merged = Merge-JsonObject -Local $local -Base $base
+    $json = $merged | ConvertTo-Json -Depth 30
+    if ($json -and $json.TrimStart().StartsWith('{')) {
+        $backup = "${Target}.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $Target $backup -Force
+        $json | Set-Content $Target -Encoding UTF8
+        Write-Success "Merged settings.json (base wins; local-only keys preserved). Backup: $backup"
+    }
+    else {
+        Write-Warn "Merged settings.json failed validation -- left unchanged."
+    }
+}
+
+function Deploy-ProfileShim {
+    # Deploy the PowerShell profile as a REAL, host-local shim (NOT a symlink
+    # into the repo). A symlinked $PROFILE means anything that writes to
+    # $PROFILE -- Intelligent Terminal's shell-integration, COWORK deploy.ps1's
+    # clawd launcher -- dirties the PUBLIC linuxploitacious repo and freezes
+    # the Stage-1 auto-sync on re-run. The shim keeps $PROFILE machine-local
+    # and sources the tracked shared profile, which in turn loads the untracked
+    # profile.local.ps1 seam at its end. Mirrors the Linux ~/.<shell>rc.local
+    # model (deploy.sh). Idempotent via the managed marker.
+    param(
+        [string]$RepoProfile,
+        [string]$Target
+    )
+    $parent = Split-Path $Target -Parent
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    $shimMarker = '# --- linuxploitacious profile bootstrap (managed by winSetup) ---'
+    $shimBody = @"
+$shimMarker
+# Real, host-local file (NOT a symlink into the repo) so tools that write to
+# `$PROFILE (Intelligent Terminal, COWORK deploy.ps1) never dirty the public
+# linuxploitacious repo. Sources the tracked shared profile, which loads the
+# untracked profile.local.ps1 seam at its end.
+`$__repoProfile = '$RepoProfile'
+if (Test-Path -LiteralPath `$__repoProfile) { . `$__repoProfile }
+Remove-Variable __repoProfile -ErrorAction SilentlyContinue
+"@
+
+    if (Test-Path $Target) {
+        $item = Get-Item $Target -Force
+        if ($item.LinkType -in @('SymbolicLink', 'Junction')) {
+            Write-Warn "Replacing legacy symlinked profile with host-local shim: $Target"
+            Remove-Item $Target -Force
+            Set-Content -Path $Target -Value $shimBody -Encoding UTF8
+            Write-Success "Profile shim written: $Target"
+            return
+        }
+        $existing = Get-Content $Target -Raw -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Contains($shimMarker)) {
+            Write-Info "Profile shim already present: $Target"
+            return
+        }
+        # Real, non-shim profile (user-authored or tool-injected). Preserve it:
+        # back it up, then write shim + prior content so nothing local is lost.
+        $backup = "${Target}.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $Target $backup -Force
+        Write-Warn "Backed up existing profile -> $backup (content preserved in shim)"
+        Set-Content -Path $Target -Value ($shimBody + "`r`n`r`n" + $existing) -Encoding UTF8
+        Write-Success "Profile shim written (existing content preserved): $Target"
+        return
+    }
+    Set-Content -Path $Target -Value $shimBody -Encoding UTF8
+    Write-Success "Profile shim written: $Target"
+}
+
 function Refresh-Path {
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                  [System.Environment]::GetEnvironmentVariable('Path', 'User')
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CRITICAL DEPENDENCY -- Git Bash (always, regardless of selected components)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Git Bash is the shell for EVERY Claude Code hook, the statusLine, the Bash
+# tool, and the daily-backup task. Without it the whole behavioral layer is
+# dead. The install used to live ONLY in the remote-bootstrap branch, so a
+# local re-run never guaranteed it and it was never fire-verified (gap #5).
+# Ensure + verify + pin here on every local run.
+
+function Get-GitBashPath {
+    # Prefer the Git-root <root>\bin\bash.exe (the wrapper Claude Code
+    # auto-detects) over whatever `bash` happens to be on PATH (often the
+    # usr\bin variant). Walk up from git.exe to the true root.
+    $g = Get-Command git -ErrorAction SilentlyContinue
+    if ($g) {
+        $dir = Split-Path $g.Source -Parent
+        for ($i = 0; $i -lt 4 -and $dir; $i++) {
+            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                $c = Join-Path $dir $rel
+                if (Test-Path $c) { return $c }
+            }
+            $dir = Split-Path $dir -Parent
+        }
+    }
+    foreach ($c in @("$env:ProgramFiles\Git\bin\bash.exe",
+                     "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+                     "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    $b = Get-Command bash -ErrorAction SilentlyContinue
+    if ($b -and $b.Source -like '*\Git\*') { return $b.Source }
+    return $null
+}
+
+Write-Header 'Git Bash (critical dependency)'
+if (-not (Get-Command bash -ErrorAction SilentlyContinue) -and -not (Get-GitBashPath)) {
+    Write-Info 'Git Bash not found -- installing Git for Windows...'
+    Install-WingetPackage -Id 'Git.Git' -Name 'Git for Windows' | Out-Null
+    Refresh-Path
+}
+$gitBash = Get-GitBashPath
+$bashOk = $false
+if ($gitBash -and (Test-Path $gitBash)) {
+    $bashVer = & $gitBash -lc 'bash --version' 2>$null | Select-Object -First 1
+    if ($bashVer) {
+        Write-Success "Git Bash verified: $gitBash"
+        Write-Info "  $bashVer"
+        # Pin CLAUDE_CODE_GIT_BASH_PATH as a User env var (machine-local) so
+        # Claude Code never mis-detects the shell. NOT written into the tracked
+        # settings.json -- that is a symlink into this PUBLIC repo, and a
+        # machine path there would dirty it (the gap-#2 class of bug).
+        [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $gitBash, 'User')
+        $env:CLAUDE_CODE_GIT_BASH_PATH = $gitBash
+        Write-Success 'Pinned CLAUDE_CODE_GIT_BASH_PATH (User env).'
+        $bashOk = $true
+    }
+}
+if (-not $bashOk) {
+    Write-Err 'Git Bash NOT available. Claude Code hooks, statusLine, the Bash'
+    Write-Err 'tool, and the daily-backup task will be DEAD until it is installed.'
+    Write-Err 'Install manually: winget install --id Git.Git -e'
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -535,19 +721,16 @@ if ($Selected -contains 'CLAUDE') {
         Write-Info 'Removed deprecated ~/.gemini directory.'
     }
 
-    # --- Claude Code (always refresh -- matches Linux behavior) ---
+    # --- Claude Code (install-or-upgrade -- matches Linux behavior) ---
+    # Route through Install-WingetPackage so a re-run UPGRADES an existing
+    # install instead of no-opping on a bare `winget install` (gap #15).
     Write-Info 'Installing/updating Claude Code...'
-    winget install --id Anthropic.ClaudeCode -e --accept-package-agreements --accept-source-agreements 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        # winget returns non-zero if already up to date -- check if it's actually present
-        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-            Write-Warn 'winget install failed and Claude Code not found.'
-            Write-Warn 'Install manually: https://claude.ai/code'
-        }
-    }
+    [void](Install-WingetPackage -Id 'Anthropic.ClaudeCode' -Name 'Claude Code')
     Refresh-Path
     if (Get-Command claude -ErrorAction SilentlyContinue) {
         Write-Success 'Claude Code ready.'
+    } else {
+        Write-Warn 'Claude Code not found after install. Install manually: https://claude.ai/code'
     }
 
     # --- OpenCode ---
@@ -559,15 +742,15 @@ if ($Selected -contains 'CLAUDE') {
     $openCodeInstalled = Get-Command opencode -ErrorAction SilentlyContinue
     if ($openCodeInstalled) {
         Write-Info 'OpenCode already present. Trying winget upgrade...'
-        winget upgrade --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        winget upgrade --id SST.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Success 'OpenCode upgrade run (no-op if already current).'
         } else {
             Write-Info 'OpenCode upgrade returned non-zero -- not necessarily an error (already current?).'
         }
     } else {
-        Write-Info 'Trying winget install: sst-opencode.opencode'
-        $wingetOut = winget install --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+        Write-Info 'Trying winget install: SST.opencode'
+        $wingetOut = winget install --id SST.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1
         if ($LASTEXITCODE -eq 0 -and (Get-Command opencode -ErrorAction SilentlyContinue)) {
             Refresh-Path
             Write-Success 'OpenCode installed via winget.'
@@ -885,13 +1068,16 @@ if ($Selected -contains 'CONFIGS') {
         Write-Warn "OMP theme directory not found at $ompSourceDir"
     }
 
-    # PowerShell profile -- deploy to both PS7 and PS5.1
+    # PowerShell profile -- deploy a REAL host-local shim (NOT a symlink) to
+    # both PS7 and PS5.1 so tools that write to $PROFILE never dirty this
+    # public repo. The shim sources the tracked profile, which loads the
+    # untracked profile.local.ps1 seam. See Deploy-ProfileShim.
     $profileSource = Join-Path $RepoDir 'powershell\Microsoft.PowerShell_profile.ps1'
     $ps7ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell'
     $ps5ProfileDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell'
 
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
-    Deploy-Symlink -Source $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
+    Deploy-ProfileShim -RepoProfile $profileSource -Target (Join-Path $ps7ProfileDir 'Microsoft.PowerShell_profile.ps1')
+    Deploy-ProfileShim -RepoProfile $profileSource -Target (Join-Path $ps5ProfileDir 'Microsoft.PowerShell_profile.ps1')
 
     # Windows Terminal settings (Catppuccin Mocha, font, opacity, acrylic)
     $wtSettingsSource = Join-Path $RepoDir 'windows-terminal\settings.json'
@@ -922,7 +1108,14 @@ if ($Selected -contains 'CONFIGS') {
         $src = Join-Path $claudeSourceDir $file
         $tgt = Join-Path $claudeHome $file
         if (Test-Path $src) {
-            Deploy-Symlink -Source $src -Target $tgt
+            if ($file -eq 'settings.json') {
+                # Real merged file, not a symlink: local tools (Intelligent
+                # Terminal, Claude Code) write settings without dirtying the repo.
+                Deploy-MergedSettings -BaseFile $src -Target $tgt
+            }
+            else {
+                Deploy-Symlink -Source $src -Target $tgt
+            }
         }
     }
 
