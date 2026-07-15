@@ -866,6 +866,13 @@ ROOTAI
     local TMUX_BIN
     TMUX_BIN="$(command -v tmux)"
 
+    # Oneshot on purpose: the unit only ENSURES 'main' exists; it must never
+    # own the tmux server's lifecycle. The old Type=forking unit tracked the
+    # server as MainPID with Restart=on-failure — when the last session died,
+    # the server exited, systemd "repaired" it, and tmux-continuum resurrected
+    # archived Claude sessions as context-less impostors (2026-07-15 incident).
+    # No ExecStop and KillMode=process: stopping this unit never kills the
+    # server, which hosts every other session on the box.
     cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=tmux default session (main)
@@ -873,11 +880,10 @@ Documentation=man:tmux(1)
 After=network.target
 
 [Service]
-Type=forking
-ExecStart=${TMUX_BIN} new-session -d -s main
-ExecStop=${TMUX_BIN} kill-session -t main
-KillMode=none
-Restart=on-failure
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c '${TMUX_BIN} has-session -t =main 2>/dev/null || ${TMUX_BIN} new-session -d -s main'
+KillMode=process
 
 [Install]
 WantedBy=default.target
