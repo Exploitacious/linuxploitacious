@@ -535,19 +535,16 @@ if ($Selected -contains 'CLAUDE') {
         Write-Info 'Removed deprecated ~/.gemini directory.'
     }
 
-    # --- Claude Code (always refresh -- matches Linux behavior) ---
+    # --- Claude Code (install-or-upgrade -- matches Linux behavior) ---
+    # Route through Install-WingetPackage so a re-run UPGRADES an existing
+    # install instead of no-opping on a bare `winget install` (gap #15).
     Write-Info 'Installing/updating Claude Code...'
-    winget install --id Anthropic.ClaudeCode -e --accept-package-agreements --accept-source-agreements 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        # winget returns non-zero if already up to date -- check if it's actually present
-        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-            Write-Warn 'winget install failed and Claude Code not found.'
-            Write-Warn 'Install manually: https://claude.ai/code'
-        }
-    }
+    [void](Install-WingetPackage -Id 'Anthropic.ClaudeCode' -Name 'Claude Code')
     Refresh-Path
     if (Get-Command claude -ErrorAction SilentlyContinue) {
         Write-Success 'Claude Code ready.'
+    } else {
+        Write-Warn 'Claude Code not found after install. Install manually: https://claude.ai/code'
     }
 
     # --- OpenCode ---
@@ -559,15 +556,15 @@ if ($Selected -contains 'CLAUDE') {
     $openCodeInstalled = Get-Command opencode -ErrorAction SilentlyContinue
     if ($openCodeInstalled) {
         Write-Info 'OpenCode already present. Trying winget upgrade...'
-        winget upgrade --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        winget upgrade --id SST.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Success 'OpenCode upgrade run (no-op if already current).'
         } else {
             Write-Info 'OpenCode upgrade returned non-zero -- not necessarily an error (already current?).'
         }
     } else {
-        Write-Info 'Trying winget install: sst-opencode.opencode'
-        $wingetOut = winget install --id sst-opencode.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+        Write-Info 'Trying winget install: SST.opencode'
+        $wingetOut = winget install --id SST.opencode -e --silent --accept-package-agreements --accept-source-agreements 2>&1
         if ($LASTEXITCODE -eq 0 -and (Get-Command opencode -ErrorAction SilentlyContinue)) {
             Refresh-Path
             Write-Success 'OpenCode installed via winget.'
