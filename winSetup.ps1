@@ -348,6 +348,74 @@ function Deploy-Symlink {
     }
 }
 
+function Merge-JsonObject {
+    # Deep-merge $Base over $Local: $Base wins on conflicts; keys only in $Local
+    # are preserved. Nested objects merge recursively. Used to keep the tracked
+    # settings.json canonical while preserving machine-local additions (e.g. an
+    # Intelligent Terminal plugin/marketplace the tool injected locally).
+    param([object]$Local, [object]$Base)
+    $result = [ordered]@{}
+    if ($Local) { foreach ($p in $Local.PSObject.Properties) { $result[$p.Name] = $p.Value } }
+    if ($Base) {
+        foreach ($p in $Base.PSObject.Properties) {
+            if ($result.Contains($p.Name) -and ($result[$p.Name] -is [pscustomobject]) -and ($p.Value -is [pscustomobject])) {
+                $result[$p.Name] = Merge-JsonObject -Local $result[$p.Name] -Base $p.Value
+            }
+            else {
+                $result[$p.Name] = $p.Value   # Base wins
+            }
+        }
+    }
+    return [pscustomobject]$result
+}
+
+function Deploy-MergedSettings {
+    # Materialize ~/.claude/settings.json as a REAL file merged from the tracked
+    # base, NOT a symlink into this public repo. A symlinked settings.json means
+    # anything that writes to it (Intelligent Terminal's Claude plugin, Claude
+    # Code itself) dirties the repo and freezes Stage-1 auto-sync. Claude Code
+    # has no user-level settings.local.json for plugin keys, so copy-and-merge is
+    # the supported path (matches the harness-update doctrine). Backup + validate
+    # before replacing so a bad merge can never brick the operator's config.
+    param([string]$BaseFile, [string]$Target)
+    $baseRaw = Get-Content $BaseFile -Raw
+    try { $base = $baseRaw | ConvertFrom-Json } catch { Write-Warn "Tracked settings.json is invalid JSON -- skipping."; return }
+
+    $tgtItem = if (Test-Path $Target) { Get-Item $Target -Force } else { $null }
+
+    if ($tgtItem -and ($tgtItem.LinkType -in @('SymbolicLink', 'Junction'))) {
+        # Currently a symlink into the repo; its content IS the base (same file),
+        # so there are no local-only keys to preserve. Replace with a real file.
+        Remove-Item $Target -Force
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        Write-Success "Materialized settings.json (was symlinked into the repo) -> real host-local file."
+        return
+    }
+    if (-not $tgtItem) {
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        Write-Success "settings.json written (base)."
+        return
+    }
+    # Real file already present: merge base over it, preserving local-only keys.
+    $local = $null
+    try { $local = Get-Content $Target -Raw | ConvertFrom-Json } catch {
+        Write-Warn "Local settings.json is invalid JSON -- overwriting with base."
+        $baseRaw | Set-Content $Target -Encoding UTF8
+        return
+    }
+    $merged = Merge-JsonObject -Local $local -Base $base
+    $json = $merged | ConvertTo-Json -Depth 30
+    if ($json -and $json.TrimStart().StartsWith('{')) {
+        $backup = "${Target}.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $Target $backup -Force
+        $json | Set-Content $Target -Encoding UTF8
+        Write-Success "Merged settings.json (base wins; local-only keys preserved). Backup: $backup"
+    }
+    else {
+        Write-Warn "Merged settings.json failed validation -- left unchanged."
+    }
+}
+
 function Deploy-ProfileShim {
     # Deploy the PowerShell profile as a REAL, host-local shim (NOT a symlink
     # into the repo). A symlinked $PROFILE means anything that writes to
@@ -1040,7 +1108,14 @@ if ($Selected -contains 'CONFIGS') {
         $src = Join-Path $claudeSourceDir $file
         $tgt = Join-Path $claudeHome $file
         if (Test-Path $src) {
-            Deploy-Symlink -Source $src -Target $tgt
+            if ($file -eq 'settings.json') {
+                # Real merged file, not a symlink: local tools (Intelligent
+                # Terminal, Claude Code) write settings without dirtying the repo.
+                Deploy-MergedSettings -BaseFile $src -Target $tgt
+            }
+            else {
+                Deploy-Symlink -Source $src -Target $tgt
+            }
         }
     }
 
