@@ -209,7 +209,8 @@ COST_FMT=$(printf '%.2f' "$COST")
 
 # Profile tag — which account this session burns. CLAUDE_CONFIG_DIR is
 # unset for work (default) and ~/.claude-personal for the `clawd` launcher.
-case "${CLAUDE_CONFIG_DIR:-}" in
+_ccd="${CLAUDE_CONFIG_DIR:-}"   # normalize backslashes so a Windows path matches (gap #18)
+case "${_ccd//\\//}" in
     */.claude-personal) PROFILE="${B}${YEL}PERSONAL${RST} " ;;
     *)                  PROFILE="${B}${CYN}WORK${RST} " ;;
 esac
