@@ -15,6 +15,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -47,6 +48,10 @@
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/remote-session-register.sh && $H/.claude-config/hooks/remote-session-register.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-work-init.sh && $H/.claude-config/hooks/session-work-init.sh 2>/dev/null || true"
           }
         ]
       }
@@ -122,7 +127,7 @@
     }
   },
   "spinnerTipsEnabled": false,
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
