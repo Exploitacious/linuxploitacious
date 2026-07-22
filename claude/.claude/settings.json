@@ -96,6 +96,15 @@
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/secrets-guard.sh ] || $H/.claude-config/hooks/secrets-guard.sh post"
           }
         ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/context-watch.sh && $H/.claude-config/hooks/context-watch.sh posttool 2>/dev/null || true"
+          }
+        ]
       }
     ],
     "Stop": [
