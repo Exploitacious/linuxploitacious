@@ -98,17 +98,17 @@ wrong — agent type is irrelevant; the model alias is the only lever.
 | `"sonnet"` | `claude-sonnet-5[1m]` | 1M | **default worker** — Sonnet 5 at 1M; the 1M price premium only applies past 200K input, so the headroom is ~free for normal work |
 | `"opus"` | `claude-opus-4-8[1m]` | 1M | hardest lanes — security-sensitive builds, audits, research, top-judgment work |
 
-> **Fable 5 is a temporary main-session model, not a worker alias** — it ran as
-> the interactive main-session model for a short window (through roughly
-> 2026-07-07); after that it's retired like any other model past EOL. The
-> `"fable"` **worker** alias has been dead since 2026-06-18 and stays dead
-> regardless of what the main session is running — never spawn
-> `model: "fable"` subagents. If a model pin in `settings.json` ever names a
-> model that's gone unavailable, remove the top-level `"model"` key entirely
-> rather than guessing a replacement; Claude Code then falls back to the
-> `ANTHROPIC_DEFAULT_*_MODEL` aliases below. On any model's EOL, check
-> `settings.json` first for a stale top-level `"model"` pin — tonight's audit
-> caught exactly that.
+> **Fable 5 is the TOP main-session model — the current default, here to stay**
+> (operator, 2026-07-23). It runs as the interactive main-session model, pinned
+> in `settings.json` as `claude-fable-5[1m]` (or selected via `/model`), and is
+> NOT retiring — the earlier "temporary main-session model, retired ~2026-07-07
+> at EOL" note was wrong and has been removed. It is a MAIN-SESSION model, not a
+> worker alias: subagent tiers stay `haiku`/`sonnet`/`opus` (below) — there is
+> no `model: "fable"` worker alias wired for subagent spawns, so don't pass one.
+> General fallback wisdom (any model, not Fable-specific): if a top-level
+> `"model"` pin in `settings.json` ever names a model that has genuinely gone
+> unavailable, remove the key so Claude Code falls back to the
+> `ANTHROPIC_DEFAULT_*_MODEL` aliases below — don't guess a replacement.
 
 **Rule of thumb:** default to `model: "sonnet"` (Sonnet 5 1M) for routine
 investigation/build/review; drop to `model: "haiku"` (Sonnet 5 200K) for

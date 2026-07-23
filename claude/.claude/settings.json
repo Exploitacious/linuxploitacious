@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 30,
   "env": {
+    "CLAUDE_CODE_TMPDIR": "/home/master/.claude-tmp",
     "DISABLE_AUTO_COMPACT": "1",
     "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1m]",
@@ -15,7 +16,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -145,5 +146,5 @@
   "autoCompactEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "disableAgentView": true
 }
