@@ -120,6 +120,7 @@
       }
     ]
   },
+  "disableAgentView": true,
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline.sh\"",
@@ -145,6 +146,5 @@
   "theme": "dark",
   "autoCompactEnabled": false,
   "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true,
-  "disableAgentView": true
+  "agentPushNotifEnabled": true
 }
