@@ -68,6 +68,24 @@ alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"ale
 alias myip='curl -s http://ipecho.net/plain; echo'
 alias distro='cat /etc/*-release'
 alias rustscan='sudo docker run -it --rm --name rustscan --user root --network host --ulimit nofile=100000:100000 --privileged -v $HOME/.rustscan.toml:/root/.rustscan.toml:ro rustscan/rustscan:2.1.1'
+
+# Superfile — default terminal file manager (installed by shellSetup BASE,
+# config stowed from superfile/). Wrapper implements cd-on-quit: with
+# cd_on_quit=true in config.toml, spf writes its last dir to a state file on
+# quit; sourcing it moves THIS shell there instead of stranding you where you
+# started. Function shadows the binary; `command spf` reaches through.
+if command -v spf >/dev/null 2>&1; then
+  spf() {
+    export SPF_LAST_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/superfile/lastdir"
+    command spf "$@"
+    [ ! -f "$SPF_LAST_DIR" ] || {
+      . "$SPF_LAST_DIR"
+      rm -f -- "$SPF_LAST_DIR" >/dev/null
+    }
+  }
+  alias fm='spf'
+fi
+
 # Fastfetch (replaces Neofetch)
 if command -v fastfetch >/dev/null 2>&1; then
   fastfetch

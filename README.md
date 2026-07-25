@@ -85,7 +85,7 @@ The script uses a two-stage architecture:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, cloudflared, etc.) | ON |
+| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, cloudflared, superfile, etc.) | ON |
 | NODE | Node.js via NVM and pnpm | ON |
 | PYTHON | Python via pyenv + pip packages | ON |
 | SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
@@ -382,6 +382,11 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 ├── btop/                              # Package: Btop config
 │   └── .config/btop/
 │       └── btop.conf                  #   -> ~/.config/btop/btop.conf
+├── superfile/                         # Package: Superfile (spf) config
+│   └── .config/superfile/             #   -> ~/.config/superfile/
+│       ├── config.toml                #   cd_on_quit=true pairs with the
+│       ├── hotkeys.toml               #   spf() cd-on-quit wrapper in zsh/.zshrc
+│       └── theme/
 ├── fastfetch/                         # Package: Fastfetch config
 │   └── .config/fastfetch/
 │       └── config.jsonc               #   -> ~/.config/fastfetch/config.jsonc

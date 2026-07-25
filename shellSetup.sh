@@ -166,7 +166,7 @@ EOF
   fi
 
   # --- STOW PACKAGES (single source of truth; deploy_stow + setup_root_profile both reference this) ---
-  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop")
+  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "superfile")
 
   # --- PACKAGE MANAGERS ---
 
@@ -407,6 +407,47 @@ EOF
     sudo install -m 0755 "$CF_TMP/cloudflared" /usr/local/bin/cloudflared
     rm -rf "$CF_TMP"
     msg_success "cloudflared installed: $(cloudflared --version 2>&1 | head -1)"
+  }
+
+  install_superfile() {
+    msg_header "Installing superfile (default terminal file manager)"
+    if command -v spf >/dev/null 2>&1; then
+      msg_info "superfile already installed: $(spf --version 2>&1 | head -1)"
+      return 0
+    fi
+    local SPF_ARCH="amd64"
+    case "$(uname -m)" in
+      aarch64|arm64) SPF_ARCH="arm64" ;;
+      x86_64)        SPF_ARCH="amd64" ;;
+    esac
+    local SPF_TMP SPF_TAG
+    SPF_TMP=$(mktemp -d)
+    # Asset names embed the tag (superfile-linux-v1.6.0-amd64.tar.gz), so resolve it first
+    SPF_TAG=$(curl -s https://api.github.com/repos/yorukot/superfile/releases/latest | jq -r '.tag_name')
+    if [ -z "$SPF_TAG" ] || [ "$SPF_TAG" = "null" ]; then
+      msg_error "Could not resolve latest superfile release tag."
+      rm -rf "$SPF_TMP"
+      return 1
+    fi
+    msg_info "Downloading superfile-linux-${SPF_TAG}-${SPF_ARCH} from GitHub releases..."
+    if ! curl -fsSL -o "$SPF_TMP/spf.tar.gz" \
+         "https://github.com/yorukot/superfile/releases/latest/download/superfile-linux-${SPF_TAG}-${SPF_ARCH}.tar.gz"; then
+      msg_error "superfile download failed."
+      rm -rf "$SPF_TMP"
+      return 1
+    fi
+    tar -xzf "$SPF_TMP/spf.tar.gz" -C "$SPF_TMP"
+    # find the binary rather than hardcoding the archive's internal layout
+    local SPF_BIN
+    SPF_BIN=$(find "$SPF_TMP" -type f -name spf | head -n 1)
+    if [ -z "$SPF_BIN" ]; then
+      msg_error "spf binary not found inside superfile release archive."
+      rm -rf "$SPF_TMP"
+      return 1
+    fi
+    sudo install -m 0755 "$SPF_BIN" /usr/local/bin/spf
+    rm -rf "$SPF_TMP"
+    msg_success "superfile installed: $(spf --version 2>&1 | head -1)"
   }
 
   install_brave() {
@@ -1998,8 +2039,9 @@ EOF
     elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
       install_fedora_base
     fi
-    # OS-agnostic binary install — Cloudflare doesn't ship apt repo for every distro/codename
+    # OS-agnostic binary installs — no apt repo for every distro/codename
     install_cloudflared
+    install_superfile
   fi
 
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi
