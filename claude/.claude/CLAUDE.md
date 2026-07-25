@@ -90,32 +90,39 @@ aliases below to non-`[1m]` models until it's resolved.)
 The earlier folklore blaming the `Explore` agent type for "forcing 1M" is
 wrong — agent type is irrelevant; the model alias is the only lever.
 
-**Worker-model policy (operator directive 2026-06-30 — same on BOTH profiles):**
+**Worker-model policy (operator directive 2026-06-30; opus tier bumped to
+Opus 5 on 2026-07-24 — same on BOTH profiles):**
 
 | `model:` | resolves to | context | use for |
 |---|---|---|---|
 | `"haiku"` | `claude-sonnet-5` | 200K | easiest / mechanical lanes — no Haiku model in use; Sonnet 5 is the floor |
 | `"sonnet"` | `claude-sonnet-5[1m]` | 1M | **default worker** — Sonnet 5 at 1M; the 1M price premium only applies past 200K input, so the headroom is ~free for normal work |
-| `"opus"` | `claude-opus-4-8[1m]` | 1M | hardest lanes — security-sensitive builds, audits, research, top-judgment work |
+| `"opus"` | `claude-opus-5` | 1M (native) | hardest lanes — security-sensitive builds, audits, research, top-judgment work. 1M is Opus 5's default AND max, so no `[1m]` suffix — plain ID, live-verified 2026-07-24. Same $/token as Opus 4.8, strictly stronger on hard coding/agentic work; its `low`/`medium` effort is unusually strong (near prior-model `xhigh`), so verify/judge lanes can run opus at reduced effort instead of paying full freight |
 
-> **Fable 5 is the TOP main-session model — the current default, here to stay**
-> (operator, 2026-07-23). It runs as the interactive main-session model, pinned
-> in `settings.json` as `claude-fable-5[1m]` (or selected via `/model`), and is
-> NOT retiring — the earlier "temporary main-session model, retired ~2026-07-07
-> at EOL" note was wrong and has been removed. It is a MAIN-SESSION model, not a
-> worker alias: subagent tiers stay `haiku`/`sonnet`/`opus` (below) — there is
-> no `model: "fable"` worker alias wired for subagent spawns, so don't pass one.
-> General fallback wisdom (any model, not Fable-specific): if a top-level
-> `"model"` pin in `settings.json` ever names a model that has genuinely gone
-> unavailable, remove the key so Claude Code falls back to the
-> `ANTHROPIC_DEFAULT_*_MODEL` aliases below — don't guess a replacement.
+> **Opus 5 is the main-session default** (operator, 2026-07-24), pinned in
+> `settings.json` as `"model": "claude-opus-5"` — it is the daily boot
+> workhorse. **Fable 5 stays fully available on every plan** (work AND
+> personal — the earlier fear of it going API-gated did not materialize) and
+> is the deliberate big-brain choice: switch via `/model claude-fable-5[1m]`
+> for planning-heavy, deep-reasoning sessions, then switch back. Fable is a
+> MAIN-SESSION model, not a worker alias: subagent tiers stay
+> `haiku`/`sonnet`/`opus` (above) — there is no `model: "fable"` worker alias
+> wired for subagent spawns, so don't pass one.
+> General fallback wisdom (any model): if a top-level `"model"` pin in
+> `settings.json` ever names a model that has genuinely gone unavailable,
+> remove the key so Claude Code falls back to the
+> `ANTHROPIC_DEFAULT_*_MODEL` aliases — don't guess a replacement.
+> First-launch gotcha: the first boot on a newly-pinned model can reset
+> effort to default once despite the settings pin — re-pin with
+> `/effort xhigh` if the statusline shows a downgrade.
 
 **Rule of thumb:** default to `model: "sonnet"` (Sonnet 5 1M) for routine
 investigation/build/review; drop to `model: "haiku"` (Sonnet 5 200K) for
 trivial/mechanical lanes where 1M context is wasted; escalate to
-`model: "opus"` (Opus 4.8 1M) for the demanding lanes. No profile-specific cap
-anymore — the same tiers apply on `claude` and `clawd`. Any agent type works
-with any alias. The main interactive session stays 1M Opus (OPUS alias).
+`model: "opus"` (Opus 5, 1M native) for the demanding lanes. No
+profile-specific cap anymore — the same tiers apply on `claude` and `clawd`.
+Any agent type works with any alias. The main interactive session boots
+Opus 5 (direct pin); Fable 5 on demand for the big-brain work.
 
 To change tiers, re-point the `ANTHROPIC_DEFAULT_*_MODEL` env keys in the
 shared `settings.json`.
