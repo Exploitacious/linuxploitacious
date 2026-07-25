@@ -97,7 +97,7 @@ Opus 5 on 2026-07-24 — same on BOTH profiles):**
 |---|---|---|---|
 | `"haiku"` | `claude-sonnet-5` | 200K | easiest / mechanical lanes — no Haiku model in use; Sonnet 5 is the floor |
 | `"sonnet"` | `claude-sonnet-5[1m]` | 1M | **default worker** — Sonnet 5 at 1M; the 1M price premium only applies past 200K input, so the headroom is ~free for normal work |
-| `"opus"` | `claude-opus-5` | 1M (native) | hardest lanes — security-sensitive builds, audits, research, top-judgment work. 1M is Opus 5's default AND max, so no `[1m]` suffix — plain ID, live-verified 2026-07-24. Same $/token as Opus 4.8, strictly stronger on hard coding/agentic work; its `low`/`medium` effort is unusually strong (near prior-model `xhigh`), so verify/judge lanes can run opus at reduced effort instead of paying full freight |
+| `"opus"` | `claude-opus-5` | 1M (native) | hardest lanes — security-sensitive builds, audits, research, top-judgment work. 1M is Opus 5's default AND max, so no `[1m]` suffix — plain ID, live-verified 2026-07-24. Same $/token as Opus 4.8, strictly stronger on hard coding/agentic work. Effort defaults to `xhigh` everywhere; drop it only on operator request (Opus 5 holds up unusually well at `low`/`medium`, so operator-requested economy passes are cheap) |
 
 > **Opus 5 is the main-session default** (operator, 2026-07-24), pinned in
 > `settings.json` as `"model": "claude-opus-5"` — it is the daily boot
@@ -114,7 +114,11 @@ Opus 5 on 2026-07-24 — same on BOTH profiles):**
 > `ANTHROPIC_DEFAULT_*_MODEL` aliases — don't guess a replacement.
 > First-launch gotcha: the first boot on a newly-pinned model can reset
 > effort to default once despite the settings pin — re-pin with
-> `/effort xhigh` if the statusline shows a downgrade.
+> `/effort xhigh` if the statusline shows a downgrade. That rule covers
+> FIRST BOOT after a model swap only: an operator-chosen `/effort`
+> decrease mid-session is a deliberate token-saving move — never
+> "correct" it back up; `xhigh` returns on its own at next boot via the
+> settings default (`effortLevel: "xhigh"`).
 
 **Rule of thumb:** default to `model: "sonnet"` (Sonnet 5 1M) for routine
 investigation/build/review; drop to `model: "haiku"` (Sonnet 5 200K) for

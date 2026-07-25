@@ -138,7 +138,7 @@
     }
   },
   "spinnerTipsEnabled": false,
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "autoDreamEnabled": true,
