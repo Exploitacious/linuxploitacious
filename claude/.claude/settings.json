@@ -118,6 +118,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/context-watch.sh && $H/.claude-config/hooks/context-watch.sh readout 2>/dev/null || true"
+          }
+        ]
+      }
     ]
   },
   "disableAgentView": true,
