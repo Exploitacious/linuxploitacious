@@ -13,6 +13,12 @@
 #      switch armed strands the machine with no route anywhere. `vpn off`
 #      therefore disarms it as part of disconnecting; re-arm by hand with
 #      `vpn killswitch on` if you want the box sealed while offline.
+#   3. A full-tunnel connect steals the default route and, with the kill switch
+#      armed, firewalls every non-tunnel egress — which silently cuts a REMOTE
+#      operator's own Tailscale/SSH session, because tailscale0's replies can
+#      no longer route back out. `ensure_tailnet_allowlist` carves the tailnet
+#      back out on every connect, and `vpn safe` arms an auto-revert
+#      dead-man's-switch for when you are managing the box from off-site.
 #
 # Legacy raw-.ovpn fallback (service credentials, no Nord Account session):
 # ~/.local/bin/launch_nordvpn, aliased as `connectnord`.
@@ -38,6 +44,10 @@ Usage:
                             or group — e.g. us | United_States | Chicago |
                             us9999 | Onion_Over_VPN
   $PROG random              draw a random country + city and connect to it
+  $PROG safe [target]       lockout-proof connect for when you are SSHed in
+                            over the tailnet: ensures the tailnet allowlist,
+                            then arms an auto-revert dead-man's-switch
+  $PROG keep                cancel the auto-revert armed by '$PROG safe'
   $PROG off | disconnect    disconnect and disarm the kill switch
   $PROG status              show connection status
   $PROG settings            show every current NordVPN setting
@@ -48,6 +58,15 @@ Usage:
 Kill switch:
   Armed automatically after a successful connect, disarmed by '$PROG off'.
   Arming it while the tunnel is down blocks all traffic until it is disarmed.
+
+Remote / tailnet safety:
+  Every connect re-applies a NordVPN allowlist for the Tailscale CGNAT range
+  (100.64.0.0/10), this box's LAN, and Tailscale's UDP port, so a full-tunnel
+  connect + kill switch never cuts your own tailnet SSH management. If you are
+  remoted in, use '$PROG safe' — it also arms a timer that disconnects and
+  disarms the switch if you lose the box, so a bad connect self-heals. Run
+  '$PROG keep' once you have confirmed the session survived. The timeout is
+  \${VPN_SAFE_TIMEOUT:-120} seconds.
 
 One-time sign-in (needed once per machine, then never again):
   nordvpn login                  opens a browser
@@ -111,7 +130,88 @@ disarm_killswitch() {
     fi
 }
 
+# Where the 'vpn safe' dead-man's-switch parks its PID so 'vpn keep' and
+# 'vpn off' can find and cancel it. Prefer the per-user runtime dir (cleared on
+# logout, which is the right lifetime for a live-session timer); fall back to
+# the cache dir on boxes without XDG_RUNTIME_DIR.
+revert_pidfile() {
+    printf '%s/revert.pid' "${XDG_RUNTIME_DIR:-$HOME/.cache}/vpn"
+}
+
+# Kill a parked dead-man's-switch and clear its state file. Quiet by design:
+# callers that want to report ('vpn keep') read the return — 0 if a live timer
+# was cancelled, 1 if nothing was armed (no file, or the timer already fired).
+cancel_revert() {
+    pidfile=$(revert_pidfile)
+    [ -f "$pidfile" ] || return 1
+    pid=$(cat "$pidfile" 2>/dev/null)
+    rc=1
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        # Kills the detached 'sh -c "sleep …; nordvpn …"'; the orphaned sleep
+        # then exits harmlessly without ever running the revert commands.
+        kill "$pid" 2>/dev/null
+        rc=0
+    fi
+    rm -f "$pidfile"
+    return "$rc"
+}
+
+# A full-tunnel connect + kill switch firewalls all non-tunnel egress, which
+# silently strands a REMOTE operator: replies leaving tailscale0 (and the box's
+# own LAN) lose their route back out, so a tailnet SSH session hangs the instant
+# the tunnel comes up. NordVPN's allowlist is the carve-out. This re-applies the
+# right entries idempotently on every connect, so any box the dotfiles deploy to
+# is tailnet-safe automatically — not just the one this was written against.
+ensure_tailnet_allowlist() {
+    # Nothing to protect unless Tailscale is installed AND up — never touch the
+    # allowlist speculatively on a box that isn't on a tailnet.
+    command -v tailscale >/dev/null 2>&1 || return 0
+    tailscale status >/dev/null 2>&1 || return 0
+
+    # Each 'allowlist add' is idempotent; re-adding an existing entry exits
+    # non-zero ("already allowlisted"), so swallow that with '|| true' — one
+    # already-present entry must not abort the entries that follow it.
+
+    # 100.64.0.0/10 is Tailscale's fixed CGNAT range (RFC 6598): every tailnet
+    # peer IP lives inside it, so this single entry covers the whole tailnet and
+    # is safe to hardcode on every box.
+    ts_cgnat=100.64.0.0/10
+    nordvpn allowlist add subnet "$ts_cgnat" >/dev/null 2>&1 || true
+
+    # Tailscale's direct-transport UDP listen port. Read it off the live socket
+    # (the port after the last ':' of tailscaled's local address); the process
+    # column needs privilege to resolve, so fall back to the well-known default
+    # when it can't be seen or comes back non-numeric.
+    ts_port=$(ss -ulpn 2>/dev/null | grep -m1 tailscaled | awk '{print $4}' | sed 's/.*://')
+    case $ts_port in
+        ''|*[!0-9]*) ts_port=41641 ;;
+    esac
+    nordvpn allowlist add port "$ts_port" protocol UDP >/dev/null 2>&1 || true
+
+    # The primary LAN subnet, derived from whatever interface currently owns the
+    # default route. Only added when detection yields a real CIDR — a blank or
+    # malformed result is left alone rather than guessed at.
+    def_if=$(ip -o route show default 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
+    lan=
+    if [ -n "$def_if" ]; then
+        lan=$(ip -o -f inet route show scope link dev "$def_if" 2>/dev/null \
+            | awk '{print $1; exit}')
+    fi
+    case $lan in
+        *.*.*.*/*) nordvpn allowlist add subnet "$lan" >/dev/null 2>&1 || true ;;
+        *)         lan= ;;
+    esac
+
+    printf 'Tailnet-safe: allowlisted %s%s, Tailscale UDP %s\n' \
+        "$ts_cgnat" "${lan:+, $lan}" "$ts_port"
+}
+
 do_connect() {
+    # Carve the tailnet back out before we hand NordVPN the default route, so a
+    # remote-managed box never locks itself out on a normal connect.
+    ensure_tailnet_allowlist
+
     VPN_TMP=$(mktemp -d) || return 1
 
     # tee keeps nordvpn's own progress output on screen, but POSIX sh has no
@@ -163,10 +263,78 @@ cmd_random() {
 }
 
 cmd_off() {
+    # A manual 'off' is the operator taking control, so any armed dead-man's-
+    # switch is now redundant — cancel it before disconnecting so it can't fire
+    # a second, surprise disconnect later.
+    cancel_revert
+
     nordvpn disconnect
     rc=$?
     disarm_killswitch
     return "$rc"
+}
+
+# A lockout-proof connect for when you are REMOTED into this box over the
+# tailnet. Even with the allowlist in place, one wrong entry could still cut
+# your session — so this arms a detached dead-man's-switch FIRST: if you lose
+# the box, it disconnects and disarms the kill switch on its own after a
+# timeout, handing your tailnet SSH back. If your session survives, 'vpn keep'
+# cancels the timer.
+cmd_safe() {
+    printf '%s safe: tailnet-safe connect guarded by an auto-revert timer.\n' "$PROG"
+
+    ensure_tailnet_allowlist
+
+    TIMEOUT=${VPN_SAFE_TIMEOUT:-120}
+    case $TIMEOUT in
+        ''|*[!0-9]*)
+            err "$PROG: VPN_SAFE_TIMEOUT must be a whole number of seconds (got '$TIMEOUT')."
+            return 2
+            ;;
+    esac
+
+    pidfile=$(revert_pidfile)
+    mkdir -p "$(dirname "$pidfile")" || return 1
+
+    # The timer must outlive an SSH drop, so detach it into its own session with
+    # setsid (or nohup where setsid is absent) and background it. TIMEOUT is
+    # interpolated by THIS shell, not left for the detached child: the child's
+    # env doesn't carry it, so a single-quoted '"$TIMEOUT"' would expand to
+    # empty there and break 'sleep'. TIMEOUT is validated numeric just above, so
+    # interpolating it is injection-safe.
+    revert_cmd="sleep $TIMEOUT; nordvpn set killswitch off; nordvpn disconnect"
+    if command -v setsid >/dev/null 2>&1; then
+        setsid sh -c "$revert_cmd" >/dev/null 2>&1 &
+    else
+        nohup sh -c "$revert_cmd" >/dev/null 2>&1 &
+    fi
+    printf '%s\n' "$!" >"$pidfile"
+
+    if nordvpn connect "$@"; then
+        arm_killswitch
+    else
+        err "$PROG: connect failed. The auto-revert timer is still armed and"
+        err "will disarm the kill switch in ${TIMEOUT}s. Run '$PROG keep' to"
+        err "cancel it, or '$PROG off' to disconnect and cancel it now."
+        return 1
+    fi
+
+    # The backticks around `%s keep` are literal output (they mimic the way the
+    # command reads in prose), not an attempt at command substitution.
+    # shellcheck disable=SC2016
+    printf 'Auto-revert armed (%ss). If you still have your session, run `%s keep` to cancel it — otherwise the box auto-disconnects and disarms the killswitch so your tailnet SSH returns.\n' \
+        "$TIMEOUT" "$PROG"
+}
+
+# Cancel the dead-man's-switch armed by 'vpn safe' — run this once you have
+# confirmed your session survived the connect. Leaves the tunnel and kill
+# switch exactly as they are; only the pending auto-revert is stopped.
+cmd_keep() {
+    if cancel_revert; then
+        printf '%s: auto-revert cancelled — tunnel and kill switch stay as they are.\n' "$PROG"
+    else
+        printf '%s: nothing armed.\n' "$PROG"
+    fi
 }
 
 cmd_killswitch() {
@@ -218,6 +386,8 @@ fi
 
 case $cmd in
     connect|c)        do_connect "$@" ;;
+    safe)             cmd_safe "$@" ;;
+    keep)             cmd_keep ;;
     random|rand)      cmd_random ;;
     off|disconnect|d) cmd_off ;;
     status)           nordvpn status ;;

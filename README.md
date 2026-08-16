@@ -558,7 +558,9 @@ credentials; `vpn` never prompts for any.
 | `vpn <target>` | Connect to a country, city, country code, server or group — `vpn us`, `vpn United_States`, `vpn Chicago`, `vpn us9999`, `vpn Onion_Over_VPN` |
 | `vpn connect <country> <city>` | Two-argument form, e.g. `vpn connect Hungary Budapest` |
 | `vpn random` | Draw a random country from `nordvpn countries`, then a random city inside it with `shuf`, then connect |
-| `vpn off` / `vpn disconnect` | Disconnect **and** disarm the kill switch |
+| `vpn safe [target]` | Lockout-proof connect for when you are managing the box remotely over the tailnet — ensures the tailnet allowlist, then arms an auto-revert dead-man's-switch (see [Remote / tailnet safety](#remote--tailnet-safety)) |
+| `vpn keep` | Cancel the auto-revert armed by `vpn safe`, once you have confirmed your session survived |
+| `vpn off` / `vpn disconnect` | Disconnect **and** disarm the kill switch (also cancels any armed `vpn safe` timer) |
 | `vpn status` | Connection status |
 | `vpn settings` | Every current NordVPN setting |
 | `vpn killswitch on\|off` | Arm / disarm the kill switch by hand |
@@ -582,6 +584,39 @@ out until it is turned back off.
 
 If you ever find yourself with no network and no VPN, the escape hatch is
 `nordvpn set killswitch off`.
+
+### Remote / tailnet safety
+
+A full-tunnel connect hands NordVPN the default route, and with the kill switch
+armed the firewall drops every non-tunnel egress. On a box you manage remotely
+that is a self-inflicted lockout: the replies leaving `tailscale0` (and the
+box's own LAN) no longer have a route back out, so the very tailnet SSH session
+you are connecting from hangs the instant the tunnel comes up. NordVPN's
+allowlist is the carve-out, and `vpn` applies it for you — so remote management
+survives a connect on any box the dotfiles land on, not just the one this was
+written against.
+
+**Tailnet-safe by default.** Every connect (`vpn`, `vpn <target>`, `vpn
+connect`, `vpn random`, `vpn safe`) first re-applies three allowlist entries,
+idempotently, whenever Tailscale is installed and up:
+
+| Entry | Value | Why |
+|-------|-------|-----|
+| Subnet | `100.64.0.0/10` | Tailscale's fixed CGNAT range (RFC 6598); every tailnet peer IP lives inside it, so one entry covers the whole tailnet |
+| Port | Tailscale's UDP listen port (`41641` fallback) | Keeps Tailscale's direct-transport reachable; detected from the live `tailscaled` socket, falling back to the well-known default |
+| Subnet | The primary LAN | Auto-detected from the default-route interface; only added when detection yields a real CIDR, never guessed |
+
+On a box without Tailscale this is a no-op — nothing is touched.
+
+**`vpn safe` for the paranoid case.** The allowlist makes a normal connect
+safe, but a single wrong entry could still cut you off, and you would have no
+way back in. `vpn safe [target]` guards against that: it ensures the allowlist,
+then arms a detached dead-man's-switch that outlives an SSH drop. If you lose
+the box, the timer disconnects and disarms the kill switch on its own after
+`${VPN_SAFE_TIMEOUT:-120}` seconds, handing your tailnet SSH back — a bad
+connect self-heals. If your session survives, run `vpn keep` to cancel the
+timer. `vpn off` cancels it too, so a manual disconnect never leaves a surprise
+revert pending.
 
 ### Defaults
 
