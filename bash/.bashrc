@@ -78,6 +78,13 @@ alias cd...='cd .. && cd ..'
 alias ssh='TERM=xterm-256color ssh'
 
 # Utilities
+# VPN — `vpn` itself is a script on PATH (~/.local/bin/vpn), so it needs no
+# alias; these are just the shorthands worth muscle memory. See `vpn help`.
+alias vpnoff='vpn off'
+alias vpnstatus='vpn status'
+alias vpnrandom='vpn random'
+# LEGACY: raw-.ovpn OpenVPN fallback, kept for the service-credential path
+# (no Nord Account session). Superseded by `vpn` / the official nordvpn CLI.
 alias connectnord='sudo ~/.local/bin/launch_nordvpn'
 alias gcu="git config user.name \"Alex Ivantsov\" && git config user.email \"alex@ivantsov.tech\""
 alias myip='curl -s http://ipecho.net/plain; echo'
@@ -170,3 +177,6 @@ clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 # append here dirties the public repo and is wiped on the next sync. Generic
 # seam, no external assumptions; keep last so locals win.
 [ -r "${HOME}/.bashrc.local" ] && . "${HOME}/.bashrc.local"
+
+# --- COWORK Claude wrapper (root/master safety) ---
+source /home/master/COWORK/WORKFORCE/bin/claude-wrapper.sh 2>/dev/null

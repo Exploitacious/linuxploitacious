@@ -1,0 +1,234 @@
+#!/bin/sh
+# vpn — short-hand wrapper around the official NordVPN CLI (`nordvpn`).
+#
+# Mostly this is just shorter spelling for upstream commands, but two NordVPN
+# behaviours are footguns and the wrapper exists to sequence them safely
+# (both verified against nordvpn 5.3.0 on this box):
+#
+#   1. `nordvpn set killswitch on` starts dropping ALL traffic the instant it
+#      is set while the tunnel is DOWN — a curl to 1.1.1.1 times out until the
+#      switch is turned back off. So the switch is only ever armed AFTER a
+#      connect has returned success, never before it.
+#   2. For the same reason, a deliberate `nordvpn disconnect` that leaves the
+#      switch armed strands the machine with no route anywhere. `vpn off`
+#      therefore disarms it as part of disconnecting; re-arm by hand with
+#      `vpn killswitch on` if you want the box sealed while offline.
+#
+# Legacy raw-.ovpn fallback (service credentials, no Nord Account session):
+# ~/.local/bin/launch_nordvpn, aliased as `connectnord`.
+
+set -u
+
+PROG=${0##*/}
+
+VPN_TMP=
+cleanup() { [ -z "$VPN_TMP" ] || rm -rf "$VPN_TMP"; }
+trap cleanup EXIT INT TERM
+
+err() { printf '%s\n' "$*" >&2; }
+
+usage() {
+    cat <<EOF
+$PROG — NordVPN CLI wrapper
+
+Usage:
+  $PROG                     connect to the recommended server
+  $PROG connect [target]    same, optionally aimed at a specific target
+  $PROG <target>            connect to a country, city, country code, server
+                            or group — e.g. us | United_States | Chicago |
+                            us9999 | Onion_Over_VPN
+  $PROG random              draw a random country + city and connect to it
+  $PROG off | disconnect    disconnect and disarm the kill switch
+  $PROG status              show connection status
+  $PROG settings            show every current NordVPN setting
+  $PROG killswitch on|off   arm / disarm the kill switch by hand
+  $PROG setup               apply the hardening defaults that work signed out
+  $PROG help                this text
+
+Kill switch:
+  Armed automatically after a successful connect, disarmed by '$PROG off'.
+  Arming it while the tunnel is down blocks all traffic until it is disarmed.
+
+One-time sign-in (needed once per machine, then never again):
+  nordvpn login                  opens a browser
+  nordvpn login --token <TOKEN>  headless; token from Nord Account ->
+                                 Services -> NordVPN -> Manual setup ->
+                                 access token
+EOF
+}
+
+login_hint() {
+    err ""
+    err "$PROG: no NordVPN session on this machine. Sign in once with:"
+    err "  nordvpn login                  # opens a browser"
+    err "  nordvpn login --token <TOKEN>  # headless"
+    err "Get the token from Nord Account -> Services -> NordVPN ->"
+    err "Manual setup -> access token."
+}
+
+# Refuse early and loudly rather than letting every subcommand fail its own
+# way. `nordvpn status` is the probe because it answers off the local daemon
+# socket, so it is instant, works signed out, and is the one command that
+# separates "not in the nordvpn group" from "not signed in".
+preflight() {
+    if ! command -v nordvpn >/dev/null 2>&1; then
+        err "$PROG: the nordvpn CLI is not installed. Install it with:"
+        err "  sh -c \"\$(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)\""
+        err "  sudo usermod -aG nordvpn \"\$USER\""
+        err "then log out and back in so the group membership takes effect."
+        exit 127
+    fi
+
+    probe=$(nordvpn status 2>&1)
+    case $probe in
+        *"Permission denied"*)
+            err "$PROG: no access to the nordvpn daemon. Fix with:"
+            err "  sudo usermod -aG nordvpn \"\$USER\""
+            err "then log out and back in (or start a subshell: newgrp nordvpn)."
+            exit 77
+            ;;
+    esac
+}
+
+arm_killswitch() {
+    if out=$(nordvpn set killswitch on 2>&1); then
+        printf '%s\n' "$out"
+    else
+        err "$PROG: could not arm the kill switch:"
+        err "$out"
+        return 1
+    fi
+}
+
+disarm_killswitch() {
+    if out=$(nordvpn set killswitch off 2>&1); then
+        printf '%s\n' "$out"
+    else
+        err "$PROG: could not disarm the kill switch — you may still be"
+        err "firewalled off the network. Run: nordvpn set killswitch off"
+        err "$out"
+        return 1
+    fi
+}
+
+do_connect() {
+    VPN_TMP=$(mktemp -d) || return 1
+
+    # tee keeps nordvpn's own progress output on screen, but POSIX sh has no
+    # PIPESTATUS, so the real exit status is smuggled past the pipe in a file.
+    { nordvpn connect "$@" 2>&1; printf '%s' "$?" >"$VPN_TMP/rc"; } | tee "$VPN_TMP/out"
+
+    rc=$(cat "$VPN_TMP/rc" 2>/dev/null) || rc=1
+    [ -n "$rc" ] || rc=1
+
+    if [ "$rc" -ne 0 ]; then
+        case $(cat "$VPN_TMP/out" 2>/dev/null) in
+            *"not logged in"*) login_hint ;;
+        esac
+        return "$rc"
+    fi
+
+    arm_killswitch
+}
+
+# Draw the location fresh from the live server list rather than hard-coding
+# one, so repeated calls actually spread across the world instead of landing
+# on whatever nordvpn considers "recommended" today.
+cmd_random() {
+    if ! countries=$(nordvpn countries 2>&1); then
+        err "$PROG: could not list countries:"
+        err "$countries"
+        return 1
+    fi
+
+    country=$(printf '%s\n' "$countries" | tr -d '\r' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | shuf -n 1)
+    if [ -z "$country" ]; then
+        err "$PROG: the country list came back empty."
+        return 1
+    fi
+
+    city=$(nordvpn cities "$country" 2>/dev/null | tr -d '\r' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | shuf -n 1)
+
+    if [ -n "$city" ]; then
+        printf 'Random pick: %s / %s\n' "$country" "$city"
+        do_connect "$country" "$city"
+    else
+        # Some locations expose no city list; the country alone is a valid
+        # connect target, so fall back to it instead of bailing out.
+        printf 'Random pick: %s\n' "$country"
+        do_connect "$country"
+    fi
+}
+
+cmd_off() {
+    nordvpn disconnect
+    rc=$?
+    disarm_killswitch
+    return "$rc"
+}
+
+cmd_killswitch() {
+    case ${1:-} in
+        on)
+            err "$PROG: arming the kill switch. While the tunnel is down this"
+            err "blocks ALL traffic — '$PROG off' or '$PROG killswitch off'"
+            err "puts you back online."
+            arm_killswitch
+            ;;
+        off)
+            disarm_killswitch
+            ;;
+        *)
+            err "$PROG: usage: $PROG killswitch on|off"
+            return 2
+            ;;
+    esac
+}
+
+# Only the switches nordvpn 5.3.0 accepts with no account session are applied
+# here; autoconnect and anything account-scoped answers "You're not logged in."
+# until `nordvpn login` has run, so they are printed as follow-up work instead
+# of being attempted and failing noisily.
+cmd_setup() {
+    printf 'Applying the defaults that work signed out:\n'
+    nordvpn set threatprotectionlite on
+    nordvpn set analytics off
+
+    printf '\nAfter "nordvpn login", finish with:\n'
+    printf '  nordvpn set autoconnect on   # rejected while signed out\n'
+    printf '  %s connect                  # arms the kill switch on success\n' "$PROG"
+
+    printf '\nRed-team caveats:\n'
+    printf '  Threat Protection Lite filters DNS. If a target domain refuses\n'
+    printf '  to resolve mid-engagement, that is the first thing to turn off:\n'
+    printf '    nordvpn set threatprotectionlite off\n'
+    printf '  LAN Discovery is off by default, so local subnets are unreachable\n'
+    printf '  while connected. For pivoting onto the local network:\n'
+    printf '    nordvpn set lan-discovery on\n'
+}
+
+preflight
+
+cmd=${1:-connect}
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+
+case $cmd in
+    connect|c)        do_connect "$@" ;;
+    random|rand)      cmd_random ;;
+    off|disconnect|d) cmd_off ;;
+    status)           nordvpn status ;;
+    settings)         nordvpn settings ;;
+    killswitch|ks)    cmd_killswitch "$@" ;;
+    setup)            cmd_setup ;;
+    help|-h|--help)   usage ;;
+    -*)
+        err "$PROG: unknown option '$cmd'"
+        usage >&2
+        exit 2
+        ;;
+    *)                do_connect "$cmd" "$@" ;;
+esac

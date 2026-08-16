@@ -408,7 +408,9 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── usb-attach                 #   -> ~/.local/bin/usb-attach
 │       ├── pbcopy                     #   -> ~/.local/bin/pbcopy
 │       ├── pbpaste                    #   -> ~/.local/bin/pbpaste
+│       ├── vpn                        #   -> ~/.local/bin/vpn
 │       └── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
+│                                      #   (legacy OpenVPN fallback)
 ├── powershell/                        # Package: PowerShell profile (Windows)
 │   └── Microsoft.PowerShell_profile.ps1
 ├── wezterm/                           # Package: WezTerm config (cross-platform)
@@ -462,8 +464,15 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `myip` | `curl -s http://ipecho.net/plain; echo` | Show public IP address |
-| `connectnord` | `sudo ~/.local/bin/launch_nordvpn` | Launch NordVPN (OpenVPN wrapper) |
+| `vpnoff` | `vpn off` | Disconnect NordVPN and disarm the kill switch |
+| `vpnstatus` | `vpn status` | Show NordVPN connection status |
+| `vpnrandom` | `vpn random` | Connect to a randomly drawn country + city |
+| `connectnord` | `sudo ~/.local/bin/launch_nordvpn` | **Legacy** raw-`.ovpn` OpenVPN fallback — see [VPN](#vpn-nordvpn) |
 | `rustscan` | `sudo docker run ... rustscan/rustscan:2.1.1` | Run RustScan via Docker (full port scan, hands off to nmap) |
+
+`vpn` itself is a script on `PATH`, not an alias — run `vpn`, `vpn us`,
+`vpn random`, `vpn help`, etc. directly. Full reference in the
+[VPN](#vpn-nordvpn) section.
 
 ### Git / Utilities
 
@@ -485,7 +494,124 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `pubip` | Public IP lookup, caches to `~/.cache/pubip` for 5 minutes so repeated callers (like the tmux status bar) don't hit api.ipify.org every refresh |
 | `netdot` | Prints just the colored online/offline dot (calls `pubip`) — used in the tmux status-right widget |
 | `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
-| `launch_nordvpn` | Self-provisioning NordVPN OpenVPN wrapper with random server selection |
+| `vpn` | Wrapper around the official NordVPN CLI — connect / random / off / status / kill switch. See [VPN](#vpn-nordvpn) |
+| `launch_nordvpn` | **Legacy.** Self-provisioning raw-`.ovpn` OpenVPN wrapper with random server selection. Superseded by `vpn`; kept for the service-credential path |
+
+---
+
+## VPN (NordVPN)
+
+Two independent paths ship in this repo. The official CLI is the one to use;
+the OpenVPN wrapper is kept only as a fallback.
+
+| Path | Command | Auth | Status |
+|------|---------|------|--------|
+| Official NordVPN CLI + `vpn` helper | `vpn` | Nord Account (`nordvpn login`) | **Current** |
+| Raw `.ovpn` + OpenVPN | `connectnord` | NordVPN *service credentials* | Legacy fallback |
+
+### Install (once per machine)
+
+```bash
+sh -c "$(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)"
+sudo usermod -aG nordvpn "$USER"
+```
+
+The installer adds NordVPN's apt repo, installs the `nordvpn` package, and
+enables the `nordvpnd` systemd daemon. It adds the installing user to the
+`nordvpn` group itself; the explicit `usermod` above is the idempotent
+belt-and-braces for other users. **Log out and back in afterwards** — group
+membership is not picked up by an already-running shell. `vpn` detects this
+case and prints the fix rather than failing cryptically.
+
+`nordvpn` *Recommends* `nordvpn-gui`, so a default apt run pulls a ~17 MB
+desktop app in alongside the CLI. On a headless box, skip it:
+
+```bash
+sudo apt-get install --no-install-recommends nordvpn
+```
+
+### Sign in (once per machine)
+
+```bash
+nordvpn login                  # opens a browser, supports MFA
+nordvpn login --token <TOKEN>  # headless boxes; no MFA support
+```
+
+Get the token from the Nord web dashboard: **Nord Account -> Services ->
+NordVPN -> Manual setup -> access token**. Nothing else in this repo needs
+credentials; `vpn` never prompts for any.
+
+### `vpn` command reference
+
+| Command | Does |
+|---------|------|
+| `vpn` | Connect to the recommended server |
+| `vpn connect [target]` | Same, optionally aimed at a target |
+| `vpn <target>` | Connect to a country, city, country code, server or group — `vpn us`, `vpn United_States`, `vpn Chicago`, `vpn us9999`, `vpn Onion_Over_VPN` |
+| `vpn connect <country> <city>` | Two-argument form, e.g. `vpn connect Hungary Budapest` |
+| `vpn random` | Draw a random country from `nordvpn countries`, then a random city inside it with `shuf`, then connect |
+| `vpn off` / `vpn disconnect` | Disconnect **and** disarm the kill switch |
+| `vpn status` | Connection status |
+| `vpn settings` | Every current NordVPN setting |
+| `vpn killswitch on\|off` | Arm / disarm the kill switch by hand |
+| `vpn setup` | Apply the hardening defaults that work while signed out |
+| `vpn help` | Usage |
+
+### Kill switch behaviour (read this once)
+
+`nordvpn set killswitch on` starts dropping **all** traffic the moment it is
+set while the tunnel is down — not just on an unexpected drop. Verified on
+5.3.0: with the switch armed and no VPN session, `curl https://1.1.1.1` times
+out until it is turned back off.
+
+`vpn` is built around that:
+
+- The switch is armed **only after a connect returns success**, never before.
+- `vpn off` disarms it as part of disconnecting, so a deliberate disconnect
+  can never strand the box offline.
+- `vpn killswitch on` still lets you seal the machine by hand, and warns you
+  first.
+
+If you ever find yourself with no network and no VPN, the escape hatch is
+`nordvpn set killswitch off`.
+
+### Defaults
+
+Applied by `vpn setup` (these are the only hardening switches the CLI accepts
+while signed out):
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `threatprotectionlite` | on | DNS-level malware/ad blocking |
+| `analytics` | off | No usage telemetry |
+
+Waiting on `nordvpn login` — the CLI answers `You're not logged in.` for these
+until a session exists:
+
+| Setting | Command |
+|---------|---------|
+| Auto-connect on boot | `nordvpn set autoconnect on` |
+
+The kill switch is deliberately *not* in either list. The CLI does accept
+`nordvpn set killswitch on` while signed out, but doing so takes the machine
+offline immediately (see above), so `vpn` arms it on the first successful
+connect instead.
+
+Red-team caveats:
+
+- **Threat Protection Lite filters DNS.** If a target domain refuses to
+  resolve mid-engagement, turn it off first: `nordvpn set threatprotectionlite off`.
+- **LAN Discovery is off by default**, so local subnets are unreachable while
+  connected. For pivoting onto the local network:
+  `nordvpn set lan-discovery on`.
+
+### Legacy: `connectnord` / `launch_nordvpn`
+
+Fully interactive OpenVPN wrapper predating the official CLI. It downloads
+NordVPN's `.ovpn` archive to `~/.config/nordvpn/`, prompts for **service
+credentials** (not your Nord Account login), and runs `openvpn` under `sudo`.
+Kept for the case where the daemon or a Nord Account session is unavailable.
+Prefer `vpn` for everything else.
 
 ---
 
