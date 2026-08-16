@@ -163,8 +163,17 @@ cancel_revert() {
 # right entries idempotently on every connect, so any box the dotfiles deploy to
 # is tailnet-safe automatically — not just the one this was written against.
 ensure_tailnet_allowlist() {
-    # Nothing to protect unless Tailscale is installed AND up — never touch the
-    # allowlist speculatively on a box that isn't on a tailnet.
+    # Docker bridge subnets first, independent of tailscale: a full-tunnel +
+    # killswitch VPN otherwise blocks host<->container traffic, silently breaking
+    # any local docker stack (the host can't reach a published container port).
+    # 172.16.0.0/12 covers docker's default bridge networks. Idempotent.
+    if command -v docker >/dev/null 2>&1; then
+        nordvpn allowlist add subnet 172.16.0.0/12 >/dev/null 2>&1 \
+            && echo "Docker-safe: allowlisted 172.16.0.0/12" || true
+    fi
+
+    # Nothing tailnet-related to protect unless Tailscale is installed AND up —
+    # never touch the allowlist speculatively on a box that isn't on a tailnet.
     command -v tailscale >/dev/null 2>&1 || return 0
     tailscale status >/dev/null 2>&1 || return 0
 
