@@ -453,6 +453,58 @@ EOF
     msg_success "superfile installed: $(spf --version 2>&1 | head -1)"
   }
 
+  # The `vpn` helper stows to ~/.local/bin on every box, but it is only a
+  # wrapper — without the vendor CLI behind it, `vpn` dies with exit 127.
+  # This installs the binary so the stowed helper and the vpnoff/vpnstatus
+  # aliases actually work on a fresh machine.
+  install_nordvpn() {
+    msg_header "Installing NordVPN CLI (backs the stowed 'vpn' helper)"
+    if command -v nordvpn >/dev/null 2>&1; then
+      msg_info "NordVPN already installed: $(nordvpn --version 2>&1 | head -1)"
+      return 0
+    fi
+    local NORD_TMP
+    NORD_TMP=$(mktemp -d)
+    msg_info "Downloading official NordVPN installer..."
+    if ! curl -fsSL -o "$NORD_TMP/install.sh" \
+         "https://downloads.nordcdn.com/apps/linux/install.sh"; then
+      msg_error "NordVPN installer download failed."
+      rm -rf "$NORD_TMP"
+      return 1
+    fi
+    # -n is the vendor script's non-interactive flag (it passes -y to
+    # apt/yum/dnf and -n to zypper). It exposes no recommends switch, and its
+    # internal apt-get calls run under its own sudo, so APT_CONFIG from here
+    # would not reach them: on Debian hosts the nordvpn package's
+    # "Recommends: nordvpn-gui" is pulled unless the box sets
+    # APT::Install-Recommends "0" globally. Not worth fighting the vendor
+    # script — headless nodes can drop the GUI afterwards. See README "VPN".
+    if ! sh "$NORD_TMP/install.sh" -n; then
+      msg_error "NordVPN install failed. Retry: curl -fsSL https://downloads.nordcdn.com/apps/linux/install.sh | sh -s -- -n"
+      rm -rf "$NORD_TMP"
+      return 1
+    fi
+    rm -rf "$NORD_TMP"
+
+    # The installer adds the invoking user itself; this is the idempotent
+    # belt-and-braces for the SUDO_USER case and for re-runs. Group membership
+    # is what grants access to the nordvpnd socket.
+    if [ "$EUID" -ne 0 ]; then
+      local TARGET_USER="${SUDO_USER:-$USER}"
+      if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx nordvpn; then
+        sudo usermod -aG nordvpn "$TARGET_USER"
+        msg_warn "Added $TARGET_USER to 'nordvpn' group. Log out + back in (or 'newgrp nordvpn') for it to take effect."
+      else
+        msg_info "$TARGET_USER already in nordvpn group."
+      fi
+    fi
+
+    msg_success "NordVPN CLI installed: $(nordvpn --version 2>&1 | head -1)"
+    # Login is deliberately never scripted — it is interactive (browser + MFA)
+    # or needs a per-operator access token. One manual step per box.
+    msg_info "Run 'nordvpn login' to finish (headless: 'nordvpn login --token <TOKEN>')."
+  }
+
   install_brave() {
     msg_header "Installing Brave Browser"
     
@@ -2045,6 +2097,9 @@ EOF
     # OS-agnostic binary installs — no apt repo for every distro/codename
     install_cloudflared
     install_superfile
+    # Vendor installer picks the right package manager itself; pairs with the
+    # `vpn` helper that STOW deploys.
+    install_nordvpn
   fi
 
   if [[ $CHOICES == *"NODE"* ]]; then install_node_env; fi

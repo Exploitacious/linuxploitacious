@@ -408,6 +408,10 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── usb-attach                 #   -> ~/.local/bin/usb-attach
 │       ├── pbcopy                     #   -> ~/.local/bin/pbcopy
 │       ├── pbpaste                    #   -> ~/.local/bin/pbpaste
+│       ├── pbhistory                  #   -> ~/.local/bin/pbhistory
+│       ├── pubip                      #   -> ~/.local/bin/pubip
+│       ├── netdot                     #   -> ~/.local/bin/netdot
+│       ├── netstatus                  #   -> ~/.local/bin/netstatus
 │       ├── vpn                        #   -> ~/.local/bin/vpn
 │       └── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
 │                                      #   (legacy OpenVPN fallback)
@@ -510,6 +514,10 @@ the OpenVPN wrapper is kept only as a fallback.
 | Raw `.ovpn` + OpenVPN | `connectnord` | NordVPN *service credentials* | Legacy fallback |
 
 ### Install (once per machine)
+
+`shellSetup.sh`'s **BASE** step installs this automatically and idempotently
+(`install_nordvpn`), so a fresh box gets the CLI behind `vpn` without extra
+steps. The manual form, for boxes provisioned before that landed:
 
 ```bash
 sh -c "$(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)"

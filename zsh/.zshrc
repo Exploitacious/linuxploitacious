@@ -176,6 +176,13 @@ fi
 # --- COWORK clawd (personal Claude profile) ---
 clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 
+# --- COWORK Claude wrapper (root/master safety) ---
+# $HOME-relative and readability-guarded: this is a public provisioning repo,
+# so the path must not assume the operator's username, and the wrapper only
+# exists on boxes where COWORK is actually deployed. Sourced ABOVE the .local
+# seam below so machine-local overrides remain the last word.
+[ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
+
 # Machine-local overrides (untracked; survive git sync of this public repo).
 # Host-/operator-specific shell config that must NOT live in this public repo
 # goes here. COWORK Stage-2 (deploy.sh) writes operator-only Claude config —
@@ -184,6 +191,3 @@ clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 # append here dirties the public repo and is wiped on the next sync. Generic
 # seam, no external assumptions; keep last so locals win.
 [ -r "${HOME}/.zshrc.local" ] && . "${HOME}/.zshrc.local"
-
-# --- COWORK Claude wrapper (root/master safety) ---
-source /home/master/COWORK/WORKFORCE/bin/claude-wrapper.sh 2>/dev/null
