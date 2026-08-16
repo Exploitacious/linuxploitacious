@@ -1,26 +1,37 @@
 #!/bin/sh
-# Print cached public IP. Refresh if cache is older than TTL or missing.
+# Print cached public IP. Refresh if the cache is older than TTL, missing, OR the
+# network egress changed (VPN connect/disconnect flips the default route).
 # Designed for tmux status-right (called every status-interval), so:
 #   - never blocks longer than 2s on the network
 #   - never prints anything fragile when offline
 #   - mtime check keeps API calls cheap (default 5 min cache)
+#   - egress fingerprint busts the cache instantly on a VPN toggle, so the bar
+#     reflects the real public IP right away instead of a stale one for up to TTL
 
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/pubip"
+FPCACHE="$CACHE.fp"
 TTL="${PUBIP_TTL:-300}"   # seconds — override with `PUBIP_TTL=60 pubip`
 URL="${PUBIP_URL:-https://api.ipify.org}"
 
 mkdir -p "$(dirname "$CACHE")"
 
+# Egress fingerprint: the resolved path to a public destination (dev + src + via).
+# Changes the moment a full-tunnel VPN comes up or drops, or the egress iface
+# switches — which is exactly when the cached public IP goes stale.
+cur_fp=$(ip route get 1.1.1.1 2>/dev/null | head -n1)
+
 needs_refresh=1
 if [ -s "$CACHE" ]; then
     age=$(( $(date +%s) - $(stat -c %Y "$CACHE" 2>/dev/null || echo 0) ))
-    [ "$age" -lt "$TTL" ] && needs_refresh=0
+    old_fp=$(cat "$FPCACHE" 2>/dev/null)
+    [ "$age" -lt "$TTL" ] && [ "$cur_fp" = "$old_fp" ] && needs_refresh=0
 fi
 
 if [ "$needs_refresh" = 1 ]; then
     ip=$(curl -fsS --max-time 2 "$URL" 2>/dev/null)
     if [ -n "$ip" ]; then
         printf '%s' "$ip" > "$CACHE"
+        printf '%s' "$cur_fp" > "$FPCACHE"
     fi
 fi
 
