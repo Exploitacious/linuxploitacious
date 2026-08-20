@@ -202,6 +202,19 @@ if [ -n "$CS" ] && [ -r "$CS" ]; then
     [ -n "$CAVEMAN" ] && CAVEMAN="  $CAVEMAN"
 fi
 
+# Ponytail badge — same pattern as caveman. Marketplace path first, fall back
+# to versioned cache (cache hash changes on update). The script self-resolves
+# its .ponytail-active flag via CLAUDE_CONFIG_DIR, so it prints per-profile.
+PONYTAIL=""
+PS="$HOME/.claude/plugins/marketplaces/ponytail/hooks/ponytail-statusline.sh"
+if [ ! -e "$PS" ]; then
+    PS=$(ls -1 "$HOME/.claude/plugins/cache/ponytail/ponytail/"*/hooks/ponytail-statusline.sh 2>/dev/null | head -1)
+fi
+if [ -n "$PS" ] && [ -r "$PS" ]; then
+    PONYTAIL=$(bash "$PS" 2>/dev/null)
+    [ -n "$PONYTAIL" ] && PONYTAIL="  $PONYTAIL"
+fi
+
 # Formatted cost
 COST_FMT=$(printf '%.2f' "$COST")
 
@@ -216,7 +229,7 @@ case "${_ccd//\\//}" in
 esac
 
 # Row 1: profile+model+badges  │  context bar  │  time
-R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${CAVEMAN}"
+R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${CAVEMAN}${PONYTAIL}"
 R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}${POSTURE}"
 R1_C3="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}     ${GRY}${API_TIME}${RST} ${D}api${RST}"
 

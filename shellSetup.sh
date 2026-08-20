@@ -1743,6 +1743,24 @@ EOF
     else
       msg_warn "Marketplace registration failed. Run manually: claude plugin marketplace add JuliusBrussee/caveman"
     fi
+
+    # Ponytail — anti-over-engineering ruleset (operator directive 2026-08-20).
+    # Orthogonal to caveman (caveman shrinks what the agent SAYS; ponytail
+    # shrinks what it BUILDS). Default mode pinned to `full` via
+    # PONYTAIL_DEFAULT_MODE in settings.json env; statusline badge wired in
+    # statusline.sh alongside caveman.
+    msg_info "Registering ponytail plugin marketplace..."
+    if claude plugin marketplace add DietrichGebert/ponytail; then
+      msg_success "Marketplace registered."
+      msg_info "Installing ponytail plugin..."
+      if claude plugin install ponytail@ponytail; then
+        msg_success "Ponytail plugin installed."
+      else
+        msg_warn "Ponytail plugin install failed. Run manually: claude plugin install ponytail@ponytail"
+      fi
+    else
+      msg_warn "Marketplace registration failed. Run manually: claude plugin marketplace add DietrichGebert/ponytail"
+    fi
   }
 
   # --- AI HARNESS: COWORK (private) / OPS (public template) ---
