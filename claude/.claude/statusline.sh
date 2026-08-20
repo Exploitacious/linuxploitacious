@@ -62,6 +62,9 @@ fi
 : "${TOTAL_MS:=0}" "${API_MS:=0}" "${LINES_ADD:=0}" "${LINES_REM:=0}"
 : "${CACHE_READ:=0}" "${CACHE_CREATE:=0}"
 
+# Shorten the model's 1M-context suffix: "Opus 4.8 (1M context)" -> "Opus 4.8 1M".
+MODEL="${MODEL/ (1M context)/ 1M}"
+
 # Colors (use $'...' so ESC is a real byte, not literal backslash text)
 RST=$'\033[0m'
 B=$'\033[1m'
