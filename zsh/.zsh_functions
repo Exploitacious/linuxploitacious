@@ -5,13 +5,13 @@
 
 # --- git worktree flow -------------------------------------------------------
 
-# ga <branch> — add a worktree beside the repo (../<repo>-<branch>) and cd in.
+# gwa <branch> — add a worktree beside the repo (../<repo>-<branch>) and cd in.
 # Creates the branch if it doesn't exist. Refuses outside a git repo.
-ga() {
+function gwa {
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
-    print -u2 "ga: not inside a git repository"; return 1
+    print -u2 "gwa: not inside a git repository"; return 1
   fi
-  if [ -z "$1" ]; then print -u2 "usage: ga <branch>"; return 2; fi
+  if [ -z "$1" ]; then print -u2 "usage: gwa <branch>"; return 2; fi
   local branch="$1" root reponame wt
   root="$(git rev-parse --show-toplevel)" || return 1
   reponame="${root:t}"                       # zsh :t = basename
@@ -24,42 +24,42 @@ ga() {
   cd "$wt"
 }
 
-# gd — remove the CURRENT worktree and its branch, cd back to the main checkout.
+# gwd — remove the CURRENT worktree and its branch, cd back to the main checkout.
 # Confirms first. Refuses outside a repo, and refuses to run from the main
 # checkout (that's not a throwaway worktree).
-gd() {
+function gwd {
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
-    print -u2 "gd: not inside a git repository"; return 1
+    print -u2 "gwd: not inside a git repository"; return 1
   fi
   local gitdir commondir toplevel branch main_root reply
   gitdir="$(git rev-parse --absolute-git-dir)"
   commondir="$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd)"
   if [ "$gitdir" = "$commondir" ]; then
-    print -u2 "gd: this is the main checkout, not a worktree — refusing"; return 1
+    print -u2 "gwd: this is the main checkout, not a worktree — refusing"; return 1
   fi
   toplevel="$(git rev-parse --show-toplevel)"
   branch="$(git rev-parse --abbrev-ref HEAD)"
   main_root="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
-  printf 'gd: remove worktree %s and delete branch %s? [y/N] ' "$toplevel" "$branch"
+  printf 'gwd: remove worktree %s and delete branch %s? [y/N] ' "$toplevel" "$branch"
   read -r reply
   case "$reply" in
     y|Y) ;;
-    *) print "gd: aborted"; return 0 ;;
+    *) print "gwd: aborted"; return 0 ;;
   esac
   cd "$main_root" || return 1
   if ! git worktree remove "$toplevel"; then
-    print -u2 "gd: worktree has changes or is locked — remove by hand with: git worktree remove --force '$toplevel'"
+    print -u2 "gwd: worktree has changes or is locked — remove by hand with: git worktree remove --force '$toplevel'"
     return 1
   fi
   if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
-    git branch -D "$branch" 2>/dev/null || print -u2 "gd: worktree removed; branch $branch left in place (unmerged?)"
+    git branch -D "$branch" 2>/dev/null || print -u2 "gwd: worktree removed; branch $branch left in place (unmerged?)"
   fi
 }
 
 # --- scratch dirs ------------------------------------------------------------
 
 # try <name> — jump into a dated scratch dir under ~/tries.
-try() {
+function try {
   if [ -z "$1" ]; then print -u2 "usage: try <name>"; return 2; fi
   local d="$HOME/tries/$(date +%F)-$1"
   mkdir -p "$d" && cd "$d"
@@ -71,7 +71,7 @@ try() {
 # plain shell bottom-right. Works inside a tmux session (lays out the current
 # window) and from outside (creates + attaches a 'dev' session). Uses raw
 # split-window/send-keys so it doesn't depend on any prefix binding.
-tdl() {
+function tdl {
   command -v tmux >/dev/null 2>&1 || { print -u2 "tdl: tmux not installed"; return 1; }
   local agent="${1:-claude}" editor="${EDITOR:-vim}" created=0 target p_edit p_agent
   if [ -z "$TMUX" ]; then
@@ -92,7 +92,7 @@ tdl() {
 # tsl <count> [cmd] — tiled grid of <count> panes, each running [cmd]
 # (default: a plain shell). Inside tmux it tiles the current window; outside it
 # creates + attaches a 'grid' session.
-tsl() {
+function tsl {
   command -v tmux >/dev/null 2>&1 || { print -u2 "tsl: tmux not installed"; return 1; }
   local count="${1:-4}" cmd="${2:-}" created=0 target first p i
   case "$count" in ''|*[!0-9]*) print -u2 "usage: tsl <count> [cmd]"; return 2 ;; esac
@@ -120,9 +120,9 @@ tsl() {
 # survive across shells. rsync runs -a WITHOUT --delete by default — --delete
 # removes files in <dst> that aren't in <src>, so it's opt-in behind -D only.
 
-_rsw_state() { printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/lpx/rsw"; }
+function _rsw_state { printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/lpx/rsw"; }
 
-rsw() {
+function rsw {
   command -v inotifywait >/dev/null 2>&1 || {
     print -u2 "rsw: inotifywait not found — install inotify-tools (shellSetup CLITOOLS)"; return 1; }
   local del=0
@@ -149,7 +149,7 @@ rsw() {
   print "rsw: watching $src -> $dst (delete=$del) as pid $pid"
 }
 
-lsw() {
+function lsw {
   local state; state="$(_rsw_state)"
   [ -d "$state" ] || { print "no watchers"; return 0; }
   local i=0 f pid del src dst
@@ -162,7 +162,7 @@ lsw() {
   [ "$i" = 0 ] && print "no watchers"
 }
 
-dsw() {
+function dsw {
   local state; state="$(_rsw_state)"
   [ -d "$state" ] || { print "no watchers"; return 0; }
   local f pid

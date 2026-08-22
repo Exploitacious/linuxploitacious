@@ -209,7 +209,7 @@ clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 # seam below so machine-local overrides remain the last word.
 [ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
 
-# Interactive workflow helpers (ga/gd/try/tdl/tsl/rsw/ssh…). Sourced from the
+# Interactive workflow helpers (gwa/gwd/try/tdl/tsl/rsw/ssh…). Sourced from the
 # zsh stow package; absent until stowed, so the guard keeps a bare box clean.
 [ -r "$HOME/.zsh_functions" ] && . "$HOME/.zsh_functions"
 

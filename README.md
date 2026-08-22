@@ -602,8 +602,8 @@ interactive zsh shells only:
 
 | Function | Description |
 |----------|-------------|
-| `ga <branch>` | Add a git worktree beside the repo (`../<repo>-<branch>`), creating the branch if needed, and `cd` into it |
-| `gd` | From inside a worktree, confirm then remove it and delete its branch, `cd` back to the main checkout (refuses in the main checkout) |
+| `gwa <branch>` | Add a git worktree beside the repo (`../<repo>-<branch>`), creating the branch if needed, and `cd` into it |
+| `gwd` | From inside a worktree, confirm then remove it and delete its branch, `cd` back to the main checkout (refuses in the main checkout) |
 | `try <name>` | `cd` into a dated scratch dir `~/tries/<date>-<name>` |
 | `tdl [agent-cmd]` | 3-pane tmux dev layout: editor left (55%), agent top-right (default `claude`), shell bottom-right. Works inside or outside tmux |
 | `tsl <count> [cmd]` | Tiled grid of `<count>` panes, each running `[cmd]` (default: a shell) |
