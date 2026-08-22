@@ -642,7 +642,7 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
 | `vpn` | Wrapper around the official NordVPN CLI — connect / random / off / status / kill switch. See [VPN](#vpn-nordvpn) |
 | `launch_nordvpn` | **Legacy.** Self-provisioning raw-`.ovpn` OpenVPN wrapper with random server selection. Superseded by `vpn`; kept for the service-credential path |
-| `herdr-boot` | Boot a [herdr](#herdr-multiplexer-herdr) session's headless server (`herdr-boot <session>`) with no attached TUI client; idempotent. The ad-hoc counterpart to the `herdr@.service` user unit |
+| `herdr-boot` | *(stowed script in `~/.local/bin`, not an rc alias)* Boot a [herdr](#herdr-multiplexer-herdr) session's headless server (`herdr-boot <session>`) with no attached TUI client; idempotent. The ad-hoc counterpart to the `herdr@.service` user unit |
 
 The `lpx-*` helpers are documented under [The `lpx` command suite](#the-lpx-command-suite).
 

@@ -515,6 +515,10 @@ EOF
     # considered migration (edit here, add a migrations/*.sh that re-runs the
     # installer), never automatically.
     local HERDR_VERSION="0.8.2"
+    # Release-asset checksums, pinned alongside the version (recompute on bump:
+    # curl -fsSL <asset-url> | sha256sum).
+    local HERDR_SHA256_x86_64="976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4"
+    local HERDR_SHA256_aarch64="f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d"
 
     msg_header "Installing herdr ${HERDR_VERSION} (multiplexer for AI coding agents)"
     mkdir -p "$HOME/.local/bin"
@@ -547,6 +551,14 @@ EOF
       msg_info "Downloading herdr-linux-${HERDR_ARCH} v${HERDR_VERSION}..."
       if ! curl -fsSL -o "$HERDR_TMP/herdr" "$url"; then
         msg_error "herdr download failed: $url"
+        rm -rf "$HERDR_TMP"
+        return 1
+      fi
+      local want got
+      want="$(eval echo "\$HERDR_SHA256_${HERDR_ARCH}")"
+      got="$(sha256sum "$HERDR_TMP/herdr" | awk '{print $1}')"
+      if [ "$got" != "$want" ]; then
+        msg_error "herdr checksum mismatch (got ${got:0:12}…, want ${want:0:12}…) — refusing to install."
         rm -rf "$HERDR_TMP"
         return 1
       fi
