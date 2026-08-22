@@ -146,6 +146,25 @@ EOF
     fi
   fi
 
+  # --- RUN-ONCE MIGRATIONS ---
+  # After syncing with upstream, apply any pending fleet migrations so an
+  # already-provisioned box picks up changes that aren't plain config edits.
+  # LPX_NO_MIGRATE=1 skips this — the --run path sets it so a migration that
+  # re-invokes this script can't recurse back into the runner. The stowed
+  # lpx-migrate wins if present; on a first run (before STOW) fall back to the
+  # copy in the freshly-pulled checkout. See migrations/README.md.
+  if [ "${LPX_NO_MIGRATE:-0}" != "1" ]; then
+    local _lpx_migrate=""
+    if command -v lpx-migrate >/dev/null 2>&1; then
+      _lpx_migrate="lpx-migrate"
+    elif [ -x "$REPO_DIR/scripts/.local/bin/lpx-migrate" ]; then
+      _lpx_migrate="$REPO_DIR/scripts/.local/bin/lpx-migrate"
+    fi
+    if [ -n "$_lpx_migrate" ]; then
+      "$_lpx_migrate" || msg_warn "Migrations pending or failed (see output above)."
+    fi
+  fi
+
   # --- OS DETECTION ---
   if [ -f /etc/os-release ]; then
     . /etc/os-release

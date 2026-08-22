@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# lpx-migrate — apply run-once fleet migrations (omarchy-style).
+# lpx:summary=Run pending run-once fleet migrations
+# lpx:group=fleet
+#
+# Walks migrations/*.sh oldest-first, runs each once per box, and records a
+# marker so subsequent runs skip it. See migrations/README.md for the contract.
+set -u
+
+# Resolve the repo checkout from this script's real path (it is stowed to
+# ~/.local/bin as a symlink into scripts/.local/bin). LPX_MIGRATIONS_DIR
+# overrides the source dir — used by the test harness so a throwaway migration
+# never has to land in the repo.
+SELF="$(readlink -f "$0")"
+REPO_DIR="$(cd "$(dirname "$SELF")/../../.." && pwd)"
+MIGRATIONS_DIR="${LPX_MIGRATIONS_DIR:-$REPO_DIR/migrations}"
+
+STATE_ROOT="${LPX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/lpx}"
+DONE_DIR="$STATE_ROOT/migrations"
+SKIP_DIR="$DONE_DIR/skipped"
+mkdir -p "$DONE_DIR" "$SKIP_DIR"
+
+msg()  { printf '[lpx-migrate] %s\n' "$1"; }
+err()  { printf '[lpx-migrate] %s\n' "$1" >&2; }
+
+# pending = migrations with neither an applied nor a skip marker. Recomputed at
+# exit so the summary is correct on every path (including a fail-closed abort).
+count_pending() {
+  local n=0 m base
+  for m in "$MIGRATIONS_DIR"/*.sh; do
+    [ -e "$m" ] || continue
+    base="$(basename "$m")"
+    [ -e "$DONE_DIR/$base" ] && continue
+    [ -e "$SKIP_DIR/$base" ] && continue
+    n=$((n + 1))
+  done
+  printf '%d' "$n"
+}
+
+ran=0
+skipped=0   # already-applied or previously/interactively skipped
+
+summary() {
+  msg "summary: ${ran} ran, ${skipped} skipped, $(count_pending) pending"
+}
+
+if [ ! -d "$MIGRATIONS_DIR" ]; then
+  msg "no migrations directory ($MIGRATIONS_DIR) — nothing to do."
+  exit 0
+fi
+
+shopt -s nullglob
+migrations=("$MIGRATIONS_DIR"/*.sh)
+shopt -u nullglob
+
+if [ "${#migrations[@]}" -eq 0 ]; then
+  msg "no migrations found."
+  exit 0
+fi
+
+for mig in "${migrations[@]}"; do
+  base="$(basename "$mig")"
+  if [ -e "$DONE_DIR/$base" ] || [ -e "$SKIP_DIR/$base" ]; then
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  msg "applying $base ..."
+  # LPX_NO_MIGRATE guards any shellSetup.sh a migration re-invokes from looping
+  # back into this runner.
+  if LPX_NO_MIGRATE=1 bash "$mig"; then
+    touch "$DONE_DIR/$base"
+    ran=$((ran + 1))
+    msg "applied $base"
+    continue
+  fi
+
+  err "migration failed: $base"
+  if [ -t 0 ]; then
+    printf '[lpx-migrate] skip and continue? [y/N] ' >&2
+    read -r reply
+    case "$reply" in
+      y|Y)
+        touch "$SKIP_DIR/$base"
+        skipped=$((skipped + 1))
+        err "skipped $base (skip marker written)"
+        continue
+        ;;
+      *)
+        err "aborting at $base"
+        summary
+        exit 1
+        ;;
+    esac
+  else
+    # No terminal to ask — fail closed rather than skip a change silently.
+    err "non-interactive: failing closed at $base"
+    summary
+    exit 1
+  fi
+done
+
+summary
+exit 0
