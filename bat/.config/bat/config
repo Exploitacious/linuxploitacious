@@ -1,0 +1,8 @@
+# bat configuration — deployed by the bat/ stow package.
+# Theme is pinned statically (no theme engine): the Catppuccin Mocha .tmTheme
+# is vendored alongside this file in ./themes/. bat only registers a custom
+# theme after `bat cache --build` runs once; shellSetup's install_cli_tools
+# does that after this package is stowed. BAT_THEME in .zshrc selects it.
+--theme="Catppuccin Mocha"
+--style="numbers,changes,header"
+--italic-text=always

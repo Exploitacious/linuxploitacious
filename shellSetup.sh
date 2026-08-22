@@ -2,8 +2,43 @@
 # Cross-Platform Linux Setup Script (Stow, Zsh, OMZ, OMP, Tmux)
 
 main() {
-  # 1. RECLAIM TTY: Prevent curl | bash from breaking interactive prompts
-  exec < /dev/tty
+  # --- CLI ARGS ---
+  # No arguments -> the interactive whiptail menu, exactly as before.
+  # --run ITEM1,ITEM2 runs those menu items' functions directly and skips the
+  # menu (non-interactive path, used by migrations). It also sets
+  # LPX_NO_MIGRATE so a migration that shells back into --run can't recurse
+  # into the migration runner. See README "--run flag".
+  local RUN_ITEMS=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run)
+        if [ $# -lt 2 ] || [ -z "$2" ]; then
+          echo "--run needs a comma-separated item list, e.g. --run CLITOOLS,STOW" >&2
+          exit 2
+        fi
+        RUN_ITEMS="$2"; shift 2 ;;
+      --run=*)
+        RUN_ITEMS="${1#--run=}"
+        [ -z "$RUN_ITEMS" ] && { echo "--run needs a comma-separated item list" >&2; exit 2; }
+        shift ;;
+      -h|--help)
+        echo "Usage: $(basename "${BASH_SOURCE[0]:-shellSetup.sh}") [--run ITEM1,ITEM2,...]"
+        echo "  (no args) interactive whiptail menu"
+        echo "  --run     run the named menu items directly, non-interactively"
+        exit 0 ;;
+      *)
+        echo "Unknown argument: $1 (try --help)" >&2; exit 2 ;;
+    esac
+  done
+  if [ -n "$RUN_ITEMS" ]; then
+    export LPX_NO_MIGRATE=1
+  fi
+
+  # 1. RECLAIM TTY: Prevent curl | bash from breaking interactive prompts.
+  # Skipped under --run: that path is non-interactive and /dev/tty may be absent.
+  if [ -z "$RUN_ITEMS" ]; then
+    exec < /dev/tty
+  fi
 
   # --- COLORS & FORMATTING ---
   RED='\033[0;31m'
@@ -185,7 +220,7 @@ EOF
   fi
 
   # --- STOW PACKAGES (single source of truth; deploy_stow + setup_root_profile both reference this) ---
-  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "superfile")
+  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "superfile" "bat")
 
   # --- PACKAGE MANAGERS ---
 
@@ -470,6 +505,197 @@ EOF
     sudo install -m 0755 "$SPF_BIN" /usr/local/bin/spf
     rm -rf "$SPF_TMP"
     msg_success "superfile installed: $(spf --version 2>&1 | head -1)"
+  }
+
+  install_cli_tools() {
+    msg_header "Installing Modern CLI Tools"
+    mkdir -p "$HOME/.local/bin"
+
+    # Two arch spellings: dpkg (amd64/arm64) for .debs, rust triples
+    # (x86_64/aarch64) for the rust-built release tarballs, and the
+    # lazygit/lazydocker "x86_64/arm64" spelling.
+    local uname_m deb_arch rust_arch lg_arch
+    uname_m="$(uname -m)"
+    case "$uname_m" in
+      x86_64)        deb_arch="amd64"; rust_arch="x86_64";  lg_arch="x86_64" ;;
+      aarch64|arm64) deb_arch="arm64"; rust_arch="aarch64"; lg_arch="arm64"  ;;
+      *) msg_warn "Unrecognized arch '$uname_m' — release-binary tools will be skipped."; deb_arch=""; rust_arch=""; lg_arch="" ;;
+    esac
+
+    local is_debian=0
+    if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+      is_debian=1
+    fi
+
+    # Is a package actually installable from the configured apt repos? Lets us
+    # queue only what exists here (eza/git-delta are absent on older Debian).
+    _apt_has() {
+      local c; c="$(apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{print $2}')"
+      [ -n "$c" ] && [ "$c" != "(none)" ]
+    }
+
+    _cli_latest_tag() {
+      curl -fsSL "https://api.github.com/repos/$1/releases/latest" 2>/dev/null | jq -r '.tag_name // empty'
+    }
+
+    # Fetch a release tarball, install the named binary, verify it runs.
+    _cli_install_tarball() {
+      local repo="$1" tag="$2" asset="$3" bin="$4" dest="$5" tmp found
+      tmp="$(mktemp -d)"
+      msg_info "Downloading $asset ..."
+      if ! curl -fsSL -o "$tmp/dl.tar.gz" "https://github.com/$repo/releases/download/$tag/$asset"; then
+        msg_warn "Download failed: $repo $asset"; rm -rf "$tmp"; return 1
+      fi
+      if ! tar -xzf "$tmp/dl.tar.gz" -C "$tmp" 2>/dev/null; then
+        msg_error "Extract failed: $asset"; rm -rf "$tmp"; return 1
+      fi
+      found="$(find "$tmp" -type f -name "$bin" | head -n1)"
+      if [ -z "$found" ]; then
+        msg_error "$bin not found inside $asset"; rm -rf "$tmp"; return 1
+      fi
+      sudo install -m 0755 "$found" "$dest/$bin"
+      rm -rf "$tmp"
+      if "$dest/$bin" --version >/dev/null 2>&1; then
+        msg_success "$bin installed: $("$dest/$bin" --version 2>&1 | head -1)"
+      else
+        msg_warn "$bin installed to $dest but --version check failed."
+      fi
+    }
+
+    # --- apt-provided tools (Debian family) ---
+    if [ "$is_debian" -eq 1 ]; then
+      msg_info "Refreshing apt index..."
+      sudo apt-get update -qq || msg_warn "apt-get update failed — continuing with the current index."
+
+      # command already present? skip. else queue its package if the repo has it.
+      local -a apt_pkgs=()
+      command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1 || { _apt_has bat && apt_pkgs+=(bat); }
+      command -v fdfind >/dev/null 2>&1 || command -v fd >/dev/null 2>&1 || { _apt_has fd-find && apt_pkgs+=(fd-find); }
+      command -v rg >/dev/null 2>&1 || { _apt_has ripgrep && apt_pkgs+=(ripgrep); }
+      command -v zoxide >/dev/null 2>&1 || { _apt_has zoxide && apt_pkgs+=(zoxide); }
+      command -v tldr >/dev/null 2>&1 || command -v tealdeer >/dev/null 2>&1 || { _apt_has tealdeer && apt_pkgs+=(tealdeer); }
+      command -v eza >/dev/null 2>&1 || { _apt_has eza && apt_pkgs+=(eza); }
+      command -v inotifywait >/dev/null 2>&1 || { _apt_has inotify-tools && apt_pkgs+=(inotify-tools); }
+
+      if [ "${#apt_pkgs[@]}" -gt 0 ]; then
+        msg_info "Installing via apt: ${apt_pkgs[*]}"
+        if ! sudo apt-get install -y "${apt_pkgs[@]}"; then
+          # Fail loudly: a half-installed set (or no sudo under --run) must not
+          # look like success — the migration's fail-closed path depends on it.
+          msg_error "apt install failed for: ${apt_pkgs[*]}"
+          return 1
+        fi
+      else
+        msg_info "All apt-provided CLI tools already present or unavailable."
+      fi
+
+      command -v eza >/dev/null 2>&1 || msg_warn "eza unavailable via apt on this release — tree aliases (lt/lta) stay inactive until it is installed."
+    else
+      msg_warn "Non-Debian system: skipping apt tools (bat/fd/ripgrep/zoxide/tealdeer/eza/inotify-tools). Install them with your package manager; the release-binary tools below still run."
+    fi
+
+    # --- Debian binary-name reconciliation: batcat -> bat, fdfind -> fd ---
+    if command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
+      ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
+      msg_success "Linked bat -> $(command -v batcat)"
+    fi
+    if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
+      ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
+      msg_success "Linked fd -> $(command -v fdfind)"
+    fi
+
+    # --- delta (git-delta): apt if available, else latest GitHub .deb ---
+    if command -v delta >/dev/null 2>&1; then
+      msg_info "delta already installed: $(delta --version 2>&1 | head -1)"
+    elif [ "$is_debian" -eq 1 ] && _apt_has git-delta; then
+      sudo apt-get install -y git-delta && msg_success "delta installed via apt."
+    elif [ -n "$deb_arch" ] && command -v jq >/dev/null 2>&1; then
+      local dtag dtmp
+      dtag="$(_cli_latest_tag dandavison/delta)"
+      if [ -n "$dtag" ]; then
+        dtmp="$(mktemp -d)"
+        if curl -fsSL -o "$dtmp/delta.deb" "https://github.com/dandavison/delta/releases/download/${dtag}/git-delta_${dtag}_${deb_arch}.deb"; then
+          sudo apt-get install -y "$dtmp/delta.deb" && msg_success "delta installed: $(delta --version 2>&1 | head -1)"
+        else
+          msg_warn "delta .deb download failed — skipping."
+        fi
+        rm -rf "$dtmp"
+      else
+        msg_warn "Could not resolve latest delta release — skipping."
+      fi
+    else
+      msg_warn "delta skipped (needs jq + a known arch, or apt git-delta)."
+    fi
+
+    # --- dust: GitHub release binary, arch-aware; fall back to apt ncdu ---
+    if command -v dust >/dev/null 2>&1; then
+      msg_info "dust already installed: $(dust --version 2>&1 | head -1)"
+    elif [ -n "$rust_arch" ] && command -v jq >/dev/null 2>&1; then
+      local utag
+      utag="$(_cli_latest_tag bootandy/dust)"
+      if [ -z "$utag" ] || ! _cli_install_tarball bootandy/dust "$utag" "dust-${utag}-${rust_arch}-unknown-linux-gnu.tar.gz" dust /usr/local/bin; then
+        msg_warn "dust install failed — falling back to apt ncdu."
+        [ "$is_debian" -eq 1 ] && { sudo apt-get install -y ncdu || msg_warn "ncdu fallback also failed."; }
+      fi
+    else
+      msg_warn "dust skipped (needs jq + a known arch); trying apt ncdu instead."
+      [ "$is_debian" -eq 1 ] && { sudo apt-get install -y ncdu || true; }
+    fi
+
+    # --- lazygit + lazydocker: GitHub release tarballs -> /usr/local/bin ---
+    # (Follows install_superfile: sudo install -m 0755 into /usr/local/bin.)
+    if [ -n "$lg_arch" ] && command -v jq >/dev/null 2>&1; then
+      if command -v lazygit >/dev/null 2>&1; then
+        msg_info "lazygit already installed: $(lazygit --version 2>&1 | head -1)"
+      else
+        local lgtag lgver
+        lgtag="$(_cli_latest_tag jesseduffield/lazygit)"; lgver="${lgtag#v}"
+        [ -n "$lgtag" ] && _cli_install_tarball jesseduffield/lazygit "$lgtag" "lazygit_${lgver}_linux_${lg_arch}.tar.gz" lazygit /usr/local/bin \
+          || msg_warn "lazygit install skipped/failed."
+      fi
+      if command -v lazydocker >/dev/null 2>&1; then
+        msg_info "lazydocker already installed: $(lazydocker --version 2>&1 | head -1)"
+      else
+        local ldtag ldver
+        ldtag="$(_cli_latest_tag jesseduffield/lazydocker)"; ldver="${ldtag#v}"
+        [ -n "$ldtag" ] && _cli_install_tarball jesseduffield/lazydocker "$ldtag" "lazydocker_${ldver}_Linux_${lg_arch}.tar.gz" lazydocker /usr/local/bin \
+          || msg_warn "lazydocker install skipped/failed."
+      fi
+    else
+      msg_warn "lazygit/lazydocker skipped (needs jq + a known arch)."
+    fi
+
+    # --- git + delta wiring (idempotent; only when delta is present) ---
+    if command -v delta >/dev/null 2>&1; then
+      msg_info "Wiring git to use delta..."
+      git config --global core.pager delta
+      git config --global interactive.diffFilter "delta --color-only"
+      git config --global delta.navigate true
+      git config --global delta.line-numbers true
+      # zdiff3 shows the common ancestor in conflicts — easier merges with delta.
+      git config --global merge.conflictStyle zdiff3
+      msg_success "git delta integration configured."
+    fi
+
+    # --- bat theme cache ---
+    # bat only registers a custom theme after `bat cache --build`. Run it once
+    # the Catppuccin Mocha .tmTheme is stowed (bat/ package). On a CLITOOLS-only
+    # run before STOW the theme isn't there yet; it activates on the next STOW.
+    local bat_bin=""
+    command -v bat >/dev/null 2>&1 && bat_bin="bat"
+    [ -z "$bat_bin" ] && command -v batcat >/dev/null 2>&1 && bat_bin="batcat"
+    if [ -n "$bat_bin" ]; then
+      local bat_theme_dir="${XDG_CONFIG_HOME:-$HOME/.config}/bat/themes" t found_theme=0
+      for t in "$bat_theme_dir"/*.tmTheme; do [ -e "$t" ] && { found_theme=1; break; }; done
+      if [ "$found_theme" -eq 1 ]; then
+        msg_info "Building bat theme cache..."
+        "$bat_bin" cache --build >/dev/null 2>&1 && msg_success "bat theme cache built (Catppuccin Mocha)." || msg_warn "bat cache --build failed."
+      else
+        msg_info "bat theme not stowed yet — run STOW, then re-run CLITOOLS to activate Catppuccin Mocha."
+      fi
+    fi
+
+    msg_success "Modern CLI tools step complete."
   }
 
   # The `vpn` helper stows to ~/.local/bin on every box, but it is only a
@@ -2089,6 +2315,57 @@ EOF
 
   # --- MENU & EXECUTION ---
 
+  # Maps a menu keyword to its action. Used only by the --run non-interactive
+  # path; it MIRRORS the whiptail dispatch at the end of main(), so keep the
+  # two in sync when adding an item. (The interactive path is left untouched to
+  # preserve its exact behavior.)
+  run_menu_item() {
+    case "$1" in
+      BASE)
+        if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "$OS_ID" == "kali" || "$OS_LIKE" == *"debian"* ]]; then
+          install_debian_base
+        elif [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+          install_arch_base
+        elif [[ "$OS_ID" == "fedora" || "$OS_LIKE" == *"fedora"* ]]; then
+          install_fedora_base
+        fi
+        install_cloudflared
+        install_superfile
+        install_nordvpn ;;
+      NODE)     install_node_env ;;
+      PYTHON)   install_python_env ;;
+      SHELL)    setup_shell_env ;;
+      STOW)     deploy_stow; deploy_claude_config ;;
+      CLITOOLS) install_cli_tools ;;
+      SWAP)     setup_swapfile ;;
+      DOCKER)   install_docker ;;
+      TMUX)     setup_tmux_persistence ;;
+      BRAVE)    install_brave ;;
+      ROOT)     setup_root_profile ;;
+      NOPASS)   configure_passwordless_sudo ;;
+      SSHKEY)   setup_github_ssh ;;
+      HARNESS)  setup_harness ;;
+      *) msg_error "Unknown --run item: '$1'"; return 2 ;;
+    esac
+  }
+
+  # Non-interactive path: run the named items directly, then exit with the
+  # aggregate status (non-zero if any item failed) so callers like the
+  # migration runner can detect a failed install and fail closed.
+  if [ -n "$RUN_ITEMS" ]; then
+    msg_header "Non-interactive run: $RUN_ITEMS"
+    local _rc=0 _item
+    local -a _items
+    IFS=',' read -r -a _items <<< "$RUN_ITEMS"
+    for _item in "${_items[@]}"; do
+      _item="${_item// /}"
+      [ -z "$_item" ] && continue
+      run_menu_item "$_item" || _rc=$?
+    done
+    echo -e "\n${GREEN}--run complete (exit ${_rc}).${NC}"
+    exit "$_rc"
+  fi
+
   # Build menu items dynamically so the ROOT option is hidden when we're
   # already running as root — there's no "regular user" to mirror configs from.
   local MENU_ITEMS=(
@@ -2097,6 +2374,7 @@ EOF
     "PYTHON" "Python, pyenv, pip packages" ON
     "SHELL"  "Zsh, OMZ, OMP, & TPM" ON
     "STOW"   "Deploy Repo configs" ON
+    "CLITOOLS" "Modern CLI tools (bat, eza, fd, zoxide, delta, dust, lazygit...)" ON
     "TMUX"   "Tmux persistence (auto-attach + systemd boot)" ON
     "DOCKER" "Docker Engine (CE + compose plugin)" OFF
     "BRAVE"  "Brave Browser" OFF
@@ -2146,6 +2424,10 @@ EOF
 
   # Claude config uses absolute symlinks (not stow) to survive chained symlinks for root sharing
   if [[ $CHOICES == *"STOW"* ]]; then deploy_claude_config; fi
+
+  # After STOW so the bat/ theme is in place before install_cli_tools builds
+  # bat's theme cache.
+  if [[ $CHOICES == *"CLITOOLS"* ]]; then install_cli_tools; fi
 
   # AI CLIs always install via vendor scripts — fast, idempotent, the core of this setup
   install_ai_tools
