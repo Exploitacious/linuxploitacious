@@ -158,25 +158,61 @@ esac
 # this file on first run. The old `COWORK/AGENTS/bin` entry was retired
 # during the WORKFORCE rename — do not re-add either form here.
 
-# --- Tmux session picker on SSH login ---
-if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
-  _tmux_sessions=()
+# --- Multiplexer session picker on SSH login ---
+# Session layer migrated tmux -> herdr on this fleet's workspace box; tmux stays
+# installed as the fallback + bootloader (see README "herdr vs tmux status").
+# This picker fronts BOTH backends in one list: new/default sessions go to
+# herdr, existing tmux sessions stay reachable and are marked [tmux]. Gated on
+# an SSH shell that is neither already inside tmux ($TMUX) nor inside a herdr
+# pane ($HERDR_ENV), so it fires once per fresh login and never nests. Degrades
+# to pure-tmux behaviour on fleet boxes without herdr (or jq) installed.
+if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v tmux >/dev/null 2>&1 || command -v herdr >/dev/null 2>&1 }; then
+  # jq is coupled in deliberately: it parses the --json list AND is a BASE-set
+  # dep, so a box that lacks it takes the pure-tmux path as one flag, not two.
+  _have_herdr=0
+  command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && _have_herdr=1
+
+  # Rows are TAB-joined "<backend><TAB>...": TAB cannot appear in a herdr session
+  # name (herdr allows dots/uppercase but a whitespace name wedges its server)
+  # nor a tmux one, so it is a safe field separator. Kept parallel to the
+  # printed list so a numeric pick maps back to its backend + name.
+  _picker_rows=()
+  sep=$'\t'
+
+  # herdr sessions first (the default backend). ONE timeout-guarded call, 3s cap:
+  # a herdr query can hang against a wedged server and this runs on every SSH
+  # login, so a slow/dead server costs at most 3s and the picker degrades to the
+  # tmux rows. `session list` reads session dirs, not a live server — 3s is ample.
+  if (( _have_herdr )); then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && _picker_rows+=("herdr${sep}${line}")
+    done < <(timeout 3 herdr session list --json 2>/dev/null \
+             | jq -r '.sessions[] | [.running, .name] | @tsv' 2>/dev/null)
+  fi
+
+  # tmux sessions next, one call, marked [tmux] at print time.
   while IFS= read -r line; do
-    [[ -n "$line" ]] && _tmux_sessions+=("$line")
+    [[ -n "$line" ]] && _picker_rows+=("tmux${sep}${line}")
   done < <(tmux list-sessions -F '#S' 2>/dev/null)
 
-  print -P "%F{cyan}━━ tmux session picker ━━%f"
-  if (( ${#_tmux_sessions[@]} > 0 )); then
+  print -P "%F{cyan}━━ session picker ━━%f"
+  if (( ${#_picker_rows[@]} > 0 )); then
     local i=1
-    for s in "${_tmux_sessions[@]}"; do
-      print "  $i) attach → $s"
+    for row in "${_picker_rows[@]}"; do
+      parts=("${(@ps:\t:)row}")
+      if [[ "${parts[1]}" == herdr ]]; then
+        [[ "${parts[2]}" == true ]] && state=running || state=stopped
+        print "  $i) attach → ${parts[3]} [herdr, $state]"
+      else
+        print "  $i) attach → ${parts[2]} [tmux]"
+      fi
       ((i++))
     done
   else
     print "  (no existing sessions)"
   fi
-  print "  n) new named session"
-  print "  q) plain shell (no tmux)"
+  if (( _have_herdr )); then print "  n) new herdr session"; else print "  n) new tmux session"; fi
+  print "  q) plain shell (no multiplexer)"
   printf "choice [n]: "
   read choice
   case "$choice" in
@@ -184,21 +220,40 @@ if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; 
     ''|n|N)
       printf "session name [work]: "
       read name
-      tmux new -s "${name:-work}"
+      name="${name:-work}"
+      # attach is the interactive foreground session (create-or-attach), NOT a
+      # query — deliberately NOT timeout-wrapped: the hang trap is for data
+      # commands against a dead server, and attach is what boots one.
+      if (( _have_herdr )); then
+        herdr session attach "$name"
+      else
+        tmux new -s "$name"
+      fi
       ;;
     <->)
-      target="${_tmux_sessions[$choice]}"
-      if [[ -n "$target" ]]; then
-        tmux attach -t "$target"
+      row="${_picker_rows[$choice]}"
+      if [[ -n "$row" ]]; then
+        parts=("${(@ps:\t:)row}")
+        if [[ "${parts[1]}" == herdr ]]; then
+          herdr session attach "${parts[3]}"
+        else
+          tmux attach -t "${parts[2]}"
+        fi
       else
         print "invalid index — starting plain shell"
       fi
       ;;
     *)
-      tmux attach -t "$choice" 2>/dev/null || tmux new -s "$choice"
+      # A raw name -> the default backend (herdr) create-or-attach; a pure-tmux
+      # box falls back to tmux attach-or-new.
+      if (( _have_herdr )); then
+        herdr session attach "$choice"
+      else
+        tmux attach -t "$choice" 2>/dev/null || tmux new -s "$choice"
+      fi
       ;;
   esac
-  unset _tmux_sessions choice name target
+  unset _picker_rows _have_herdr sep line choice name row parts i state
 fi
 
 # opencode

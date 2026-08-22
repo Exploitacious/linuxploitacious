@@ -215,14 +215,22 @@ Two wrappers package it:
 
 ### herdr vs tmux status
 
-tmux is not going anywhere. It remains installed and is still the bootloader
-and fallback for session persistence: the SSH auto-attach snippet,
-`tmux-main.service`, and the whole [Persistence](#persistence-headless-vms)
-story run on tmux. Herdr is being introduced alongside it as the
-agent-oriented session layer, and the session-management layer is migrating
-toward it incrementally. Treat the two as coexisting for now, tmux as the
-dependable default and herdr as the newer agent-focused surface, rather than
-one having replaced the other.
+The session-management layer is converting from tmux to herdr, one backend
+switch at a time. As of this wave the SSH-login session picker (`.zshrc`) is
+multiplexer-aware: it lists both herdr and tmux sessions in one menu — herdr
+rows marked running/stopped, tmux rows marked `[tmux]` — sends new and default
+sessions to herdr via `herdr session attach <name>` (create-or-attach), and
+still attaches to a `[tmux]` row with `tmux attach`. Herdr is the default:
+naming or creating a plain session lands you in herdr.
+
+The conversion is a backend switch, not a replacement. tmux stays installed as
+the fallback multiplexer and the persistence bootloader (`tmux-main.service`,
+the whole [Persistence](#persistence-headless-vms) story), the tmux code paths
+are preserved, and a box without herdr (or `jq`) degrades cleanly to the prior
+tmux-only picker. For a persistent, start-at-boot herdr server behind the
+picker, enable the [`herdr@.service`](#headless-server-boot) user unit
+(`systemctl --user enable --now herdr@<session>`); the installer enables no
+instance, so activation stays a per-box decision.
 
 ---
 
@@ -880,7 +888,7 @@ Public IP is fetched via the `pubip` script (`~/.local/bin/pubip`) which caches 
 
 The `TMUX` menu option wires three things so your work survives SSH disconnects, reboots, and laptop closes:
 
-1. **Auto-attach on SSH login** — `.zshrc` and `.bashrc` ship with a snippet that, on SSH-originated shells outside an existing tmux, runs `tmux attach -t main 2>/dev/null || tmux new -s main`. SSH in → land directly in the `main` session every time.
+1. **Session picker on SSH login** — on an SSH-originated shell that is not already inside a multiplexer, `.zshrc` shows an interactive picker over both herdr and tmux sessions, defaulting new sessions and typed-name choices to herdr (see [herdr vs tmux status](#herdr-vs-tmux-status)); `.bashrc` ships the tmux-only form of the same picker. SSH in → pick an existing session or start a fresh one, every login.
 2. **`tmux-main.service`** — a `~/.config/systemd/user/tmux-main.service` unit that starts `tmux new-session -d -s main` at boot. Survives reboots.
 3. **`loginctl enable-linger <user>`** — user services run without an active login session, so step 2 actually triggers at boot rather than at first login.
 
