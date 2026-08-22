@@ -1,0 +1,18 @@
+[Unit]
+Description=Herdr headless session server (%i)
+Documentation=https://herdr.dev
+
+[Service]
+Type=simple
+# %i is the instance name = the herdr session (herdr@main -> session "main").
+Environment=HERDR_SESSION=%i
+# Full path: the user-unit PATH does not include ~/.local/bin. %h = user home.
+ExecStart=%h/.local/bin/herdr server
+ExecStop=%h/.local/bin/herdr server stop
+# Restart only on crash; a clean `server stop` (ExecStop / session stop) must
+# not trigger a respawn.
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

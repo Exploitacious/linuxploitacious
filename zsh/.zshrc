@@ -28,6 +28,11 @@ plugins=(
 # zsh-completions exposes extra completions
 [ -d "${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-completions/src" ] && \
   fpath+=("${ZSH_CUSTOM:-$ZSH/custom}/plugins/zsh-completions/src")
+# Generated tool completions (herdr, via shellSetup HERDR). Must join fpath
+# BEFORE compinit runs inside oh-my-zsh.sh below, or the _* files are ignored.
+# Guarded so a box without generated completions starts a clean shell.
+[ -d "$HOME/.local/share/zsh/completions" ] && \
+  fpath+=("$HOME/.local/share/zsh/completions")
 source $ZSH/oh-my-zsh.sh
 
 # User configuration — put ~/.local/bin first so native binaries (e.g. claude)

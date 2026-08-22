@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# herdr-boot — start a herdr session's headless server in the background.
+# lpx:summary=Boot a herdr session's headless server (no TUI client)
+# lpx:group=fleet
+#
+# herdr's per-session server normally boots only when a TUI client attaches;
+# there is no `server start` subcommand. Bare `herdr server` runs that server as
+# a blocking FOREGROUND process instead (it prints "herdr server running" and
+# serves the API/client sockets). For a headless box we background it under
+# setsid — detached from this shell's session so it outlives us — and then wait
+# for the API socket to answer, so a caller gets a ready server with NO TUI
+# client attached.
+#
+# Idempotent: exits 0 immediately if the session's server is already running.
+#
+# For a supervised, restart-on-crash, start-at-boot server, prefer the systemd
+# user unit over this script:
+#   systemctl --user enable --now herdr@<session>
+# (see systemd/.config/systemd/user/herdr@.service). This script is the ad-hoc
+# manual path for boxes/moments where you do not want a persistent unit.
+set -u
+
+usage() { echo "usage: herdr-boot <session-name>" >&2; }
+
+SESSION="${1:-}"
+if [ -z "$SESSION" ]; then usage; exit 2; fi
+
+# Prefer herdr on PATH; fall back to the canonical install location so this
+# works from non-interactive contexts that lack ~/.local/bin on PATH.
+HERDR="$(command -v herdr 2>/dev/null || true)"
+[ -n "$HERDR" ] || HERDR="$HOME/.local/bin/herdr"
+if [ ! -x "$HERDR" ]; then
+  echo "herdr-boot: herdr not found (install via shellSetup HERDR)" >&2
+  exit 1
+fi
+
+export HERDR_SESSION="$SESSION"
+
+# `status server --json` prints "running":true once the API socket answers.
+_running() {
+  timeout 5s "$HERDR" status server --json 2>/dev/null | grep -q '"running":true'
+}
+
+if _running; then
+  echo "herdr-boot: session '$SESSION' server already running"
+  exit 0
+fi
+
+echo "herdr-boot: starting headless server for session '$SESSION'..."
+# setsid detaches into a new session so the server is not in this script's
+# process group and survives our exit; herdr keeps its own per-session log, so
+# discard stdio here.
+setsid "$HERDR" server </dev/null >/dev/null 2>&1 &
+
+# Bounded wait for readiness so callers can rely on the socket being live on
+# a clean exit. ~20s covers a cold start plus herdr's first manifest fetch.
+for _ in $(seq 1 40); do
+  if _running; then
+    echo "herdr-boot: session '$SESSION' server is up"
+    exit 0
+  fi
+  sleep 0.5
+done
+
+echo "herdr-boot: timed out waiting for session '$SESSION' server socket — the server may still be starting; re-run herdr-boot to recheck (idempotent)" >&2
+exit 1

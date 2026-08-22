@@ -240,3 +240,57 @@ function ssh {
     sleep 2 || return 130
   done
 }
+
+# --- herdr layouts -----------------------------------------------------------
+# herdr equivalents of tdl/tsl. Unlike tmux, herdr's per-session server splits
+# the focused pane of an ALREADY-RUNNING session, so these run only from inside
+# a herdr pane (detected via HERDR_ENV/HERDR_PANE_ID, which herdr injects) —
+# they never create a session. `herdr pane split` returns JSON; the new pane ID
+# is read from .result.pane.pane_id, so jq is required.
+
+# hdl [agent-cmd] — 3-pane dev layout mirroring tdl: editor in the current pane
+# (left), agent top-right (default: claude), plain shell bottom-right.
+function hdl {
+  command -v herdr >/dev/null 2>&1 || { print -u2 "hdl: herdr not installed"; return 1; }
+  if [ "${HERDR_ENV:-}" != 1 ] || [ -z "${HERDR_PANE_ID:-}" ]; then
+    print -u2 "hdl: not inside herdr — use tdl for tmux or attach first"; return 1
+  fi
+  command -v jq >/dev/null 2>&1 || { print -u2 "hdl: jq required to read pane IDs"; return 1; }
+  local agent="${1:-claude}" editor="${EDITOR:-vim}" p_edit="$HERDR_PANE_ID" p_agent
+  # agent pane: split the editor pane right. herdr's --ratio is the fraction the
+  # SPLIT pane keeps (verified: 0.55 -> editor ~55% left, agent column ~45%),
+  # matching tdl's 55/45. --no-focus keeps the user in the editor pane.
+  p_agent="$(herdr pane split --pane "$p_edit" --direction right --ratio 0.55 --cwd "$PWD" --no-focus 2>/dev/null \
+    | jq -r '.result.pane.pane_id // empty')"
+  [ -z "$p_agent" ] && { print -u2 "hdl: failed to split agent pane"; return 1; }
+  herdr pane run "$p_agent" "$agent" >/dev/null 2>&1
+  # shell pane: split the agent pane down -> plain shell bottom-right.
+  herdr pane split --pane "$p_agent" --direction down --cwd "$PWD" --no-focus >/dev/null 2>&1
+  # editor last, in the calling pane; focus stays here (mirrors tdl's select-pane).
+  herdr pane run "$p_edit" "$editor" >/dev/null 2>&1
+}
+
+# hds [count] [cmd] — herdr equivalent of tsl: <count> panes each running [cmd]
+# (default: a plain shell). herdr has no `select-layout tiled`, so this
+# APPROXIMATES a grid by alternating split direction (right, down, right, ...)
+# off each newly created pane — fine for a handful of panes, but it will not
+# reproduce tmux's exact even tiling.
+function hds {
+  command -v herdr >/dev/null 2>&1 || { print -u2 "hds: herdr not installed"; return 1; }
+  if [ "${HERDR_ENV:-}" != 1 ] || [ -z "${HERDR_PANE_ID:-}" ]; then
+    print -u2 "hds: not inside herdr — use tsl for tmux or attach first"; return 1
+  fi
+  command -v jq >/dev/null 2>&1 || { print -u2 "hds: jq required to read pane IDs"; return 1; }
+  local count="${1:-4}" cmd="${2:-}" i p prev="$HERDR_PANE_ID" dir="right"
+  case "$count" in ''|*[!0-9]*) print -u2 "usage: hds <count> [cmd]"; return 2 ;; esac
+  [ "$count" -lt 1 ] && { print -u2 "hds: count must be >= 1"; return 2; }
+  [ -n "$cmd" ] && herdr pane run "$prev" "$cmd" >/dev/null 2>&1
+  for (( i = 2; i <= count; i++ )); do
+    p="$(herdr pane split --pane "$prev" --direction "$dir" --cwd "$PWD" --no-focus 2>/dev/null \
+      | jq -r '.result.pane.pane_id // empty')"
+    [ -z "$p" ] && { print -u2 "hds: split $i failed"; return 1; }
+    [ -n "$cmd" ] && herdr pane run "$p" "$cmd" >/dev/null 2>&1
+    prev="$p"
+    [ "$dir" = right ] && dir="down" || dir="right"
+  done
+}
