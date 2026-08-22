@@ -47,10 +47,23 @@ if _running; then
 fi
 
 echo "herdr-boot: starting headless server for session '$SESSION'..."
-# setsid detaches into a new session so the server is not in this script's
-# process group and survives our exit; herdr keeps its own per-session log, so
-# discard stdio here.
-setsid "$HERDR" server </dev/null >/dev/null 2>&1 &
+# ENV HYGIENE (live incident 2026-08-22): the server passes ITS environment to every pane shell.
+# Booted from inside a Claude Code session, it inherits CLAUDE_CODE_CHILD_SESSION and friends —
+# and every claude launched in a pane then thinks it is a child session and SILENTLY DISABLES
+# TRANSCRIPT SAVING, which breaks --resume for that session forever. Prefer the systemd user
+# unit: the user manager's environment is pristine by construction. Fall back to setsid only
+# when systemd is unavailable, scrubbing the whole marker family first.
+if command -v systemctl >/dev/null 2>&1 && systemctl --user start "herdr@${SESSION}" 2>/dev/null; then
+  :
+else
+  # setsid detaches into a new session so the server is not in this script's process group and
+  # survives our exit; herdr keeps its own per-session log, so discard stdio here. The while-read
+  # scrub drops every CLAUDE*/CLAUDECODE/AI_AGENT var (unset in a subshell won't leak back).
+  (
+    for _v in $(env | grep -oE '^(CLAUDE[A-Z_]*|CLAUDECODE|AI_AGENT)' ); do unset "$_v"; done
+    setsid "$HERDR" server </dev/null >/dev/null 2>&1 &
+  )
+fi
 
 # Bounded wait for readiness so callers can rely on the socket being live on
 # a clean exit. ~20s covers a cold start plus herdr's first manifest fetch.
