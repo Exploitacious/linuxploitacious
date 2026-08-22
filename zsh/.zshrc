@@ -167,6 +167,19 @@ esac
 # pane ($HERDR_ENV), so it fires once per fresh login and never nests. Degrades
 # to pure-tmux behaviour on fleet boxes without herdr (or jq) installed.
 if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v tmux >/dev/null 2>&1 || command -v herdr >/dev/null 2>&1 }; then
+  # An optional session console may front this picker. When present + executable it
+  # fully replaces the generic picker below (same gating: interactive SSH login,
+  # outside any multiplexer); otherwise the generic picker runs unchanged as the
+  # fallback, so this repo stays useful on a box that has no such console.
+  _rc_console="$HOME/COWORK/.claude-config/remote-sessions/rc-console.sh"
+  if [[ -x "$_rc_console" ]]; then
+    unset _rc_console
+    # Run it (do NOT exec or return): the console execs its own attach in a child,
+    # and on detach — or when it drops to a shell — control returns here and this
+    # file finishes sourcing normally. A `return` here would abort the rest of it.
+    "$HOME/COWORK/.claude-config/remote-sessions/rc-console.sh"
+  else
+    unset _rc_console
   # jq is coupled in deliberately: it parses the --json list AND is a BASE-set
   # dep, so a box that lacks it takes the pure-tmux path as one flag, not two.
   _have_herdr=0
@@ -254,6 +267,7 @@ if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v t
       ;;
   esac
   unset _picker_rows _have_herdr sep line choice name row parts i state
+  fi
 fi
 
 # opencode
