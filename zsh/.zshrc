@@ -166,7 +166,7 @@ esac
 # an SSH shell that is neither already inside tmux ($TMUX) nor inside a herdr
 # pane ($HERDR_ENV), so it fires once per fresh login and never nests. Degrades
 # to pure-tmux behaviour on fleet boxes without herdr (or jq) installed.
-if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
+if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v tmux >/dev/null 2>&1 || command -v herdr >/dev/null 2>&1 }; then
   # jq is coupled in deliberately: it parses the --json list AND is a BASE-set
   # dep, so a box that lacks it takes the pure-tmux path as one flag, not two.
   _have_herdr=0
@@ -179,13 +179,14 @@ if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && command -v tmu
   _picker_rows=()
   sep=$'\t'
 
-  # herdr sessions first (the default backend). ONE timeout-guarded call: a herdr
-  # query can hang against a wedged server and this runs on every SSH login, so
-  # the call is wrapped in `timeout` with no retry. --json parsed with jq.
+  # herdr sessions first (the default backend). ONE timeout-guarded call, 3s cap:
+  # a herdr query can hang against a wedged server and this runs on every SSH
+  # login, so a slow/dead server costs at most 3s and the picker degrades to the
+  # tmux rows. `session list` reads session dirs, not a live server — 3s is ample.
   if (( _have_herdr )); then
     while IFS= read -r line; do
       [[ -n "$line" ]] && _picker_rows+=("herdr${sep}${line}")
-    done < <(timeout 10 herdr session list --json 2>/dev/null \
+    done < <(timeout 3 herdr session list --json 2>/dev/null \
              | jq -r '.sessions[] | [.running, .name] | @tsv' 2>/dev/null)
   fi
 
