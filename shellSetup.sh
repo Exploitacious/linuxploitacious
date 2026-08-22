@@ -507,6 +507,75 @@ EOF
     msg_success "superfile installed: $(spf --version 2>&1 | head -1)"
   }
 
+  install_herdr() {
+    # Pin the version deliberately: herdr ships breaking changes roughly weekly,
+    # so tracking "latest" would drift the fleet unpredictably. Bump this by a
+    # considered migration (edit here, add a migrations/*.sh that re-runs the
+    # installer), never automatically.
+    local HERDR_VERSION="0.8.2"
+
+    msg_header "Installing herdr ${HERDR_VERSION} (multiplexer for AI coding agents)"
+    mkdir -p "$HOME/.local/bin"
+
+    # Arch-aware release asset (herdr-linux-x86_64 / herdr-linux-aarch64).
+    local HERDR_ARCH
+    case "$(uname -m)" in
+      x86_64)        HERDR_ARCH="x86_64"  ;;
+      aarch64|arm64) HERDR_ARCH="aarch64" ;;
+      *) msg_error "Unsupported arch '$(uname -m)' for herdr — skipping."; return 1 ;;
+    esac
+
+    # User-level install (no sudo): herdr is a per-user tool and its per-session
+    # server runs under the login user, so it belongs in ~/.local/bin.
+    local HERDR_BIN="$HOME/.local/bin/herdr" need_install=1 cur=""
+    if [ -x "$HERDR_BIN" ]; then
+      cur="$("$HERDR_BIN" --version 2>/dev/null | awk '{print $2}')"
+      if [ "$cur" = "$HERDR_VERSION" ]; then
+        msg_info "herdr ${HERDR_VERSION} already installed. Skipping binary."
+        need_install=0
+      else
+        msg_info "herdr ${cur:-unknown} present — upgrading (${cur:-unknown} -> ${HERDR_VERSION})."
+      fi
+    fi
+
+    if [ "$need_install" -eq 1 ]; then
+      local HERDR_TMP url
+      HERDR_TMP="$(mktemp -d)"
+      url="https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-${HERDR_ARCH}"
+      msg_info "Downloading herdr-linux-${HERDR_ARCH} v${HERDR_VERSION}..."
+      if ! curl -fsSL -o "$HERDR_TMP/herdr" "$url"; then
+        msg_error "herdr download failed: $url"
+        rm -rf "$HERDR_TMP"
+        return 1
+      fi
+      install -m 0755 "$HERDR_TMP/herdr" "$HERDR_BIN"
+      rm -rf "$HERDR_TMP"
+      if "$HERDR_BIN" --version >/dev/null 2>&1; then
+        msg_success "herdr installed: $("$HERDR_BIN" --version 2>&1 | head -1)"
+      else
+        msg_warn "herdr installed to $HERDR_BIN but --version check failed."
+      fi
+    fi
+
+    # zsh completion. No other tool here ships a generated-completions dir
+    # (zoxide/pyenv/nvm init at runtime; extras come from the zsh-completions OMZ
+    # plugin), so herdr generates a file into a standard fpath dir. .zshrc adds
+    # that dir to fpath (guarded, before compinit). Runs on both the fresh and
+    # idempotent-skip paths so a box provisioned before this step picks it up.
+    local comp_dir="$HOME/.local/share/zsh/completions"
+    mkdir -p "$comp_dir"
+    if "$HERDR_BIN" completion zsh > "$comp_dir/_herdr" 2>/dev/null && [ -s "$comp_dir/_herdr" ]; then
+      msg_success "herdr zsh completion written to $comp_dir/_herdr"
+    else
+      rm -f "$comp_dir/_herdr"
+      msg_warn "herdr completion generation failed — skipping."
+    fi
+
+    # NOTE: herdr is intentionally NOT in the default/auto-selected menu set and
+    # has NO fleet migration — activating it across the fleet is a pending
+    # operator decision, so it stays opt-in (menu item OFF) until that call.
+  }
+
   install_cli_tools() {
     msg_header "Installing Modern CLI Tools"
     mkdir -p "$HOME/.local/bin"
@@ -2340,6 +2409,7 @@ EOF
       SHELL)    setup_shell_env ;;
       STOW)     deploy_stow; deploy_claude_config ;;
       CLITOOLS) install_cli_tools ;;
+      HERDR)    install_herdr ;;
       SWAP)     setup_swapfile ;;
       DOCKER)   install_docker ;;
       TMUX)     setup_tmux_persistence ;;
@@ -2381,6 +2451,7 @@ EOF
     "TMUX"   "Tmux persistence (auto-attach + systemd boot)" ON
     "DOCKER" "Docker Engine (CE + compose plugin)" OFF
     "BRAVE"  "Brave Browser" OFF
+    "HERDR"  "Herdr multiplexer (pinned)" OFF
   )
   if [ "$EUID" -ne 0 ]; then
     MENU_ITEMS+=("ROOT" "Replicate profile to root user" OFF)
@@ -2442,6 +2513,7 @@ EOF
   if [[ $CHOICES == *"DOCKER"* ]]; then install_docker; fi
   if [[ $CHOICES == *"TMUX"* ]]; then setup_tmux_persistence; fi
   if [[ $CHOICES == *"BRAVE"* ]]; then install_brave; fi
+  if [[ $CHOICES == *"HERDR"* ]]; then install_herdr; fi
   if [[ $CHOICES == *"ROOT"* ]]; then setup_root_profile; fi
   if [[ $CHOICES == *"NOPASS"* ]]; then configure_passwordless_sudo; fi
   if [[ $CHOICES == *"SSHKEY"* ]]; then setup_github_ssh; fi
