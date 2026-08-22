@@ -209,6 +209,10 @@ clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 # seam below so machine-local overrides remain the last word.
 [ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
 
+# Interactive workflow helpers (ga/gd/try/tdl/tsl/rsw/ssh…). Sourced from the
+# zsh stow package; absent until stowed, so the guard keeps a bare box clean.
+[ -r "$HOME/.zsh_functions" ] && . "$HOME/.zsh_functions"
+
 # Machine-local overrides (untracked; survive git sync of this public repo).
 # Host-/operator-specific shell config that must NOT live in this public repo
 # goes here. COWORK Stage-2 (deploy.sh) writes operator-only Claude config —
