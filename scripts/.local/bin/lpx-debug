@@ -9,7 +9,8 @@
 set -u
 
 ts="$(date +%Y%m%d_%H%M%S)"
-out="/tmp/lpx-debug-$ts.log"
+# mktemp: unpredictable path so a pre-created symlink can't redirect the write.
+out="$(mktemp --suffix=.log "/tmp/lpx-debug-${ts}-XXXXXX")" || exit 1
 
 {
   echo "=== lpx-debug $ts ==="

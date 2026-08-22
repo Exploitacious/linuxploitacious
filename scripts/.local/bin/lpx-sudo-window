@@ -87,11 +87,12 @@ open_window() {
     echo "lpx-sudo-window: visudo validation failed — nothing installed." >&2
     exit 1
   fi
+  # Reboot safety net FIRST — if anything dies between the grant landing and
+  # the revoke timer being scheduled, boot cleanup must already exist.
+  install_boot_cleanup
+
   as_root install -m 0440 -o root -g root "$tmp" "$SUDOERS_FILE"
   rm -f "$tmp"
-
-  # Reboot safety net first, so the grant is never unprotected.
-  install_boot_cleanup
 
   # Replace any prior revoke timer so re-opening doesn't fire an old one early.
   as_root systemctl stop "${REVOKE_UNIT}.timer" >/dev/null 2>&1 || true

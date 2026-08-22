@@ -125,7 +125,10 @@ forever after, so an already-provisioned box picks up new work on its next
   terminal and **fails closed** (exit 1) when there's no terminal.
 
 `shellSetup.sh` runs the migration runner automatically right after it syncs
-with upstream. Set `LPX_NO_MIGRATE=1` to skip that pass.
+with upstream. Set `LPX_NO_MIGRATE=1` to skip that pass. Note this includes a
+first-ever provision: pending migrations apply before any menu selection, so a
+migration like the CLI-toolset one effectively makes its payload non-optional
+on new boxes (each installer still guards per-tool, so this is safe).
 
 ### The `--run` flag
 
@@ -498,7 +501,7 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 
 ## Alias Quick Reference
 
-These aliases are defined in both `.bashrc` and `.zshrc` and available in either shell.
+These aliases are defined in both `.bashrc` and `.zshrc` and available in either shell, except `lt`/`lta` which are zsh-only (defined alongside the workflow functions).
 
 ### Shell Navigation
 

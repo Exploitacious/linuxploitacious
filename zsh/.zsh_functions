@@ -220,12 +220,21 @@ function ssh {
   if [ "$noshell" = 1 ] || [ "$positional" -gt 1 ]; then
     TERM=xterm-256color command ssh "$@"; return
   fi
-  # Interactive login shell: retry on abnormal (255) exit only.
-  local rc
+  # Interactive login shell: retry on abnormal (255) exit only. A session that
+  # held >30s resets the budget, so a typo'd/unreachable host fails after 5
+  # quick 255s instead of looping forever.
+  local rc tries=0 started
   while true; do
+    started=$SECONDS
     TERM=xterm-256color command ssh "$@"
     rc=$?
     [ "$rc" != 255 ] && return $rc
+    (( SECONDS - started > 30 )) && tries=0
+    tries=$((tries + 1))
+    if (( tries >= 5 )); then
+      print -P "%F{red}ssh: 5 consecutive 255 exits — giving up (unreachable host or auth failure?)%f"
+      return $rc
+    fi
     stty sane 2>/dev/null; printf '\033[0m'          # clear stale terminal state
     print -P "%F{yellow}ssh: dropped (255) — reconnecting in 2s (Ctrl-C to stop)%f"
     sleep 2 || return 130

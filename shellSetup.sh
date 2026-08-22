@@ -572,6 +572,9 @@ EOF
       command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1 || { _apt_has bat && apt_pkgs+=(bat); }
       command -v fdfind >/dev/null 2>&1 || command -v fd >/dev/null 2>&1 || { _apt_has fd-find && apt_pkgs+=(fd-find); }
       command -v rg >/dev/null 2>&1 || { _apt_has ripgrep && apt_pkgs+=(ripgrep); }
+      # jq: the GitHub-release installs below parse the API with it. On a fresh
+      # box the CLITOOLS migration can run before BASE installs jq — own the dep.
+      command -v jq >/dev/null 2>&1 || { _apt_has jq && apt_pkgs+=(jq); }
       command -v zoxide >/dev/null 2>&1 || { _apt_has zoxide && apt_pkgs+=(zoxide); }
       command -v tldr >/dev/null 2>&1 || command -v tealdeer >/dev/null 2>&1 || { _apt_has tealdeer && apt_pkgs+=(tealdeer); }
       command -v eza >/dev/null 2>&1 || { _apt_has eza && apt_pkgs+=(eza); }
