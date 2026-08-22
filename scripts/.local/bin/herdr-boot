@@ -53,7 +53,11 @@ echo "herdr-boot: starting headless server for session '$SESSION'..."
 # TRANSCRIPT SAVING, which breaks --resume for that session forever. Prefer the systemd user
 # unit: the user manager's environment is pristine by construction. Fall back to setsid only
 # when systemd is unavailable, scrubbing the whole marker family first.
-if command -v systemctl >/dev/null 2>&1 && systemctl --user start "herdr@${SESSION}" 2>/dev/null; then
+# The unit hardcodes %h (the passwd home): under a HOME override (test isolation), a unit-started
+# server would run against the REAL config dir, not the overridden one — take setsid then.
+_passwd_home="$(getent passwd "$(id -u)" | cut -d: -f6)"
+if [ "$HOME" = "$_passwd_home" ] && command -v systemctl >/dev/null 2>&1 \
+   && systemctl --user start "herdr@${SESSION}" 2>/dev/null; then
   :
 else
   # setsid detaches into a new session so the server is not in this script's process group and
