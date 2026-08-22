@@ -20,7 +20,6 @@ plugins=(
   colored-man-pages
   docker
   docker-compose
-  z
   zsh-autosuggestions
   zsh-syntax-highlighting
   zsh-completions
@@ -105,6 +104,33 @@ if command -v oh-my-posh >/dev/null 2>&1; then
   eval "$(oh-my-posh init zsh --config "$OMP_THEME")"
 fi
 
+# --- Modern CLI tools (installed by shellSetup CLITOOLS) ---
+# Each block is guarded on the tool so a box that hasn't run CLITOOLS yet still
+# starts a clean shell — the tools degrade to absent, never to an error.
+if command -v bat >/dev/null 2>&1; then
+  # Theme ships in the bat/ stow package; MANPAGER pipes man pages through bat.
+  export BAT_THEME="Catppuccin Mocha"
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi
+if command -v eza >/dev/null 2>&1; then
+  # Tree views only. ls/ll/la deliberately stay coreutils (operator choice).
+  alias lt='eza --tree --level=2 --group-directories-first --icons'
+  alias lta='eza --tree --level=2 --group-directories-first --icons --all'
+fi
+# tealdeer ships its binary as `tldr` on most distros; alias only if it didn't.
+if ! command -v tldr >/dev/null 2>&1 && command -v tealdeer >/dev/null 2>&1; then
+  alias tldr='tealdeer'
+fi
+# zoxide replaces the oh-my-zsh `z` plugin (dropped from plugins= above).
+# Silent no-op until zoxide is installed.
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
+# fzf colours: Catppuccin Mocha, to match Oh My Posh / bat. Single export.
+if command -v fzf >/dev/null 2>&1; then
+  export FZF_DEFAULT_OPTS="--color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc --color=marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8 --color=selected-bg:#45475a --multi"
+fi
+
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
@@ -182,6 +208,10 @@ clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
 # exists on boxes where COWORK is actually deployed. Sourced ABOVE the .local
 # seam below so machine-local overrides remain the last word.
 [ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
+
+# Interactive workflow helpers (ga/gd/try/tdl/tsl/rsw/ssh…). Sourced from the
+# zsh stow package; absent until stowed, so the guard keeps a bare box clean.
+[ -r "$HOME/.zsh_functions" ] && . "$HOME/.zsh_functions"
 
 # Machine-local overrides (untracked; survive git sync of this public repo).
 # Host-/operator-specific shell config that must NOT live in this public repo

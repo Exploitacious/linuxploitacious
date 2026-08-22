@@ -90,6 +90,7 @@ The script uses a two-stage architecture:
 | PYTHON | Python via pyenv + pip packages | ON |
 | SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
+| CLITOOLS | Modern CLI tools: bat, eza, fd, zoxide, ripgrep, git-delta, dust, tealdeer, lazygit, lazydocker, inotify-tools | ON |
 | TMUX | Tmux persistence: SSH auto-attach + `tmux-main.service` systemd unit + linger | ON |
 | DOCKER | Docker Engine (docker-ce + buildx + compose plugin), adds user to `docker` group | OFF |
 | BRAVE | Brave Browser | OFF |
@@ -102,6 +103,61 @@ The script uses a two-stage architecture:
 **Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
 
 > **Supply chain note:** The two installers are fetched unpinned at setup time. Acceptable for a personal dotfiles repo; pin to a version (`bash -s <version>` for Claude) or checksum-verify if you plan to run this on machines you don't own.
+
+---
+
+## Run-once migrations
+
+Some changes can't be expressed as a plain config edit — installing a new tool,
+moving a file, seeding state. `migrations/` holds run-once scripts for exactly
+that. Each box applies every migration once, records a marker, and skips it
+forever after, so an already-provisioned box picks up new work on its next
+`shellSetup.sh` run without re-doing everything.
+
+- **Naming:** `migrations/<unix-timestamp>.sh`, applied oldest-first.
+- **Scaffold one:** `lpx add-migration` drops a commented template and prints
+  its path.
+- **Contract:** each migration must be idempotent-safe and non-interactive, and
+  must exit non-zero if it didn't finish. See `migrations/README.md`.
+- **Runner:** `lpx-migrate` walks the directory, runs each pending migration
+  with `bash`, and records a marker under `~/.local/state/lpx/migrations/`
+  (`skipped/` for ones you chose to skip). On failure it prompts to skip on a
+  terminal and **fails closed** (exit 1) when there's no terminal.
+
+`shellSetup.sh` runs the migration runner automatically right after it syncs
+with upstream. Set `LPX_NO_MIGRATE=1` to skip that pass. Note this includes a
+first-ever provision: pending migrations apply before any menu selection, so a
+migration like the CLI-toolset one effectively makes its payload non-optional
+on new boxes (each installer still guards per-tool, so this is safe).
+
+### The `--run` flag
+
+`./shellSetup.sh --run ITEM1,ITEM2` runs those menu items' functions directly
+and skips the whiptail menu — the non-interactive path migrations use (e.g. a
+migration runs `--run CLITOOLS` to install the modern tools on existing boxes).
+It exits with the aggregate status so a failed install is detectable, and it
+sets `LPX_NO_MIGRATE=1` internally so a migration that calls it can't loop back
+into the migration runner. With no arguments, `shellSetup.sh` behaves exactly
+as before (interactive menu).
+
+## Modern CLI tools (`CLITOOLS`)
+
+The `CLITOOLS` menu item (and `--run CLITOOLS`) installs a set of modern
+command-line tools, each skipped if already present:
+
+- **apt-provided:** `bat` (Debian's `batcat`, symlinked to `bat` in
+  `~/.local/bin`), `fd` (`fd-find`/`fdfind`, symlinked), `ripgrep`, `zoxide`,
+  `tealdeer` (`tldr`), `eza`, `inotify-tools`.
+- **GitHub releases (arch-aware, verified after install):** `git-delta` (apt if
+  available, else the latest `.deb`), `dust` (falls back to apt `ncdu` if the
+  download fails), `lazygit`, `lazydocker` (installed to `/usr/local/bin`).
+
+It also wires git to use delta as its pager/diff-filter and sets
+`merge.conflictStyle=zdiff3`. Theming is static (no theme engine): the `bat/`
+stow package ships a pinned Catppuccin Mocha `.tmTheme`, and `.zshrc` exports
+`BAT_THEME`, a bat-backed `MANPAGER`, Catppuccin `FZF_DEFAULT_OPTS`, `eza`
+`lt`/`lta` tree aliases, and replaces the oh-my-zsh `z` plugin with a guarded
+`zoxide` init (every one degrades silently when the tool is absent).
 
 ---
 
@@ -413,8 +469,23 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── netdot                     #   -> ~/.local/bin/netdot
 │       ├── netstatus                  #   -> ~/.local/bin/netstatus
 │       ├── vpn                        #   -> ~/.local/bin/vpn
-│       └── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
-│                                      #   (legacy OpenVPN fallback)
+│       ├── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
+│       │                              #   (legacy OpenVPN fallback)
+│       ├── lpx                        #   -> ~/.local/bin/lpx (command router)
+│       ├── lpx-migrate                #   run-once migration runner
+│       ├── lpx-add-migration          #   scaffold a migration
+│       ├── lpx-state                  #   flag set/clear/check
+│       ├── lpx-hook                   #   run a hook + its .d drop-ins
+│       ├── lpx-debug                  #   system diagnostic snapshot
+│       ├── lpx-version                #   checkout version
+│       └── lpx-sudo-window            #   time-boxed passwordless sudo
+├── bat/                               # Package: bat config + pinned theme
+│   └── .config/bat/
+│       ├── config                     #   -> ~/.config/bat/config
+│       └── themes/                    #   Catppuccin Mocha .tmTheme (vendored)
+├── migrations/                        # Run-once migrations (NOT stowed)
+│   ├── README.md                      #   the migration contract
+│   └── <unix-timestamp>.sh            #   applied once per box by lpx-migrate
 ├── powershell/                        # Package: PowerShell profile (Windows)
 │   └── Microsoft.PowerShell_profile.ps1
 ├── wezterm/                           # Package: WezTerm config (cross-platform)
@@ -430,7 +501,7 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 
 ## Alias Quick Reference
 
-These aliases are defined in both `.bashrc` and `.zshrc` and available in either shell.
+These aliases are defined in both `.bashrc` and `.zshrc` and available in either shell, except `lt`/`lta` which are zsh-only (defined alongside the workflow functions).
 
 ### Shell Navigation
 
@@ -453,6 +524,8 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `lsa` | `ls -alFh --color=auto --time-style=long-iso` | Detailed listing **including dotfiles** |
 | `la` | (same as `lsa`) | Alias for `lsa` |
 | `ll` | (same as `lsa`) | Alias for `lsa` (muscle-memory shortcut) |
+| `lt` | `eza --tree --level=2 ...` | Tree view (2 levels). Requires `eza` (CLITOOLS); `ls`/`ll`/`la` stay coreutils by design |
+| `lta` | `eza --tree --level=2 --all` | Tree view including dotfiles. Requires `eza` |
 | `cd..` | `cd ..` | Go up one directory (typo-friendly) |
 | `cd...` | `cd .. && cd ..` | Go up two directories |
 
@@ -500,6 +573,42 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
 | `vpn` | Wrapper around the official NordVPN CLI — connect / random / off / status / kill switch. See [VPN](#vpn-nordvpn) |
 | `launch_nordvpn` | **Legacy.** Self-provisioning raw-`.ovpn` OpenVPN wrapper with random server selection. Superseded by `vpn`; kept for the service-credential path |
+
+The `lpx-*` helpers are documented under [The `lpx` command suite](#the-lpx-command-suite).
+
+---
+
+## The `lpx` command suite
+
+`lpx` is a small router over the `lpx-*` scripts in `~/.local/bin`. Run `lpx`
+or `lpx help` for a table generated from each command's metadata; run
+`lpx <command> [args]` to dispatch to `lpx-<command>`. No dependencies beyond
+coreutils/grep/awk.
+
+| Command | Description |
+|---------|-------------|
+| `lpx migrate` | Apply pending run-once migrations (see [Run-once migrations](#run-once-migrations)) |
+| `lpx add-migration` | Scaffold a new timestamped migration and print its path |
+| `lpx state set\|clear\|check <name>` | Persistent boolean flags under `~/.local/state/lpx/flags/`; `check` exits 0/1 for scripting |
+| `lpx hook <name> [args]` | Run `~/.config/lpx/hooks/<name>` then every executable in `<name>.d/` (sorted, skips `*.sample`), continuing past failures |
+| `lpx debug` | Write a system diagnostic snapshot to `/tmp/lpx-debug-<ts>.log` (kernel, disk, memory, failed units, dmesg, docker ps, top processes). Captures **no** environment, home contents, or secrets |
+| `lpx version` | Print the repo checkout version (`git describe` / short SHA) |
+| `lpx sudo-window <minutes>` | Grant the current user a time-boxed `NOPASSWD:ALL` window, validated with `visudo -cf` before install and auto-revoked by a `systemd-run` timer; a boot-time cleanup unit ensures a reboot can't leave a stale grant. `lpx sudo-window reset` revokes immediately. Requires sudo |
+
+## Shell workflow functions
+
+Defined in `zsh/.zsh_functions` (sourced from `.zshrc`), available in
+interactive zsh shells only:
+
+| Function | Description |
+|----------|-------------|
+| `ga <branch>` | Add a git worktree beside the repo (`../<repo>-<branch>`), creating the branch if needed, and `cd` into it |
+| `gd` | From inside a worktree, confirm then remove it and delete its branch, `cd` back to the main checkout (refuses in the main checkout) |
+| `try <name>` | `cd` into a dated scratch dir `~/tries/<date>-<name>` |
+| `tdl [agent-cmd]` | 3-pane tmux dev layout: editor left (55%), agent top-right (default `claude`), shell bottom-right. Works inside or outside tmux |
+| `tsl <count> [cmd]` | Tiled grid of `<count>` panes, each running `[cmd]` (default: a shell) |
+| `rsw [-D] <src> <dst>` / `lsw` / `dsw <index\|all>` | Background `inotifywait`+`rsync` mirror watchers. `rsw` starts one (`-a`, no `--delete` unless `-D`), `lsw` lists them, `dsw` stops one or all. Needs `inotify-tools` |
+| `ssh` | Reconnects an interactive session that drops (exit 255); scripted, piped, and command/forward-only invocations pass straight through |
 
 ---
 
@@ -983,7 +1092,7 @@ stow -D -t ~ zsh
 # absolute symlinks in deploy_claude_config(), not stow. See "Claude
 # Code Setup" section above.)
 # NOTE: this list must match STOW_PACKAGES in shellSetup.sh
-for pkg in bash zsh tmux btop fastfetch omp rustscan scripts; do
+for pkg in bash zsh tmux btop fastfetch omp rustscan scripts superfile bat; do
   stow -R -t ~ "$pkg"
 done
 ```

@@ -1,0 +1,242 @@
+# ~/.zsh_functions — interactive workflow helpers, sourced from ~/.zshrc.
+# Deployed by the zsh stow package. Everything here is zsh-only and lives in
+# interactive shells; scripts (which don't source .zshrc) never see these, so
+# they can't change scripted behavior.
+
+# --- git worktree flow -------------------------------------------------------
+
+# ga <branch> — add a worktree beside the repo (../<repo>-<branch>) and cd in.
+# Creates the branch if it doesn't exist. Refuses outside a git repo.
+ga() {
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    print -u2 "ga: not inside a git repository"; return 1
+  fi
+  if [ -z "$1" ]; then print -u2 "usage: ga <branch>"; return 2; fi
+  local branch="$1" root reponame wt
+  root="$(git rev-parse --show-toplevel)" || return 1
+  reponame="${root:t}"                       # zsh :t = basename
+  wt="${root:h}/${reponame}-${branch//\//-}" # :h = dirname; flatten any slashes
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$wt" "$branch" || return 1
+  else
+    git worktree add -b "$branch" "$wt" || return 1
+  fi
+  cd "$wt"
+}
+
+# gd — remove the CURRENT worktree and its branch, cd back to the main checkout.
+# Confirms first. Refuses outside a repo, and refuses to run from the main
+# checkout (that's not a throwaway worktree).
+gd() {
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    print -u2 "gd: not inside a git repository"; return 1
+  fi
+  local gitdir commondir toplevel branch main_root reply
+  gitdir="$(git rev-parse --absolute-git-dir)"
+  commondir="$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd)"
+  if [ "$gitdir" = "$commondir" ]; then
+    print -u2 "gd: this is the main checkout, not a worktree — refusing"; return 1
+  fi
+  toplevel="$(git rev-parse --show-toplevel)"
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  main_root="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
+  printf 'gd: remove worktree %s and delete branch %s? [y/N] ' "$toplevel" "$branch"
+  read -r reply
+  case "$reply" in
+    y|Y) ;;
+    *) print "gd: aborted"; return 0 ;;
+  esac
+  cd "$main_root" || return 1
+  if ! git worktree remove "$toplevel"; then
+    print -u2 "gd: worktree has changes or is locked — remove by hand with: git worktree remove --force '$toplevel'"
+    return 1
+  fi
+  if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
+    git branch -D "$branch" 2>/dev/null || print -u2 "gd: worktree removed; branch $branch left in place (unmerged?)"
+  fi
+}
+
+# --- scratch dirs ------------------------------------------------------------
+
+# try <name> — jump into a dated scratch dir under ~/tries.
+try() {
+  if [ -z "$1" ]; then print -u2 "usage: try <name>"; return 2; fi
+  local d="$HOME/tries/$(date +%F)-$1"
+  mkdir -p "$d" && cd "$d"
+}
+
+# --- tmux layouts ------------------------------------------------------------
+
+# tdl [agent-cmd] — 3-pane dev layout: editor left (55%), agent top-right,
+# plain shell bottom-right. Works inside a tmux session (lays out the current
+# window) and from outside (creates + attaches a 'dev' session). Uses raw
+# split-window/send-keys so it doesn't depend on any prefix binding.
+tdl() {
+  command -v tmux >/dev/null 2>&1 || { print -u2 "tdl: tmux not installed"; return 1; }
+  local agent="${1:-claude}" editor="${EDITOR:-vim}" created=0 target p_edit p_agent
+  if [ -z "$TMUX" ]; then
+    tmux new-session -d -s dev || return 1
+    target="dev"; created=1
+  else
+    target="$(tmux display-message -p '#{session_name}:#{window_index}')"
+  fi
+  p_edit="$(tmux display-message -p -t "$target" '#{pane_id}')"
+  tmux send-keys -t "$p_edit" "$editor" C-m
+  p_agent="$(tmux split-window -h -l 45% -t "$p_edit" -P -F '#{pane_id}')"
+  tmux send-keys -t "$p_agent" "$agent" C-m
+  tmux split-window -v -t "$p_agent"          # plain shell bottom-right
+  tmux select-pane -t "$p_edit"
+  [ "$created" = 1 ] && tmux attach -t dev
+}
+
+# tsl <count> [cmd] — tiled grid of <count> panes, each running [cmd]
+# (default: a plain shell). Inside tmux it tiles the current window; outside it
+# creates + attaches a 'grid' session.
+tsl() {
+  command -v tmux >/dev/null 2>&1 || { print -u2 "tsl: tmux not installed"; return 1; }
+  local count="${1:-4}" cmd="${2:-}" created=0 target first p i
+  case "$count" in ''|*[!0-9]*) print -u2 "usage: tsl <count> [cmd]"; return 2 ;; esac
+  [ "$count" -lt 1 ] && { print -u2 "tsl: count must be >= 1"; return 2; }
+  if [ -z "$TMUX" ]; then
+    tmux new-session -d -s grid || return 1
+    target="grid"; created=1
+  else
+    target="$(tmux display-message -p '#{session_name}:#{window_index}')"
+  fi
+  first="$(tmux display-message -p -t "$target" '#{pane_id}')"
+  [ -n "$cmd" ] && tmux send-keys -t "$first" "$cmd" C-m
+  for (( i = 2; i <= count; i++ )); do
+    p="$(tmux split-window -t "$target" -P -F '#{pane_id}')"
+    tmux select-layout -t "$target" tiled >/dev/null
+    [ -n "$cmd" ] && tmux send-keys -t "$p" "$cmd" C-m
+  done
+  tmux select-layout -t "$target" tiled >/dev/null
+  [ "$created" = 1 ] && tmux attach -t grid
+}
+
+# --- rsync mirror watchers ---------------------------------------------------
+# rsw starts a background inotifywait+rsync mirror; lsw lists watchers; dsw
+# kills them. State (pid + args) lives under ~/.local/state/lpx/rsw so lsw/dsw
+# survive across shells. rsync runs -a WITHOUT --delete by default — --delete
+# removes files in <dst> that aren't in <src>, so it's opt-in behind -D only.
+
+_rsw_state() { printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/lpx/rsw"; }
+
+rsw() {
+  command -v inotifywait >/dev/null 2>&1 || {
+    print -u2 "rsw: inotifywait not found — install inotify-tools (shellSetup CLITOOLS)"; return 1; }
+  local del=0
+  if [ "$1" = "-D" ]; then del=1; shift; fi
+  local src="$1" dst="$2"
+  if [ -z "$src" ] || [ -z "$dst" ]; then
+    print -u2 "usage: rsw [-D] <src> <dst>    (-D adds rsync --delete — destructive)"; return 2
+  fi
+  [ -d "$src" ] || { print -u2 "rsw: source '$src' is not a directory"; return 1; }
+  mkdir -p "$dst" || return 1
+  local state; state="$(_rsw_state)"; mkdir -p "$state"
+  local -a flags=(-a)
+  [ "$del" = 1 ] && flags+=(--delete)
+  rsync "${flags[@]}" "$src"/ "$dst"/ 2>/dev/null   # initial sync before watching
+  # ponytail: one event at a time (no -m); events during a sync coalesce into
+  # the next pass — fine for a mirror. Use -m + debounce if you need every event.
+  (
+    while inotifywait -r -q -e modify,create,delete,move "$src" >/dev/null 2>&1; do
+      rsync "${flags[@]}" "$src"/ "$dst"/ 2>/dev/null
+    done
+  ) &
+  local pid=$!
+  printf '%s\t%s\t%s\t%s\n' "$pid" "$del" "$src" "$dst" > "$state/$pid"
+  print "rsw: watching $src -> $dst (delete=$del) as pid $pid"
+}
+
+lsw() {
+  local state; state="$(_rsw_state)"
+  [ -d "$state" ] || { print "no watchers"; return 0; }
+  local i=0 f pid del src dst
+  for f in "$state"/*(N); do
+    IFS=$'\t' read -r pid del src dst < "$f"
+    if ! kill -0 "$pid" 2>/dev/null; then rm -f "$f"; continue; fi   # prune dead
+    i=$((i + 1))
+    printf '%2d) pid %-7s delete=%s  %s -> %s\n' "$i" "$pid" "$del" "$src" "$dst"
+  done
+  [ "$i" = 0 ] && print "no watchers"
+}
+
+dsw() {
+  local state; state="$(_rsw_state)"
+  [ -d "$state" ] || { print "no watchers"; return 0; }
+  local f pid
+  local -a live=()
+  for f in "$state"/*(N); do
+    IFS=$'\t' read -r pid _ < "$f"
+    if kill -0 "$pid" 2>/dev/null; then live+=("$f"); else rm -f "$f"; fi
+  done
+  [ "${#live[@]}" -eq 0 ] && { print "no watchers"; return 0; }
+  # killing the tracked pid can orphan its inotifywait child (it reparents), so
+  # take out the children first, then the loop subshell, then drop the record.
+  _dsw_kill() {
+    local p="$1" file="$2"
+    pkill -P "$p" 2>/dev/null
+    kill "$p" 2>/dev/null
+    rm -f "$file"
+  }
+  if [ "${1:-}" = all ] || [ "${1:-}" = -a ]; then
+    for f in "${live[@]}"; do IFS=$'\t' read -r pid _ < "$f"; _dsw_kill "$pid" "$f"; done
+    print "dsw: stopped all"; return 0
+  fi
+  case "${1:-}" in ''|*[!0-9]*) print -u2 "usage: dsw <index|all>  (index from lsw)"; lsw; return 2 ;; esac
+  local idx="$1" target="${live[$idx]}"     # zsh arrays are 1-based, matching lsw
+  if [ -z "$target" ]; then print -u2 "dsw: no watcher at index $idx"; lsw; return 1; fi
+  IFS=$'\t' read -r pid _ < "$target"
+  _dsw_kill "$pid" "$target"
+  print "dsw: stopped watcher $idx (pid $pid)"
+}
+
+# --- resilient interactive ssh ----------------------------------------------
+# Auto-reconnect an INTERACTIVE ssh that drops (network blip -> exit 255)
+# instead of dumping you back at the local prompt. Ctrl-C breaks the loop.
+# Anything scripted passes straight through: no tty, a remote command, or a
+# forward/control-only invocation all bypass the loop. TERM is pinned (this
+# supersedes the old `ssh` alias) so remote tmux / 256-colour apps render.
+# `function` keyword avoids the pre-existing `ssh` alias expanding at define time.
+function ssh {
+  # Not attached to a terminal (pipe/redirect/script) -> passthrough.
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    TERM=xterm-256color command ssh "$@"; return
+  fi
+  # Detect a remote command or a no-shell/forward-only invocation; if present,
+  # don't loop (retrying a one-shot command would re-run it). Errs toward
+  # passthrough when unsure — worst case is the plain, original behavior.
+  local a skip_next=0 positional=0 noshell=0
+  for a in "$@"; do
+    if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+    case "$a" in
+      -N|-f|-O|-O*|-W|-W*) noshell=1 ;;                        # forward/control only
+      -o|-p|-i|-l|-L|-R|-D|-b|-c|-e|-F|-I|-J|-m|-Q|-S|-w) skip_next=1 ;;  # flags that eat the next arg
+      -*) ;;                                                    # other option, no arg
+      *) positional=$((positional + 1)) ;;                     # host, then command
+    esac
+  done
+  if [ "$noshell" = 1 ] || [ "$positional" -gt 1 ]; then
+    TERM=xterm-256color command ssh "$@"; return
+  fi
+  # Interactive login shell: retry on abnormal (255) exit only. A session that
+  # held >30s resets the budget, so a typo'd/unreachable host fails after 5
+  # quick 255s instead of looping forever.
+  local rc tries=0 started
+  while true; do
+    started=$SECONDS
+    TERM=xterm-256color command ssh "$@"
+    rc=$?
+    [ "$rc" != 255 ] && return $rc
+    (( SECONDS - started > 30 )) && tries=0
+    tries=$((tries + 1))
+    if (( tries >= 5 )); then
+      print -P "%F{red}ssh: 5 consecutive 255 exits — giving up (unreachable host or auth failure?)%f"
+      return $rc
+    fi
+    stty sane 2>/dev/null; printf '\033[0m'          # clear stale terminal state
+    print -P "%F{yellow}ssh: dropped (255) — reconnecting in 2s (Ctrl-C to stop)%f"
+    sleep 2 || return 130
+  done
+}

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# lpx-add-migration — scaffold a new timestamped migration.
+# lpx:summary=Scaffold a new timestamped migration
+# lpx:group=fleet
+#
+# Writes migrations/<unix-timestamp>.sh from a commented template and prints
+# the path. See migrations/README.md for the contract each migration follows.
+set -u
+
+SELF="$(readlink -f "$0")"
+REPO_DIR="$(cd "$(dirname "$SELF")/../../.." && pwd)"
+MIGRATIONS_DIR="${LPX_MIGRATIONS_DIR:-$REPO_DIR/migrations}"
+mkdir -p "$MIGRATIONS_DIR"
+
+ts="$(date +%s)"
+target="$MIGRATIONS_DIR/$ts.sh"
+# Two migrations scaffolded in the same second would collide; bump past it.
+while [ -e "$target" ]; do
+  ts=$((ts + 1))
+  target="$MIGRATIONS_DIR/$ts.sh"
+done
+
+cat > "$target" <<'TEMPLATE'
+#!/usr/bin/env bash
+# Migration: <describe what this changes and why>
+#
+# Runs once per box via lpx-migrate. Must be idempotent-safe (harmless to
+# re-run) and non-interactive (it may run unattended). Exit non-zero if it did
+# not finish — the runner treats a non-zero exit as a failure.
+set -euo pipefail
+
+# Resolve the repo checkout relative to this file if you need it:
+#   REPO="$(cd "$(dirname "$0")/.." && pwd)"
+
+# --- your changes below ---
+TEMPLATE
+
+chmod +x "$target"
+printf '%s\n' "$target"

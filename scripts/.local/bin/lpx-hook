@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# lpx-hook — run a named hook plus its .d drop-ins.
+# lpx:summary=Run a hook and its .d drop-in scripts
+# lpx:group=hooks
+#
+# usage: lpx hook <name> [args]
+# Runs ~/.config/lpx/hooks/<name> (if executable), then every executable in
+# ~/.config/lpx/hooks/<name>.d/ in sorted order, skipping *.sample. Failures
+# are warned about and do NOT stop the run. Exit 0 unless the request itself is
+# unusable (bad name / unreadable hooks root).
+set -u
+
+HOOK_DIR="${LPX_HOOK_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/lpx/hooks}"
+
+name="${1:-}"
+if [ -z "$name" ]; then echo "usage: lpx hook <name> [args]" >&2; exit 2; fi
+case "$name" in
+  */*|.|..) echo "lpx-hook: invalid hook name '$name'" >&2; exit 2 ;;
+esac
+shift
+
+# A hooks root that exists but isn't a readable directory is a broken setup.
+if [ -e "$HOOK_DIR" ] && [ ! -d "$HOOK_DIR" ]; then
+  echo "lpx-hook: $HOOK_DIR exists but is not a directory" >&2
+  exit 1
+fi
+
+ran=0
+
+main_hook="$HOOK_DIR/$name"
+if [ -x "$main_hook" ] && [ ! -d "$main_hook" ]; then
+  "$main_hook" "$@" || echo "lpx-hook: $name exited $? (continuing)" >&2
+  ran=1
+fi
+
+dropin_dir="$HOOK_DIR/$name.d"
+if [ -d "$dropin_dir" ]; then
+  for h in "$dropin_dir"/*; do          # glob expands in sorted order
+    [ -f "$h" ] && [ -x "$h" ] || continue
+    case "$h" in *.sample) continue ;; esac
+    "$h" "$@" || echo "lpx-hook: ${h##*/} exited $? (continuing)" >&2
+    ran=1
+  done
+fi
+
+[ "$ran" -eq 0 ] && echo "lpx-hook: nothing to run for '$name' (no $main_hook or $dropin_dir/*)" >&2
+exit 0

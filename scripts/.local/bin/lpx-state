@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# lpx-state — persistent boolean flags under the lpx state dir.
+# lpx:summary=Set/clear/check a named state flag
+# lpx:group=state
+#
+# usage: lpx state set|clear|check <name>
+#   set    create the flag
+#   clear  remove the flag
+#   check  exit 0 if the flag exists, 1 if not (for scripting)
+set -u
+
+FLAG_DIR="${LPX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/lpx}/flags"
+
+usage() { echo "usage: lpx state set|clear|check <name>" >&2; }
+
+action="${1:-}"
+name="${2:-}"
+if [ -z "$action" ] || [ -z "$name" ]; then usage; exit 2; fi
+
+# Names are single path segments — no traversal into other dirs.
+case "$name" in
+  */*|.|..) echo "lpx-state: invalid flag name '$name'" >&2; exit 2 ;;
+esac
+
+mkdir -p "$FLAG_DIR"
+
+case "$action" in
+  set)   touch "$FLAG_DIR/$name" ;;
+  clear) rm -f "$FLAG_DIR/$name" ;;
+  check) [ -e "$FLAG_DIR/$name" ]; exit $? ;;
+  *)     usage; exit 2 ;;
+esac
