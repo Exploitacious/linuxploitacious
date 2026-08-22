@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# lpx — command router for the lpx-* helpers in this directory.
+# lpx:summary=Show this command table
+# lpx:hidden=true
+#
+# `lpx <cmd> [args]` runs lpx-<cmd>; bare `lpx` or `lpx help` prints a table
+# generated from each command's `# lpx:summary=` metadata (first 40 lines).
+# Optional metadata: `# lpx:group=<name>` and `# lpx:hidden=true`.
+# No external deps beyond coreutils/grep/awk/sed.
+set -u
+
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+usage() {
+  echo "lpx — linuxploitacious helper suite"
+  echo
+  echo "usage: lpx <command> [args]"
+  echo
+  # Collect "group<TAB>name<TAB>summary" for every annotated, non-hidden
+  # lpx-* command, then sort and print grouped.
+  {
+    local f meta name summary group
+    for f in "$SELF_DIR"/lpx-*; do
+      [ -f "$f" ] && [ -x "$f" ] || continue
+      meta="$(head -n 40 "$f")"
+      printf '%s\n' "$meta" | grep -q '^# *lpx:hidden=true' && continue
+      summary="$(printf '%s\n' "$meta" | sed -n 's/^# *lpx:summary=//p' | head -n1)"
+      [ -z "$summary" ] && continue
+      group="$(printf '%s\n' "$meta" | sed -n 's/^# *lpx:group=//p' | head -n1)"
+      group="${group:-general}"
+      name="${f##*/lpx-}"
+      printf '%s\t%s\t%s\n' "$group" "$name" "$summary"
+    done
+  } | sort | awk -F'\t' '
+      $1 != g { g = $1; printf "\n%s\n", toupper(g) }
+      { printf "  %-16s %s\n", $2, $3 }'
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  ''|help|-h|--help) usage; exit 0 ;;
+esac
+shift
+
+target="$SELF_DIR/lpx-$cmd"
+if [ -x "$target" ]; then
+  exec "$target" "$@"
+fi
+
+echo "lpx: unknown command '$cmd'" >&2
+echo "run 'lpx help' for the list of commands" >&2
+exit 127

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# lpx-version — report the version of the repo checkout this suite runs from.
+# lpx:summary=Print the repo checkout version (git describe / SHA)
+# lpx:group=diag
+set -u
+
+SELF="$(readlink -f "$0")"
+# scripts/.local/bin/lpx-version -> up three levels to the repo root.
+REPO="$(cd "$(dirname "$SELF")/../../.." 2>/dev/null && pwd)"
+
+if [ -z "$REPO" ] || ! cd "$REPO" 2>/dev/null; then
+  echo "lpx version unknown (cannot locate checkout)"
+  exit 0
+fi
+
+if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
+  desc="$(git -C "$REPO" describe --tags --always --dirty 2>/dev/null)"
+  branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  echo "lpx ${desc:-unknown} (branch ${branch:-?}, $REPO)"
+else
+  echo "lpx (not a git checkout: $REPO)"
+fi

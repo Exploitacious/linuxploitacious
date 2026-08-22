@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# lpx-sudo-window — grant the invoking user a TIME-BOXED passwordless-sudo
+# window that auto-revokes, and can never outlive a reboot.
+# lpx:summary=Open a time-boxed passwordless-sudo window (auto-revoked)
+# lpx:group=security
+#
+# usage:
+#   lpx sudo-window <minutes>   open a NOPASSWD:ALL window for <minutes>
+#   lpx sudo-window reset       revoke the window immediately
+#
+# Security design — WHY each safeguard exists:
+#  * The grant is validated with `visudo -cf` on a TEMP file BEFORE it is ever
+#    placed in /etc/sudoers.d. A syntactically broken sudoers file locks the
+#    whole box out of sudo, so an invalid file must never land there.
+#  * The temp grant is installed 0440 root:root — the mode sudo requires.
+#  * Removal is scheduled with `systemd-run --on-active` (a transient timer).
+#    If systemd-run is missing we REFUSE rather than fall back to nohup/at/&:
+#    an unsupervised background sleep can be killed or lost across a reboot and
+#    leak a permanent NOPASSWD:ALL grant. Refusing is the safe failure.
+#  * A boot-time oneshot (lpx-sudo-cleanup.service) removes the file on every
+#    boot, so a crash or reboot mid-window can never resurrect a stale grant.
+set -u
+
+SUDOERS_FILE="/etc/sudoers.d/lpx-temp-window"
+CLEANUP_UNIT="/etc/systemd/system/lpx-sudo-cleanup.service"
+REVOKE_UNIT="lpx-sudo-window-revoke"
+
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi
+}
+
+require_sudo() {
+  # This tool exists to elevate; needing sudo to run it is expected UX.
+  if [ "$(id -u)" -ne 0 ] && ! sudo -v; then
+    echo "lpx-sudo-window: this command needs sudo." >&2
+    exit 1
+  fi
+}
+
+remove_grant() {
+  as_root rm -f "$SUDOERS_FILE"
+}
+
+install_boot_cleanup() {
+  # Idempotent, first-run only. A tiny oneshot that deletes any leftover temp
+  # grant at boot. ConditionPathExists keeps it a no-op when there's nothing to
+  # clean.
+  [ -f "$CLEANUP_UNIT" ] && return 0
+  local tmp; tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+[Unit]
+Description=Remove any stale lpx temporary sudo grant at boot
+ConditionPathExists=$SUDOERS_FILE
+
+[Service]
+Type=oneshot
+ExecStart=/bin/rm -f $SUDOERS_FILE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  as_root install -m 0644 -o root -g root "$tmp" "$CLEANUP_UNIT"
+  rm -f "$tmp"
+  as_root systemctl daemon-reload
+  as_root systemctl enable lpx-sudo-cleanup.service >/dev/null 2>&1
+}
+
+open_window() {
+  local minutes="$1"
+  case "$minutes" in ''|*[!0-9]*) echo "usage: lpx sudo-window <minutes>|reset" >&2; exit 2 ;; esac
+  [ "$minutes" -lt 1 ] && { echo "lpx-sudo-window: minutes must be >= 1" >&2; exit 2; }
+
+  # No systemd-run => no reliable auto-revoke => refuse (fail safe).
+  if ! command -v systemd-run >/dev/null 2>&1; then
+    echo "lpx-sudo-window: systemd-run not available — refusing (cannot guarantee auto-revoke)." >&2
+    exit 1
+  fi
+
+  local user; user="${SUDO_USER:-$(id -un)}"
+  local line="$user ALL=(ALL:ALL) NOPASSWD:ALL"
+
+  # Validate on a temp file BEFORE install — a broken sudoers file locks sudo.
+  local tmp; tmp="$(mktemp)"
+  printf '# lpx-sudo-window: temporary grant for %s — auto-revoked, do not edit\n%s\n' "$user" "$line" > "$tmp"
+  if ! as_root visudo -cf "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp"
+    echo "lpx-sudo-window: visudo validation failed — nothing installed." >&2
+    exit 1
+  fi
+  as_root install -m 0440 -o root -g root "$tmp" "$SUDOERS_FILE"
+  rm -f "$tmp"
+
+  # Reboot safety net first, so the grant is never unprotected.
+  install_boot_cleanup
+
+  # Replace any prior revoke timer so re-opening doesn't fire an old one early.
+  as_root systemctl stop "${REVOKE_UNIT}.timer" >/dev/null 2>&1 || true
+  as_root systemctl reset-failed "${REVOKE_UNIT}.service" >/dev/null 2>&1 || true
+
+  if ! as_root systemd-run --on-active="${minutes}m" --unit="$REVOKE_UNIT" \
+        /bin/rm -f "$SUDOERS_FILE" >/dev/null 2>&1; then
+    # Could not schedule the revoke — do NOT leave an unbounded grant behind.
+    remove_grant
+    echo "lpx-sudo-window: failed to schedule auto-revoke — grant removed, aborting." >&2
+    exit 1
+  fi
+
+  local when
+  when="$(date -d "+${minutes} minutes" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "in ${minutes}m")"
+  echo "lpx-sudo-window: passwordless sudo granted to '$user' for ${minutes} minute(s)."
+  echo "lpx-sudo-window: auto-revokes at ${when}."
+  echo "lpx-sudo-window: revoke now with 'lpx sudo-window reset'."
+}
+
+reset_window() {
+  remove_grant
+  as_root systemctl stop "${REVOKE_UNIT}.timer" >/dev/null 2>&1 || true
+  as_root systemctl reset-failed "${REVOKE_UNIT}.service" >/dev/null 2>&1 || true
+  echo "lpx-sudo-window: temporary grant removed."
+}
+
+arg="${1:-}"
+case "$arg" in
+  ''|-h|--help) echo "usage: lpx sudo-window <minutes>|reset" >&2; exit 2 ;;
+  reset)        require_sudo; reset_window ;;
+  *)            require_sudo; open_window "$arg" ;;
+esac

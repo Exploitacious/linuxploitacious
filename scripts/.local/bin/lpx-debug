@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# lpx-debug — capture a system diagnostic snapshot to /tmp.
+# lpx:summary=Write a system diagnostic snapshot to /tmp
+# lpx:group=diag
+#
+# SECURITY: this deliberately captures NO environment (no env/printenv/set),
+# NO home-directory file contents, and NO secrets — only system-level health
+# facts safe to hand to someone helping debug the box. Keep it that way.
+set -u
+
+ts="$(date +%Y%m%d_%H%M%S)"
+out="/tmp/lpx-debug-$ts.log"
+
+{
+  echo "=== lpx-debug $ts ==="
+  echo "date:     $(date)"
+  echo "hostname: $(hostname 2>/dev/null)"
+  echo "kernel:   $(uname -a)"
+  echo
+
+  echo "=== os-release ==="
+  cat /etc/os-release 2>/dev/null || echo "(no /etc/os-release)"
+  echo
+
+  echo "=== uptime / load ==="
+  uptime
+  echo
+
+  echo "=== disk (df -h) ==="
+  df -h
+  echo
+
+  echo "=== memory (free -h) ==="
+  free -h
+  echo
+
+  echo "=== failed systemd units ==="
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --failed --no-pager 2>/dev/null || echo "(systemctl query failed)"
+  else
+    echo "(systemctl not present)"
+  fi
+  echo
+
+  echo "=== dmesg (last 50) ==="
+  dm="$(dmesg 2>/dev/null | tail -n 50)"
+  if [ -n "$dm" ]; then
+    printf '%s\n' "$dm"
+  else
+    echo "(dmesg unavailable without privileges — rerun with: sudo lpx debug)"
+  fi
+  echo
+
+  if command -v docker >/dev/null 2>&1; then
+    echo "=== docker ps ==="
+    docker ps 2>/dev/null || echo "(docker present but not accessible to this user)"
+    echo
+  fi
+
+  echo "=== top 15 processes by memory ==="
+  ps -eo pid,ppid,user,%mem,%cpu,comm --sort=-%mem 2>/dev/null | head -n 16
+} > "$out" 2>&1
+
+echo "$out"
