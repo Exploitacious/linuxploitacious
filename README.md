@@ -94,6 +94,7 @@ The script uses a two-stage architecture:
 | TMUX | Tmux persistence: SSH auto-attach + `tmux-main.service` systemd unit + linger | ON |
 | DOCKER | Docker Engine (docker-ce + buildx + compose plugin), adds user to `docker` group | OFF |
 | BRAVE | Brave Browser | OFF |
+| HERDR | Herdr multiplexer, version-pinned (see [Herdr multiplexer](#herdr-multiplexer-herdr)) | OFF |
 | ROOT | Replicate user profile to root (configs, NVM, OMZ, OMP, TPM) | OFF (hidden when running as root) |
 | NOPASS | Enable passwordless sudo for current user (drops `/etc/sudoers.d/90-<user>-nopasswd`, visudo-validated) | OFF (hidden when running as root) |
 | SWAP | Create swapfile sized to match RAM (`/swapfile`, `vm.swappiness=10`) | ON (hidden when swap already exists) |
@@ -158,6 +159,70 @@ stow package ships a pinned Catppuccin Mocha `.tmTheme`, and `.zshrc` exports
 `BAT_THEME`, a bat-backed `MANPAGER`, Catppuccin `FZF_DEFAULT_OPTS`, `eza`
 `lt`/`lta` tree aliases, and replaces the oh-my-zsh `z` plugin with a guarded
 `zoxide` init (every one degrades silently when the tool is absent).
+
+---
+
+## Herdr multiplexer (`HERDR`)
+
+[Herdr](https://github.com/herdrdev/herdr) is a tmux-like terminal
+multiplexer built for AI coding agents. The `HERDR` menu item (and `--run
+HERDR`) installs it, arch-aware, from GitHub releases into
+`~/.local/bin/herdr` (user-level, no sudo), skipping the download when the
+pinned version is already present and upgrading (old -> new) otherwise. It
+also generates zsh completion to `~/.local/share/zsh/completions/_herdr`;
+`.zshrc` adds that directory to `fpath` before `compinit`, guarded.
+
+**Version is pinned, deliberately.** `install_herdr` hardcodes
+`HERDR_VERSION`; herdr ships breaking changes roughly weekly, so tracking
+"latest" would drift the fleet unpredictably. Bump it as a considered step:
+edit the pin, then add a `migrations/*.sh` that re-runs the installer so
+existing boxes pick up the new version. Until that decision is made, `HERDR`
+stays out of the default menu set and carries no migration.
+
+### Headless server boot
+
+Herdr's per-session server normally boots only when a TUI client attaches,
+and there is no `server start` subcommand. Bare `herdr server` runs that
+server as a blocking foreground process, which is the headless entry point.
+Two wrappers package it:
+
+- **`herdr-boot <session>`** (stowed to `~/.local/bin`) backgrounds `herdr
+  server` under `setsid` (detached, survives the caller), waits for the API
+  socket to answer, and no-ops when the session's server is already running.
+  Use it for an ad-hoc headless boot with no attached client:
+
+  ```bash
+  herdr-boot main
+  HERDR_SESSION=main herdr workspace list   # socket answers, no client needed
+  ```
+
+- **`herdr@.service`** (a systemd *user* unit, stowed to
+  `~/.config/systemd/user/`) is the supervised, start-at-boot path. The
+  instance name is the session:
+
+  ```bash
+  systemctl --user enable --now herdr@main   # start now + at boot
+  systemctl --user status herdr@main
+  systemctl --user stop herdr@main
+  ```
+
+  It is `Type=simple` (systemd owns the `herdr server` process) with
+  `Restart=on-failure`, so a crash respawns but a clean stop does not.
+  Start-at-boot needs user lingering (`loginctl enable-linger <user>`, which
+  the `TMUX` option already sets); with linger off, user units stop at
+  logout. No instance is enabled by the installer: activation is a pending
+  decision.
+
+### herdr vs tmux status
+
+tmux is not going anywhere. It remains installed and is still the bootloader
+and fallback for session persistence: the SSH auto-attach snippet,
+`tmux-main.service`, and the whole [Persistence](#persistence-headless-vms)
+story run on tmux. Herdr is being introduced alongside it as the
+agent-oriented session layer, and the session-management layer is migrating
+toward it incrementally. Treat the two as coexisting for now, tmux as the
+dependable default and herdr as the newer agent-focused surface, rather than
+one having replaced the other.
 
 ---
 
@@ -478,11 +543,15 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── lpx-hook                   #   run a hook + its .d drop-ins
 │       ├── lpx-debug                  #   system diagnostic snapshot
 │       ├── lpx-version                #   checkout version
-│       └── lpx-sudo-window            #   time-boxed passwordless sudo
+│       ├── lpx-sudo-window            #   time-boxed passwordless sudo
+│       └── herdr-boot                 #   headless herdr session-server boot
 ├── bat/                               # Package: bat config + pinned theme
 │   └── .config/bat/
 │       ├── config                     #   -> ~/.config/bat/config
 │       └── themes/                    #   Catppuccin Mocha .tmTheme (vendored)
+├── systemd/                           # Package: systemd user unit templates
+│   └── .config/systemd/user/
+│       └── herdr@.service             #   -> ~/.config/systemd/user/ (fold)
 ├── migrations/                        # Run-once migrations (NOT stowed)
 │   ├── README.md                      #   the migration contract
 │   └── <unix-timestamp>.sh            #   applied once per box by lpx-migrate
@@ -573,6 +642,7 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
 | `vpn` | Wrapper around the official NordVPN CLI — connect / random / off / status / kill switch. See [VPN](#vpn-nordvpn) |
 | `launch_nordvpn` | **Legacy.** Self-provisioning raw-`.ovpn` OpenVPN wrapper with random server selection. Superseded by `vpn`; kept for the service-credential path |
+| `herdr-boot` | Boot a [herdr](#herdr-multiplexer-herdr) session's headless server (`herdr-boot <session>`) with no attached TUI client; idempotent. The ad-hoc counterpart to the `herdr@.service` user unit |
 
 The `lpx-*` helpers are documented under [The `lpx` command suite](#the-lpx-command-suite).
 
@@ -607,6 +677,8 @@ interactive zsh shells only:
 | `try <name>` | `cd` into a dated scratch dir `~/tries/<date>-<name>` |
 | `tdl [agent-cmd]` | 3-pane tmux dev layout: editor left (55%), agent top-right (default `claude`), shell bottom-right. Works inside or outside tmux |
 | `tsl <count> [cmd]` | Tiled grid of `<count>` panes, each running `[cmd]` (default: a shell) |
+| `hdl [agent-cmd]` | Herdr equivalent of `tdl`: editor left (55%), agent top-right (default `claude`), shell bottom-right. Runs only from inside a herdr pane (errors and points at `tdl` otherwise) |
+| `hds [count] [cmd]` | Herdr equivalent of `tsl`: `<count>` panes each running `[cmd]`. herdr has no tiled layout, so it approximates a grid by alternating split direction. Inside-herdr only |
 | `rsw [-D] <src> <dst>` / `lsw` / `dsw <index\|all>` | Background `inotifywait`+`rsync` mirror watchers. `rsw` starts one (`-a`, no `--delete` unless `-D`), `lsw` lists them, `dsw` stops one or all. Needs `inotify-tools` |
 | `ssh` | Reconnects an interactive session that drops (exit 255); scripted, piped, and command/forward-only invocations pass straight through |
 
@@ -1092,7 +1164,7 @@ stow -D -t ~ zsh
 # absolute symlinks in deploy_claude_config(), not stow. See "Claude
 # Code Setup" section above.)
 # NOTE: this list must match STOW_PACKAGES in shellSetup.sh
-for pkg in bash zsh tmux btop fastfetch omp rustscan scripts superfile bat; do
+for pkg in bash zsh tmux btop fastfetch omp rustscan scripts superfile bat systemd; do
   stow -R -t ~ "$pkg"
 done
 ```
