@@ -60,7 +60,7 @@ case "${1:-}" in
         val=$(awk '
             /^MemTotal:/     {t=$2}
             /^MemAvailable:/ {a=$2}
-            END {if (t>0) printf "%.1f/%.1fG", (t-a)/1048576, t/1048576}' /proc/meminfo 2>/dev/null)
+            END {if (t>0 && a>0) printf "%.1f/%.1fG", (t-a)/1048576, t/1048576}' /proc/meminfo 2>/dev/null)
         [ -n "$val" ] && pill "$TEAL" RAM "$val"
         ;;
     blocked)

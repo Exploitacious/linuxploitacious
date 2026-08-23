@@ -30,6 +30,9 @@
 
 [ui]
 tab_bar_right = [
+  # Scale ceiling: the blocked sweep is O(servers x registry rows) per interval with no
+  # cache (~16 socket calls/15s at 4 sessions, 0.7s). Past ~15-20 concurrent servers,
+  # add a short-TTL file cache for the count in hpill.
   { type = "command", command = "~/.local/bin/hpill blocked", interval_seconds = 15, timeout_seconds = 3 },
   { type = "command", command = "~/.local/bin/hpill cpu",     interval_seconds = 8,  timeout_seconds = 3 },
   { type = "command", command = "~/.local/bin/hpill ram",     interval_seconds = 8,  timeout_seconds = 3 },
