@@ -143,7 +143,12 @@ export NVM_DIR="$HOME/.nvm"
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-command -v pyenv >/dev/null 2>&1 && eval "$(pyenv init -)"
+# pyenv init emits a per-login `command pyenv rehash`, which (a) slows every shell and (b) BLOCKS
+# the whole login forever if a previous shell died mid-rehash and left ~/.pyenv/shims/.pyenv-shim
+# behind (live incident 2026-08-23: multiplexer crash tests killed a pane mid-rehash; every SSH
+# login then hung before the prompt). Rehash belongs to install events (pyenv install/uninstall
+# run it themselves) — strip it from login.
+command -v pyenv >/dev/null 2>&1 && eval "$(pyenv init - | grep -v 'command pyenv rehash')"
 
 # pnpm
 export PNPM_HOME="$HOME/.local/share/pnpm"
