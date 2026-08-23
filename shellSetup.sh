@@ -610,6 +610,11 @@ EOF
       is_debian=1
     fi
 
+    local is_arch=0
+    if [[ "$OS_ID" == "arch" || "$OS_LIKE" == *"arch"* ]]; then
+      is_arch=1
+    fi
+
     # Is a package actually installable from the configured apt repos? Lets us
     # queue only what exists here (eza/git-delta are absent on older Debian).
     _apt_has() {
@@ -676,6 +681,32 @@ EOF
       fi
 
       command -v eza >/dev/null 2>&1 || msg_warn "eza unavailable via apt on this release — tree aliases (lt/lta) stay inactive until it is installed."
+
+    # --- pacman-provided tools (Arch family) ---
+    # Arch ships all of these in the official repos, including the lazygit/
+    # git-delta/dust/jq that the Debian path pulls from GitHub releases below.
+    # So pacman is the single install source here; the release-binary sections
+    # downstream find delta/dust/lazygit already present (command -v checks) and
+    # skip. lazydocker is AUR-only, so it goes through yay.
+    elif [ "$is_arch" -eq 1 ]; then
+      msg_info "Installing via pacman: bat eza fd zoxide ripgrep tealdeer inotify-tools lazygit git-delta dust jq"
+      # --needed makes this idempotent (already-present packages are skipped).
+      # Fail loudly, same contract as the apt path: a half-installed set (or no
+      # sudo under --run) must not look like success — the CLITOOLS migration's
+      # fail-closed path depends on a non-zero exit here.
+      if ! sudo pacman -S --noconfirm --needed bat eza fd zoxide ripgrep tealdeer inotify-tools lazygit git-delta dust jq; then
+        msg_error "pacman install failed for the CLI toolset."
+        return 1
+      fi
+      # lazydocker is not in the official repos — build it from the AUR via yay.
+      # yay is optional on a box, so its absence is a skip-with-note, never a
+      # hard fail. yay runs unprivileged (makepkg refuses root) and calls sudo
+      # for the pacman step itself.
+      if command -v yay >/dev/null 2>&1; then
+        yay -S --noconfirm --needed lazydocker || msg_warn "lazydocker (AUR) build failed — skipping."
+      else
+        msg_info "yay not found — skipping lazydocker (AUR). Install yay, then re-run CLITOOLS to add it."
+      fi
     else
       msg_warn "Non-Debian system: skipping apt tools (bat/fd/ripgrep/zoxide/tealdeer/eza/inotify-tools). Install them with your package manager; the release-binary tools below still run."
     fi
