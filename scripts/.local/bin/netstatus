@@ -1,10 +1,30 @@
 #!/bin/sh
-# Render the catppuccin NET pill for tmux status bar.
-# Calls pubip (cached), emits a label pill + IP value pill, color flips for offline.
+# Render the catppuccin NET pill: a green/red "NET" label pill + IP value pill,
+# color flips for offline. Calls pubip (cached).
+#
+# Default output is tmux #[fg=..,bg=..] style codes (tmux.conf status-right).
+# `--ansi` emits the same pill as ANSI truecolor SGR (for a wide herdr terminal;
+# see the width caveat in hpill). `--plain` emits "NET <ip>" with no styling —
+# the default herdr tab_bar_right form, since herdr counts escape bytes toward
+# the row width and drops the whole status row when it overflows.
 
 IP=$("$(dirname "$0")/pubip" 2>/dev/null)
 
-if [ -n "$IP" ] && [ "$IP" != "offline" ]; then
+if [ "${1:-}" = "--plain" ]; then
+    if [ -n "$IP" ] && [ "$IP" != "offline" ]; then
+        printf 'NET %s\n' "$IP"
+    else
+        printf 'NET offline\n'
+    fi
+elif [ "${1:-}" = "--ansi" ]; then
+    # Catppuccin Mocha as truecolor SGR: base fg 30;30;46 on green 166;227;161
+    # (or red 243;139;168), then text 205;214;244 on surface0 49;50;68.
+    if [ -n "$IP" ] && [ "$IP" != "offline" ]; then
+        printf '\033[48;2;166;227;161;38;2;30;30;46m NET \033[48;2;49;50;68;38;2;205;214;244m %s \033[0m\n' "$IP"
+    else
+        printf '\033[48;2;243;139;168;38;2;30;30;46m NET \033[48;2;49;50;68;38;2;205;214;244m offline \033[0m\n'
+    fi
+elif [ -n "$IP" ] && [ "$IP" != "offline" ]; then
     # online — green label pill + IP value pill
     printf '#[fg=#1e1e2e,bg=#a6e3a1] NET #[fg=#cdd6f4,bg=#313244] %s ' "$IP"
 else

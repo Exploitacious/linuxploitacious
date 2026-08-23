@@ -1,0 +1,105 @@
+#!/bin/sh
+# hpill — render one status pill for herdr's tab_bar_right command entries.
+# One script, one pill per call, selected by $1. herdr runs each entry on its
+# own interval and renders the LAST line of stdout.
+#
+#   hpill cpu       1-min load normalized to core count, as a percent
+#   hpill ram       used/total GiB from /proc/meminfo
+#   hpill blocked   count of registry sessions herdr reports blocked, else "ok"
+#   hpill net       delegates to the netstatus helper (cached public IP)
+#   hpill clock     HH:MM + weekday
+#
+# WHY PLAIN BY DEFAULT: herdr 0.8.2 measures a tab_bar_right entry's width by
+# its raw BYTE length (ANSI escape bytes included) and drops the ENTIRE right
+# section when the row overflows the terminal width. Catppuccin ANSI pills add
+# ~70 escape bytes each, so five colored pills need a ~400-column terminal or
+# the whole status row silently vanishes. Plain text carries no escape bytes,
+# so it renders at herdr's default 120-column width and degrades predictably.
+# Set HPILL_COLOR=1 in the herdr server's environment to opt into the
+# Catppuccin Mocha truecolor pills — only worth it on a reliably wide terminal.
+#
+# Absent-safe by contract: any pill whose data source is missing prints NOTHING
+# and exits 0. herdr clears a status entry on empty output, so a fleet box with
+# no /proc field or no harness shows a blank slot, never an error string.
+
+COLOR="${HPILL_COLOR:-0}"
+
+# --- Catppuccin Mocha as truecolor SGR fragments (r;g;b); used only in color mode ---
+DARK='38;2;30;30;46'      # base      — dark text on an accent block
+TXT='38;2;205;214;244'    # text      — light text on a surface block
+DIM='38;2;108;112;134'    # overlay0  — muted text, no background
+SURF='48;2;49;50;68'      # surface0  — value-block background
+BLUE='48;2;137;180;250'   # CPU accent
+TEAL='48;2;148;226;213'   # RAM accent
+RED='48;2;243;139;168'    # blocked accent
+
+# pill ACCENT_BG LABEL VALUE — plain "LABEL VALUE", or the two-block Catppuccin
+# pill (icon block dark-on-accent + value block text-on-surface) in color mode.
+pill() {
+    if [ "$COLOR" = 1 ]; then
+        printf '\033[%s;%sm %s \033[%s;%sm %s \033[0m\n' "$1" "$DARK" "$2" "$SURF" "$TXT" "$3"
+    else
+        printf '%s %s\n' "$2" "$3"
+    fi
+}
+
+case "${1:-}" in
+    cpu)
+        # 1-min load / core count, as a percent. One read, no sampling sleep —
+        # this is a saturation signal, not pure utilization, so it can exceed
+        # 100% when the run queue is longer than the CPU count (honest overload).
+        [ -r /proc/loadavg ] || exit 0
+        ncpu=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
+        val=$(awk -v n="$ncpu" '{printf "%.0f%%", ($1/n)*100}' /proc/loadavg 2>/dev/null)
+        [ -n "$val" ] && pill "$BLUE" CPU "$val"
+        ;;
+    ram)
+        # used = MemTotal - MemAvailable (kernel's real reclaimable estimate, so
+        # cache is counted as available, not used). GiB = kB / 1024 / 1024.
+        [ -r /proc/meminfo ] || exit 0
+        val=$(awk '
+            /^MemTotal:/     {t=$2}
+            /^MemAvailable:/ {a=$2}
+            END {if (t>0) printf "%.1f/%.1fG", (t-a)/1048576, t/1048576}' /proc/meminfo 2>/dev/null)
+        [ -n "$val" ] && pill "$TEAL" RAM "$val"
+        ;;
+    blocked)
+        # Count registry sessions herdr classifies as blocked. Guarded COWORK
+        # reference: on a fleet box without the harness the helper is absent, so
+        # the pill degrades to nothing (cf. the guarded rc-console ref in .zshrc).
+        # rc-agents.sh --blocked prints one stdout line per blocked session and
+        # sends its "none" notice to stderr, so a plain line count is the count.
+        rc="$HOME/COWORK/.claude-config/remote-sessions/rc-agents.sh"
+        [ -x "$rc" ] || exit 0
+        n=$("$rc" --blocked 2>/dev/null | grep -c .)
+        if [ "${n:-0}" -gt 0 ]; then
+            if [ "$COLOR" = 1 ]; then
+                printf '\033[%s;%sm %s blocked \033[0m\n' "$RED" "$DARK" "$n"
+            else
+                printf '%s blocked\n' "$n"
+            fi
+        elif [ "$COLOR" = 1 ]; then
+            printf '\033[%sm ok \033[0m\n' "$DIM"
+        else
+            printf 'ok\n'
+        fi
+        ;;
+    net)
+        # Reuse the existing netstatus renderer (cached pubip): --ansi in color
+        # mode, --plain otherwise. Absent-safe if the sibling helper is missing.
+        ns="$(dirname "$0")/netstatus"
+        [ -x "$ns" ] || exit 0
+        if [ "$COLOR" = 1 ]; then "$ns" --ansi; else "$ns" --plain; fi
+        ;;
+    clock)
+        if [ "$COLOR" = 1 ]; then
+            printf '\033[%s;%sm %s \033[0m\n' "$SURF" "$TXT" "$(date '+%H:%M %a')"
+        else
+            date '+%H:%M %a'
+        fi
+        ;;
+    *)
+        echo "usage: hpill {cpu|ram|blocked|net|clock}" >&2
+        exit 2
+        ;;
+esac

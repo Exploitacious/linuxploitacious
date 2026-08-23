@@ -232,6 +232,48 @@ picker, enable the [`herdr@.service`](#headless-server-boot) user unit
 (`systemctl --user enable --now herdr@<session>`); the installer enables no
 instance, so activation stays a per-box decision.
 
+### herdr status pills
+
+The `herdr` stow package lands `~/.config/herdr/config.toml`, which wires a row
+of status pills into herdr's `tab_bar_right` area — the CPU / RAM / NET / clock
+widgets the old tmux `status-right` carried, plus a `blocked` pill. Each is a
+`command` status entry: herdr runs the command on the server on its own interval
+and renders the last line of stdout.
+
+| pill    | source                                             | interval |
+| ------- | -------------------------------------------------- | -------- |
+| blocked | `hpill blocked` → session-registry sweep           | 15s      |
+| CPU     | `hpill cpu` → `/proc/loadavg` (1-min load ÷ cores) | 8s       |
+| RAM     | `hpill ram` → `/proc/meminfo` (used/total GiB)     | 8s       |
+| NET     | `hpill net` → `netstatus` → cached `pubip`         | 60s      |
+| clock   | `hpill clock` → `date` (HH:MM + weekday)           | 30s      |
+
+`hpill` (stowed to `~/.local/bin`) renders one pill per call and delegates the
+NET pill to `netstatus`, which gained `--ansi` (truecolor) and `--plain` modes
+alongside its tmux default (the tmux `status-right` still calls it bare).
+
+**The pills are plain text by default, deliberately.** herdr 0.8.2 measures a
+`tab_bar_right` entry's width by its raw byte length — ANSI escape bytes
+included — and drops the *entire* right section when the row overflows the
+terminal width. Catppuccin ANSI pills add ~70 escape bytes each, so five colored
+pills need a ~400-column terminal or the whole status row silently disappears;
+plain text renders at herdr's default 120-column width. Set `HPILL_COLOR=1` in
+the herdr server's environment to opt into the Catppuccin Mocha truecolor pills
+— only worth it on a reliably wide terminal.
+
+Every entry is absent-safe: a helper whose data source is missing prints
+nothing, and herdr clears an empty slot — so a box missing a `/proc` field, or
+without the session-registry helper, shows a blank slot rather than an error
+string. The `blocked` pill counts sessions an external session-registry helper
+reports as blocked and degrades to nothing when that helper is absent (the same
+guarded-reference pattern the `.zshrc` login picker uses).
+
+Edit the pills in `herdr/.config/herdr/config.toml` and reload each running
+server (`herdr server reload-config`, or `prefix+shift+r` in an attached
+client). Note `herdr config reset-keys` rewrites `config.toml` in place, which
+would edit the stowed symlink target — run it against a real copy, not the
+symlink.
+
 ---
 
 ## Claude Code Setup
@@ -540,7 +582,8 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── pbhistory                  #   -> ~/.local/bin/pbhistory
 │       ├── pubip                      #   -> ~/.local/bin/pubip
 │       ├── netdot                     #   -> ~/.local/bin/netdot
-│       ├── netstatus                  #   -> ~/.local/bin/netstatus
+│       ├── netstatus                  #   -> ~/.local/bin/netstatus (tmux/--ansi/--plain)
+│       ├── hpill                      #   -> ~/.local/bin/hpill (herdr status pills)
 │       ├── vpn                        #   -> ~/.local/bin/vpn
 │       ├── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
 │       │                              #   (legacy OpenVPN fallback)
@@ -560,6 +603,9 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 ├── systemd/                           # Package: systemd user unit templates
 │   └── .config/systemd/user/
 │       └── herdr@.service             #   -> ~/.config/systemd/user/ (fold)
+├── herdr/                             # Package: herdr config (status pills)
+│   └── .config/herdr/
+│       └── config.toml                #   -> ~/.config/herdr/config.toml
 ├── migrations/                        # Run-once migrations (NOT stowed)
 │   ├── README.md                      #   the migration contract
 │   └── <unix-timestamp>.sh            #   applied once per box by lpx-migrate

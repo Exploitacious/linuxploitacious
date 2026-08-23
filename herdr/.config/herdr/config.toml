@@ -1,0 +1,39 @@
+# herdr configuration — stowed by linuxploitacious (herdr package).
+#
+# Only the right-edge status pills are set here; everything else stays on
+# herdr's built-in defaults. The pills rebuild the old tmux status-right bar
+# (blocked / CPU / RAM / NET / clock) inside herdr's tab_bar_right status area.
+#
+# Each pill is a `command` status entry: herdr runs the command on the server on
+# its own interval and renders the LAST line of stdout. herdr clears a slot on
+# empty or failed output, so every helper is absent-safe — a box missing a
+# /proc field or the session-registry helper shows a blank slot, never an error.
+#
+# PLAIN BY DEFAULT, and here is why: herdr 0.8.2 measures a tab_bar_right entry's
+# width by its raw byte length — ANSI escape bytes included — and drops the
+# ENTIRE right section when the row overflows the terminal width. Catppuccin ANSI
+# pills add ~70 escape bytes each, so five colored pills need a ~400-column
+# terminal or the whole status row silently disappears (verified live on a
+# throwaway session: blank at 220 cols, full at 400). Plain text carries no
+# escape bytes and renders at herdr's default 120-column width. To opt into the
+# Catppuccin Mocha truecolor pills anyway, set HPILL_COLOR=1 in the herdr
+# server's environment (e.g. an override on herdr@.service) — only worth it on a
+# reliably wide terminal.
+#
+# Intervals track each source's cost: blocked sweeps the session registry +
+# herdr sockets (~0.7s) so 15s; cpu/ram read /proc so 8s; net is cached 5 min by
+# pubip so 60s; clock 30s. timeout_seconds caps a wedged command so a stuck
+# socket or hung read can never stall the bar.
+#
+# NOTE: this file is a stow symlink into the repo. `herdr config reset-keys`
+# rewrites config.toml in place — run it against a real copy, not the symlink.
+
+[ui]
+tab_bar_right = [
+  { type = "command", command = "~/.local/bin/hpill blocked", interval_seconds = 15, timeout_seconds = 3 },
+  { type = "command", command = "~/.local/bin/hpill cpu",     interval_seconds = 8,  timeout_seconds = 3 },
+  { type = "command", command = "~/.local/bin/hpill ram",     interval_seconds = 8,  timeout_seconds = 3 },
+  { type = "command", command = "~/.local/bin/hpill net",     interval_seconds = 60, timeout_seconds = 4 },
+  { type = "command", command = "~/.local/bin/hpill clock",   interval_seconds = 30, timeout_seconds = 3 },
+]
+tab_bar_right_separator = " "

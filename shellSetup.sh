@@ -222,7 +222,7 @@ EOF
   # --- STOW PACKAGES (single source of truth; deploy_stow + setup_root_profile both reference this) ---
   # systemd/ lands user unit templates in ~/.config/systemd/user (currently the
   # herdr@.service headless-server template); stow folds into the existing dir.
-  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "superfile" "bat" "systemd")
+  readonly STOW_PACKAGES=("fastfetch" "omp" "rustscan" "scripts" "tmux" "zsh" "bash" "btop" "superfile" "bat" "systemd" "herdr")
 
   # --- PACKAGE MANAGERS ---
 
