@@ -29,10 +29,14 @@
 # rewrites config.toml in place — run it against a real copy, not the symlink.
 
 [ui]
+# Scale ceiling: the blocked sweep is O(servers x registry rows) per interval with no cache
+# (~16 socket calls/15s at 4 sessions, 0.7s). Past ~15-20 concurrent servers, add a short-TTL
+# file cache for the count in hpill.
+# ARMING (verified live 2026-08-23): command entries are read at SERVER START only —
+# `herdr server reload-config` does NOT arm changes to them. Adding/changing entries needs
+# `systemctl --user restart herdr@<name>` per session (which kills the pane's claude; the
+# registry relaunch resumes it — new-remote-claude.sh <name>).
 tab_bar_right = [
-  # Scale ceiling: the blocked sweep is O(servers x registry rows) per interval with no
-  # cache (~16 socket calls/15s at 4 sessions, 0.7s). Past ~15-20 concurrent servers,
-  # add a short-TTL file cache for the count in hpill.
   { type = "command", command = "~/.local/bin/hpill blocked", interval_seconds = 15, timeout_seconds = 3 },
   { type = "command", command = "~/.local/bin/hpill cpu",     interval_seconds = 8,  timeout_seconds = 3 },
   { type = "command", command = "~/.local/bin/hpill ram",     interval_seconds = 8,  timeout_seconds = 3 },
@@ -40,3 +44,5 @@ tab_bar_right = [
   { type = "command", command = "~/.local/bin/hpill clock",   interval_seconds = 30, timeout_seconds = 3 },
 ]
 tab_bar_right_separator = " "
+agent_panel_sort = "priority"
+
