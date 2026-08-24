@@ -46,3 +46,11 @@ tab_bar_right = [
 tab_bar_right_separator = " "
 agent_panel_sort = "priority"
 
+[terminal]
+# Panes spawn $SHELL, else /bin/sh. A systemd-started server (boot linger,
+# cron) can have no SHELL in the user-manager env, so panes fell back to
+# /bin/sh with a minimal PATH — claude unresolvable, ERR_LAUNCH (hit live on
+# t2-arch 2026-08-23; a herdr@.service.d SHELL drop-in was the interim fix).
+# Pin the fleet shell here so every server on every box is immune.
+default_shell = "/usr/bin/zsh"
+
