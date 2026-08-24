@@ -1,3 +1,4 @@
+onboarding = false
 # herdr configuration — stowed by linuxploitacious (herdr package).
 #
 # Only the right-edge status pills are set here; everything else stays on
@@ -46,6 +47,8 @@ tab_bar_right = [
 tab_bar_right_separator = " "
 agent_panel_sort = "priority"
 
+status_indicators = "symbols"
+show_agent_labels_on_pane_borders = false
 [terminal]
 # Panes spawn $SHELL, else /bin/sh. A systemd-started server (boot linger,
 # cron) can have no SHELL in the user-manager env, so panes fell back to
@@ -54,3 +57,14 @@ agent_panel_sort = "priority"
 # Pin the fleet shell here so every server on every box is immune.
 default_shell = "/usr/bin/zsh"
 
+[theme]
+name = "one-dark"
+auto_switch = false
+
+[ui.toast]
+delivery = "herdr"
+
+[keys]
+# Operator choice 2026-08-23: screen-style prefix. Trade-off accepted: ctrl+a
+# no longer reaches the shell as start-of-line; it enters herdr prefix mode.
+prefix = "ctrl+a"
