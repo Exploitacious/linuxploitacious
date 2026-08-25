@@ -387,6 +387,68 @@ sed -i -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$BASHRC"
 msg_success "managed block wired at bottom of ~/.bashrc."
 
 # ---------------------------------------------------------------------------
+# 7b. Stage-1 Claude files + plugins + tailscaled.
+#     The generic shellSetup.sh installs these (deploy_claude_config +
+#     install_claude_plugins); this Omarchy variant originally skipped them,
+#     so `claude`/`clawd` booted on Claude's onboarding stub (model:sonnet, no
+#     hooks/statusline/model-pins) and ponytail never installed. deploy.sh
+#     (Stage-2) MIRRORS these to the personal profile but does NOT lay down the
+#     Level-1 files or the plugins — that is Stage-1's job. Gap found + fixed on
+#     t2omarchy 2026-08-25. Runs before section 8 so deploy.sh has them to mirror.
+# ---------------------------------------------------------------------------
+msg_header "7b. Claude Stage-1 files + plugins + tailscaled"
+
+# Level-1 Claude config: symlink from the repo (Stage-1-owned), back up real files.
+CLAUDE_SRC="$LPX_DIR/claude/.claude"
+CLAUDE_DIR="$HOME/.claude"
+if [ -d "$CLAUDE_SRC" ]; then
+  mkdir -p "$CLAUDE_DIR"
+  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/CLAUDE.md; do
+    [ -f "$src" ] || continue
+    tgt="$CLAUDE_DIR/$(basename "$src")"
+    if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
+      msg_info "Already linked: $tgt"; continue
+    fi
+    if [ -e "$tgt" ] && [ ! -L "$tgt" ]; then
+      mv "$tgt" "${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
+      msg_warn "Backed up existing $(basename "$src")"
+    fi
+    [ -L "$tgt" ] && rm -f "$tgt"
+    ln -s "$src" "$tgt" && msg_success "Linked: $tgt -> $src"
+  done
+else
+  msg_warn "$CLAUDE_SRC not found — skipping Level-1 Claude files."
+fi
+
+# Claude plugins: caveman (shrinks what it SAYS) + ponytail (shrinks what it BUILDS).
+# Needs `claude` on PATH (mise-activated in the calling shell).
+if command -v claude >/dev/null 2>&1; then
+  for spec in "JuliusBrussee/caveman caveman@caveman" "DietrichGebert/ponytail ponytail@ponytail"; do
+    set -- $spec; mkt="$1"; plg="$2"
+    claude plugin marketplace add "$mkt" >/dev/null 2>&1 || msg_warn "marketplace add $mkt failed"
+    if claude plugin install "$plg" >/dev/null 2>&1; then
+      msg_success "Plugin installed: $plg"
+    else
+      msg_warn "Plugin install failed: $plg (run: claude plugin install $plg)"
+    fi
+  done
+else
+  msg_warn "claude not in PATH (mise not activated?) — skipping plugin install."
+fi
+
+# Enable tailscaled so remote access survives a reboot (`tailscale up` alone does
+# not persist — a t2omarchy reboot dropped the tailnet until this was set 2026-08-25).
+if command -v tailscale >/dev/null 2>&1 && systemctl list-unit-files tailscaled.service >/dev/null 2>&1; then
+  if sudo -n systemctl enable --now tailscaled >/dev/null 2>&1; then
+    msg_success "tailscaled enabled + started (survives reboot)."
+  else
+    msg_warn "Could not enable tailscaled — run: sudo systemctl enable --now tailscaled"
+  fi
+else
+  msg_info "tailscale not installed — skipping tailscaled enable."
+fi
+
+# ---------------------------------------------------------------------------
 # 8. Stage-2: COWORK deploy.sh (skills/commands symlinks, WORKFORCE PATH,
 #    ultracode + clawd .env + CLAUDE_CODE_TMPDIR + workspace alias into
 #    ~/.bashrc.local, MCP, plugins). Its daily-backup cron step self-skips when
