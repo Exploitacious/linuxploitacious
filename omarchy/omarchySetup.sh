@@ -321,6 +321,25 @@ mkdir -p "$HOME/.config/lpx"
 cp -f "$OVERLAY_SRC" "$HOME/.config/lpx/bashrc-overlay.sh"
 msg_success "Overlay installed at ~/.config/lpx/bashrc-overlay.sh"
 
+# fastfetch: a user config at ~/.config/fastfetch/config.jsonc OVERRIDES Omarchy's
+# /etc/fastfetch/config.jsonc (which stays untouched — it's theme-managed). This
+# is the operator's merge: Omarchy's categories + color scheme, a smaller
+# (wordmark) logo, and the Software group removed. The overlay runs `fastfetch`
+# on terminal launch. Deployed as a COPY; backs up any existing user config.
+FASTFETCH_SRC="$SCRIPT_DIR/fastfetch-config.jsonc"
+[ -r "$FASTFETCH_SRC" ] || FASTFETCH_SRC="$LPX_DIR/omarchy/fastfetch-config.jsonc"
+if [ -r "$FASTFETCH_SRC" ]; then
+  mkdir -p "$HOME/.config/fastfetch"
+  if [ -f "$HOME/.config/fastfetch/config.jsonc" ]; then
+    cp -f "$HOME/.config/fastfetch/config.jsonc" \
+      "$HOME/.config/fastfetch/config.jsonc.backup_$(date +%Y%m%d-%H%M%S)"
+  fi
+  cp -f "$FASTFETCH_SRC" "$HOME/.config/fastfetch/config.jsonc"
+  msg_success "fastfetch user config installed (smaller logo, no Software group)."
+else
+  msg_warn "fastfetch-config.jsonc not found next to script or in clone — skipping."
+fi
+
 # ---------------------------------------------------------------------------
 # 7. Wire the ~/.bashrc managed block (THE ONLY edit to Omarchy's ~/.bashrc)
 # ---------------------------------------------------------------------------
