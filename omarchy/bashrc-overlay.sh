@@ -255,3 +255,16 @@ fi
 # sourced AFTER this file by the managed block, so it wins. This is the bare
 # fallback for a box where deploy.sh has not run yet.
 clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
+
+# --- fastfetch on terminal launch --------------------------------------------
+# Omarchy ships a fastfetch config (/etc/fastfetch/config.jsonc) but does NOT run
+# it on shell start. The operator wants it at terminal launch, using the user
+# config at ~/.config/fastfetch/config.jsonc (installed by omarchySetup.sh —
+# smaller Omarchy wordmark logo, Software group removed) which overrides /etc.
+# Fire on a fresh INTERACTIVE shell only, and skip inside a multiplexer pane
+# (tmux/herdr) so it shows once per terminal, not once per pane. Kept LAST so it
+# renders after everything else this file sets up.
+if [[ $- == *i* ]] && [ -z "${TMUX:-}" ] && [ -z "${HERDR_ENV:-}" ] \
+   && command -v fastfetch >/dev/null 2>&1; then
+  fastfetch
+fi
