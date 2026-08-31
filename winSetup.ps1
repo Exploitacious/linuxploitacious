@@ -1428,27 +1428,19 @@ if ($Selected -contains 'HARNESS') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CLAUDE PLUGINS -- Install after CONFIGS deploys settings.json
+#  CLAUDE PLUGINS -- retire caveman + ponytail after CONFIGS deploys settings.json
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Unconditional -- runs whenever claude is in PATH (matches shellSetup.sh behavior).
-# settings.json (deployed above) contains extraKnownMarketplaces for caveman.
+# Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
+# always-on umbrella-operating-model skill (injected via umbrella-operating-model.sh).
+# This block used to INSTALL caveman; it now UNINSTALLS any caveman/ponytail left on
+# an already-provisioned host. Idempotent no-op once they are gone.
 if (Get-Command claude -ErrorAction SilentlyContinue) {
-    Write-Header 'Claude Code Plugins'
-    Write-Info 'Registering caveman plugin marketplace...'
-    $marketplaceOut = & claude plugin marketplace add JuliusBrussee/caveman 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Success 'Marketplace registered.'
-        Write-Info 'Installing caveman plugin...'
-        $pluginOut = & claude plugin install caveman@caveman 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success 'Caveman plugin installed.'
-        } else {
-            Write-Warn "Plugin install returned: $pluginOut"
-            Write-Warn 'Run manually: claude plugin install caveman@caveman'
-        }
-    } else {
-        Write-Warn "Marketplace add returned: $marketplaceOut"
+    Write-Header 'Retiring caveman + ponytail plugins'
+    foreach ($plg in @('caveman', 'ponytail')) {
+        & claude plugin uninstall "${plg}@${plg}" 2>&1 | Out-Null
+        & claude plugin marketplace remove $plg 2>&1 | Out-Null
+        Write-Success "Ensured retired plugin removed: $plg"
     }
 }
 

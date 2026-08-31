@@ -387,16 +387,19 @@ sed -i -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$BASHRC"
 msg_success "managed block wired at bottom of ~/.bashrc."
 
 # ---------------------------------------------------------------------------
-# 7b. Stage-1 Claude files + plugins + tailscaled.
-#     The generic shellSetup.sh installs these (deploy_claude_config +
-#     install_claude_plugins); this Omarchy variant originally skipped them,
-#     so `claude`/`clawd` booted on Claude's onboarding stub (model:sonnet, no
-#     hooks/statusline/model-pins) and ponytail never installed. deploy.sh
-#     (Stage-2) MIRRORS these to the personal profile but does NOT lay down the
-#     Level-1 files or the plugins — that is Stage-1's job. Gap found + fixed on
-#     t2omarchy 2026-08-25. Runs before section 8 so deploy.sh has them to mirror.
+# 7b. Stage-1 Claude files + tailscaled.
+#     The generic shellSetup.sh lays down the Level-1 Claude files
+#     (deploy_claude_config); this Omarchy variant originally skipped them, so
+#     `claude`/`clawd` booted on Claude's onboarding stub (model:sonnet, no
+#     hooks/statusline/model-pins). deploy.sh (Stage-2) MIRRORS these to the
+#     personal profile but does NOT lay down the Level-1 files — that is
+#     Stage-1's job. Gap found + fixed on t2omarchy 2026-08-25. The caveman +
+#     ponytail plugins this section used to install are retired (operator ruling
+#     2026-08-31, merged into the umbrella-operating-model skill); Stage-2
+#     deploy.sh now uninstalls any leftovers. Runs before section 8 so deploy.sh
+#     has the files to mirror.
 # ---------------------------------------------------------------------------
-msg_header "7b. Claude Stage-1 files + plugins + tailscaled"
+msg_header "7b. Claude Stage-1 files + tailscaled"
 
 # Level-1 Claude config: symlink from the repo (Stage-1-owned), back up real files.
 CLAUDE_SRC="$LPX_DIR/claude/.claude"
@@ -418,22 +421,6 @@ if [ -d "$CLAUDE_SRC" ]; then
   done
 else
   msg_warn "$CLAUDE_SRC not found — skipping Level-1 Claude files."
-fi
-
-# Claude plugins: caveman (shrinks what it SAYS) + ponytail (shrinks what it BUILDS).
-# Needs `claude` on PATH (mise-activated in the calling shell).
-if command -v claude >/dev/null 2>&1; then
-  for spec in "JuliusBrussee/caveman caveman@caveman" "DietrichGebert/ponytail ponytail@ponytail"; do
-    set -- $spec; mkt="$1"; plg="$2"
-    claude plugin marketplace add "$mkt" >/dev/null 2>&1 || msg_warn "marketplace add $mkt failed"
-    if claude plugin install "$plg" >/dev/null 2>&1; then
-      msg_success "Plugin installed: $plg"
-    else
-      msg_warn "Plugin install failed: $plg (run: claude plugin install $plg)"
-    fi
-  done
-else
-  msg_warn "claude not in PATH (mise not activated?) — skipping plugin install."
 fi
 
 # Enable tailscaled so remote access survives a reboot (`tailscale up` alone does

@@ -58,13 +58,13 @@ When responding in chat or conversation — not deliverables, not emails, not co
 **Shorten redundant phrasing:** "in order to" becomes "to." "Make sure to" becomes "ensure." "The reason is because" becomes "because." "At this point in time" becomes "now."
 **Use short synonyms** where meaning holds: "use" not "utilize," "fix" not "implement a solution for," "big" not "extensive," "show" not "demonstrate."
 
-Keep articles (a/an/the). Keep full sentences. Keep professional register. This is compression, not caveman-speak — the goal is tight, direct prose that still reads naturally.
+Keep articles (a/an/the). Keep full sentences. Keep professional register. This is compression, not clipped shorthand — the goal is tight, direct prose that still reads naturally.
 
 **Exempt from compression:** deliverable-mode documents, professional emails, code output, and any content written on the user's behalf. These follow their own quality standards.
 
 **Suspend compression when:** issuing security warnings, confirming irreversible actions, clarifying something the user asked about twice, or any situation where brevity risks misreading.
 
-**Unslop patterns:** Agent-facing writing also applies the unslop skill's patterns (`SKILLS/unslop`) to cut AI tells, with security warnings and irreversible-action confirmations exempt as P5 already provides.
+**Unslop patterns:** Agent-facing writing also applies the operating model's pattern catalog (`SKILLS/umbrella-operating-model`) to cut AI tells, with security warnings and irreversible-action confirmations exempt as P5 already provides.
 
 ## Code & Commit Standards
 
@@ -85,7 +85,7 @@ are different models, and nothing is allowed to blur them.
 |---|---|---|
 | **Primary foreman** (main session) | Fable 5 — `claude-fable-5[1m]` | the top-level `"model"` pin in `settings.json`; what you boot into |
 | **Fallback foreman** | Opus 4.8 — `claude-opus-4-8[1m]` | `/model` → the Opus entry (`ANTHROPIC_DEFAULT_OPUS_MODEL`) |
-| **Default build/review/audit worker** | Opus 4.8 — `claude-opus-4-8[1m]` | the `cowork-worker` / `cowork-reviewer` / `cowork-auditor` agent types (hard-pinned in their frontmatter), or `model: "claude-opus-4-8[1m]"` in a Workflow lane |
+| **Default build/review/audit worker** | Opus 4.8 — `claude-opus-4-8[1m]` | the `umbrella-worker` / `umbrella-reviewer` / `umbrella-auditor` agent types (hard-pinned in their frontmatter), or `model: "claude-opus-4-8[1m]"` in a Workflow lane |
 | **Light/routine worker** | Sonnet 5 — `claude-sonnet-5[1m]` | `model: "sonnet"` |
 | **Banned** | Haiku (any version) · **Opus 5** (`claude-opus-5`) | Haiku → `ANTHROPIC_DEFAULT_HAIKU_MODEL` tripwire; Opus 5 → nothing pins it any more + drift-gate grep, see below |
 
@@ -107,7 +107,7 @@ known limitation versus Fable is weaker big-picture judgment and fewer
 proactive "there's a better way" suggestions — compensate with explicit
 written plans and mandatory review of every worker lane. It is reliable at
 fan-out, follow-through, and review. As of 2026-08-20 it is **also the
-default build/review/audit worker** — the `cowork-*` agent types pin it — so
+default build/review/audit worker** — the `umbrella-*` agent types pin it — so
 the same model backstops the foreman and does the delegated labor.
 Foreman switch: `/model` → the Opus entry to drop back;
 `/model claude-fable-5[1m]` (or just restart, since the settings pin is
@@ -123,7 +123,7 @@ done. Net: it burned a disproportionate share of the weekly limit for no
 quality edge the review workflow wasn't already supplying. **Do not pin
 `claude-opus-5`** in any agent frontmatter, Workflow lane, spawn override,
 config, doc, or script. The fanout worker tier IS Opus 4.8: the
-`cowork-worker` / `cowork-reviewer` / `cowork-auditor` types and the
+`umbrella-worker` / `umbrella-reviewer` / `umbrella-auditor` types and the
 `harness-audit.js` lanes now pin `claude-opus-4-8[1m]` (needs the `[1m]`
 suffix — unlike Opus 5, 1M is not Opus 4.8's default). Enforcement mirrors
 the Haiku tripwire: nothing in config references `claude-opus-5` any more,
