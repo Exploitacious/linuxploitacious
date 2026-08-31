@@ -64,6 +64,8 @@ Keep articles (a/an/the). Keep full sentences. Keep professional register. This 
 
 **Suspend compression when:** issuing security warnings, confirming irreversible actions, clarifying something the user asked about twice, or any situation where brevity risks misreading.
 
+**Unslop patterns:** Agent-facing writing also applies the unslop skill's patterns (`SKILLS/unslop`) to cut AI tells, with security warnings and irreversible-action confirmations exempt as P5 already provides.
+
 ## Code & Commit Standards
 
 - Code blocks unchanged — never compress code output.
