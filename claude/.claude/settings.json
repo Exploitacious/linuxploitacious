@@ -19,16 +19,8 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": ".*",
+        "matcher": "startup|clear",
         "hooks": [
-          {
-            "type": "command",
-            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/foreman-charter.sh && $H/.claude-config/hooks/foreman-charter.sh 2>/dev/null || true"
-          },
-          {
-            "type": "command",
-            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/umbrella-operating-model.sh && $H/.claude-config/hooks/umbrella-operating-model.sh 2>/dev/null || true"
-          },
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-briefing.sh && $H/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
@@ -60,6 +52,45 @@
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-work-init.sh && $H/.claude-config/hooks/session-work-init.sh 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/post-compact-resume.sh && $H/.claude-config/hooks/post-compact-resume.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/handoff-check.sh && $H/.claude-config/hooks/handoff-check.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-briefing.sh && $H/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/remote-session-register.sh && $H/.claude-config/hooks/remote-session-register.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/WORKFORCE/bin/ac-reorient && $H/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-work-init.sh && $H/.claude-config/hooks/session-work-init.sh 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/home/master/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
           }
         ]
       }
@@ -173,6 +204,7 @@
     "command": "bash \"$HOME/.claude/statusline.sh\"",
     "refreshInterval": 5
   },
+  "enabledPlugins": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
   "tui": "fullscreen",
