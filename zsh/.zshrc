@@ -171,7 +171,7 @@ esac
 # an SSH shell that is neither already inside tmux ($TMUX) nor inside a herdr
 # pane ($HERDR_ENV), so it fires once per fresh login and never nests. Degrades
 # to pure-tmux behaviour on fleet boxes without herdr (or jq) installed.
-if [[ -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v tmux >/dev/null 2>&1 || command -v herdr >/dev/null 2>&1 }; then
+if [[ -o interactive && -t 0 && -z "$TMUX" && -z "$HERDR_ENV" && -n "$SSH_CONNECTION" ]] && { command -v tmux >/dev/null 2>&1 || command -v herdr >/dev/null 2>&1 }; then
   # An optional session console may front this picker. When present + executable it
   # fully replaces the generic picker below (same gating: interactive SSH login,
   # outside any multiplexer); otherwise the generic picker runs unchanged as the
