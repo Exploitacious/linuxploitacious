@@ -2083,46 +2083,33 @@ EOF
     # settings.json, statusline.sh). See the harness DEPLOYMENT.md.
   }
 
-  # --- CLAUDE CODE PLUGINS (runs after config so settings.json exists) ---
+  # --- CLAUDE CODE PLUGINS: retirement (runs after config so settings.json exists) ---
+  # Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
+  # always-on umbrella-operating-model skill (injected via the
+  # umbrella-operating-model.sh hook), so the third-party plugins are retired.
+  # This function used to INSTALL them; it now UNINSTALLS any left on an
+  # already-provisioned host, and is a no-op once they are gone (idempotent).
 
-  install_claude_plugins() {
+  retire_claude_plugins() {
     if ! command -v claude &> /dev/null; then
-      msg_warn "Claude CLI not found in PATH. Skipping plugin install."
+      msg_warn "Claude CLI not found in PATH. Skipping caveman/ponytail plugin retirement."
       return
     fi
 
-    msg_header "Installing Claude Code Plugins"
+    msg_header "Retiring caveman + ponytail plugins"
 
-    msg_info "Registering caveman plugin marketplace..."
-    if claude plugin marketplace add JuliusBrussee/caveman; then
-      msg_success "Marketplace registered."
-      msg_info "Installing caveman plugin..."
-      if claude plugin install caveman@caveman; then
-        msg_success "Caveman plugin installed."
-      else
-        msg_warn "Caveman plugin install failed. Run manually: claude plugin install caveman@caveman"
+    for plg in caveman ponytail; do
+      if claude plugin uninstall "${plg}@${plg}" >/dev/null 2>&1; then
+        msg_success "Removed retired plugin: ${plg}"
       fi
-    else
-      msg_warn "Marketplace registration failed. Run manually: claude plugin marketplace add JuliusBrussee/caveman"
-    fi
-
-    # Ponytail — anti-over-engineering ruleset (operator directive 2026-08-20).
-    # Orthogonal to caveman (caveman shrinks what the agent SAYS; ponytail
-    # shrinks what it BUILDS). Default mode pinned to `full` via
-    # PONYTAIL_DEFAULT_MODE in settings.json env; statusline badge wired in
-    # statusline.sh alongside caveman.
-    msg_info "Registering ponytail plugin marketplace..."
-    if claude plugin marketplace add DietrichGebert/ponytail; then
-      msg_success "Marketplace registered."
-      msg_info "Installing ponytail plugin..."
-      if claude plugin install ponytail@ponytail; then
-        msg_success "Ponytail plugin installed."
-      else
-        msg_warn "Ponytail plugin install failed. Run manually: claude plugin install ponytail@ponytail"
+      claude plugin marketplace remove "$plg" >/dev/null 2>&1 || true
+      # Belt-and-suspenders: drop the marketplace dir directly. Guarded so only
+      # this exact path is ever removed, never a broader tree.
+      mkt_dir="$HOME/.claude/plugins/marketplaces/${plg}"
+      if [ -d "$mkt_dir" ]; then
+        rm -rf "$mkt_dir" && msg_success "Removed retired marketplace dir: ${plg}"
       fi
-    else
-      msg_warn "Marketplace registration failed. Run manually: claude plugin marketplace add DietrichGebert/ponytail"
-    fi
+    done
   }
 
   # --- AI HARNESS: COWORK (private) / OPS (public template) ---
@@ -2552,7 +2539,7 @@ EOF
   install_ai_tools
 
   # Claude plugins: self-gates if claude CLI or settings are missing
-  install_claude_plugins
+  retire_claude_plugins
 
   if [[ $CHOICES == *"SWAP"* ]]; then setup_swapfile; fi
   if [[ $CHOICES == *"DOCKER"* ]]; then install_docker; fi

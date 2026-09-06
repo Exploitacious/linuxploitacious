@@ -6,8 +6,7 @@
     "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5[1m]",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-5",
-    "PONYTAIL_DEFAULT_MODE": "full"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-5"
   },
   "attribution": {
     "commit": "",
@@ -16,16 +15,12 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "claude-fable-5-1[1m]",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": ".*",
+        "matcher": "startup|clear",
         "hooks": [
-          {
-            "type": "command",
-            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/foreman-charter.sh && $H/.claude-config/hooks/foreman-charter.sh 2>/dev/null || true"
-          },
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-briefing.sh && $H/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
@@ -57,6 +52,45 @@
           {
             "type": "command",
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-work-init.sh && $H/.claude-config/hooks/session-work-init.sh 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/post-compact-resume.sh && $H/.claude-config/hooks/post-compact-resume.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/handoff-check.sh && $H/.claude-config/hooks/handoff-check.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-briefing.sh && $H/.claude-config/hooks/session-briefing.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/remote-session-register.sh && $H/.claude-config/hooks/remote-session-register.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/WORKFORCE/bin/ac-reorient && $H/WORKFORCE/bin/ac-reorient 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/session-work-init.sh && $H/.claude-config/hooks/session-work-init.sh 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -x $HOME/.claude/hooks/herdr-agent-state.sh && bash $HOME/.claude/hooks/herdr-agent-state.sh session || true",
+            "timeout": 10
           }
         ]
       }
@@ -123,6 +157,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/umbrella-operating-model.sh && $H/.claude-config/hooks/umbrella-operating-model.sh 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "matcher": ".*",
@@ -141,6 +186,15 @@
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/wip-refresh-nudge.sh && $H/.claude-config/hooks/wip-refresh-nudge.sh 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/umbrella-operating-model.sh && $H/.claude-config/hooks/umbrella-operating-model.sh reminder 2>/dev/null || true"
+          }
+        ]
       }
     ]
   },
@@ -150,24 +204,7 @@
     "command": "bash \"$HOME/.claude/statusline.sh\"",
     "refreshInterval": 5
   },
-  "enabledPlugins": {
-    "caveman@caveman": true,
-    "ponytail@ponytail": true
-  },
-  "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      }
-    },
-    "ponytail": {
-      "source": {
-        "source": "github",
-        "repo": "DietrichGebert/ponytail"
-      }
-    }
-  },
+  "enabledPlugins": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
   "tui": "fullscreen",

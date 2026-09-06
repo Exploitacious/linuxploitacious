@@ -193,30 +193,11 @@ else CACHE_C=$RED; fi
 TOTAL_TIME=$(fmt_time "$TOTAL_MS")
 API_TIME=$(fmt_time "$API_MS")
 
-# Caveman badge — stable marketplace path first; fall back to versioned cache.
-# Cache dir hash changes on plugin update, so hardcoding it drifts and badge disappears.
-CAVEMAN=""
-CS="$HOME/.claude/plugins/marketplaces/caveman/src/hooks/caveman-statusline.sh"
-if [ ! -e "$CS" ]; then
-    CS=$(ls -1 "$HOME/.claude/plugins/cache/caveman/caveman/"*/src/hooks/caveman-statusline.sh 2>/dev/null | head -1)
-fi
-if [ -n "$CS" ] && [ -r "$CS" ]; then
-    CAVEMAN=$(bash "$CS" 2>/dev/null)
-    [ -n "$CAVEMAN" ] && CAVEMAN="  $CAVEMAN"
-fi
-
-# Ponytail badge — same pattern as caveman. Marketplace path first, fall back
-# to versioned cache (cache hash changes on update). The script self-resolves
-# its .ponytail-active flag via CLAUDE_CONFIG_DIR, so it prints per-profile.
-PONYTAIL=""
-PS="$HOME/.claude/plugins/marketplaces/ponytail/hooks/ponytail-statusline.sh"
-if [ ! -e "$PS" ]; then
-    PS=$(ls -1 "$HOME/.claude/plugins/cache/ponytail/ponytail/"*/hooks/ponytail-statusline.sh 2>/dev/null | head -1)
-fi
-if [ -n "$PS" ] && [ -r "$PS" ]; then
-    PONYTAIL=$(bash "$PS" 2>/dev/null)
-    [ -n "$PONYTAIL" ] && PONYTAIL="  $PONYTAIL"
-fi
+# Umbrella operating-model badge — the model is unconditionally on via the
+# SessionStart/SubagentStart/UserPromptSubmit hooks, so this is a static pin
+# with no plugin state file to resolve. Replaces the retired caveman + ponytail
+# badges (operator ruling 2026-08-31).
+UMB="  ${B}${GRN}[Umbrella]${RST}"
 
 # Formatted cost
 COST_FMT=$(printf '%.2f' "$COST")
@@ -232,7 +213,7 @@ case "${_ccd//\\//}" in
 esac
 
 # Row 1: profile+model+badges  │  context bar  │  time
-R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${CAVEMAN}${PONYTAIL}"
+R1_C1="${PROFILE}${B}${PUR}${MODEL}${RST}${UMB}"
 R1_C2="${CTX_C}${CTX_BAR}   ${ctx_pct}%${RST}   ${D}/ ${CTX_L}${RST}${POSTURE}"
 R1_C3="${WHT}${TOTAL_TIME}${RST} ${D}total${RST}     ${GRY}${API_TIME}${RST} ${D}api${RST}"
 

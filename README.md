@@ -304,12 +304,12 @@ sources the tracked profile + an untracked `profile.local.ps1` seam.
 These config files apply to every Claude Code session regardless of
 project directory.
 
-**Stage 1 — Plugins:** After Claude Code installs (via the always-on
-vendor installer), the script registers the
-[caveman](https://github.com/JuliusBrussee/caveman) plugin — an
-ultra-compressed communication mode that reduces token usage while
-keeping full technical accuracy. It activates automatically via
-SessionStart hooks.
+**Stage 1 — Plugins:** The caveman and ponytail plugins are retired
+(operator ruling 2026-08-31). Their terse-prose and lazy-engineering
+modes are merged into the always-on `umbrella-operating-model` skill,
+injected via the `umbrella-operating-model.sh` hook on SessionStart,
+SubagentStart, and UserPromptSubmit. The Stage-1 script now uninstalls
+the plugins on any already-provisioned host.
 
 **Stage 2 — HARNESS (optional):** Selecting `HARNESS` in the menu
 deploys the workspace repo — `~/COWORK/` (private, if your gh auth
@@ -444,7 +444,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 | SSHKEY | GitHub SSH + gh auth + key upload | OFF |
 | COWORK | Multi-Agent Coordination (needs SSH) | OFF |
 
-**Always runs (no menu toggle):** Claude Code plugin installation (caveman) after CONFIGS deploys `settings.json`.
+**Always runs (no menu toggle):** Claude Code plugin retirement (caveman + ponytail uninstall) after CONFIGS deploys `settings.json`.
 
 ### Key differences from Linux
 
@@ -463,7 +463,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 `shellSetup.sh` and `winSetup.ps1` are maintained in parallel. When adding a feature to one, check whether the other needs a matching change. The menu items should stay aligned — same names, same defaults, same order where practical.
 
-**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh + caveman plugin), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, WORKFORCE, ac-memory-init) is NOT this repo's responsibility — Stage 2 owns it.
+**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, WORKFORCE, ac-memory-init) is NOT this repo's responsibility — Stage 2 owns it.
 
 **What diverges by design:** Platform-specific tools (tmux vs WezTerm, stow vs Deploy-Symlink, apt vs winget), root/sudo handling (Linux-only), Docker setup (different install paths), swap management (Linux-only).
 
