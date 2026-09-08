@@ -454,9 +454,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Optionals: cloudflared, NordVPN, superfile (guard, warn-don't-abort)
+# 9. Optionals: cloudflared, NordVPN, superfile, T3 Code desktop (guard, warn-don't-abort)
 # ---------------------------------------------------------------------------
-msg_header "9. Optionals (cloudflared, NordVPN, superfile)"
+msg_header "9. Optionals (cloudflared, NordVPN, superfile, T3 Code desktop)"
 
 # Try official repos first, then AUR fallbacks (yay). $1 = pacman name; the rest
 # = AUR candidate package names.
@@ -535,6 +535,26 @@ else
   msg_warn "superfile not installable from repos/AUR — skipping."
 fi
 
+# T3 Code desktop client: the Electron app that pairs with the harness's
+# t3code server over the tailnet (same role as the Windows/phone clients).
+# Same package name in the [omarchy] repo and the AUR; repo first. The omarchy
+# repo rotates package files quickly, so a STALE sync DB makes the download
+# 404 (2026-09-08: the DB offered 0.0.33-2, the repo only had 0.0.39-1). On
+# failure refresh the sync DBs (-Sy alone: still no -u, no system upgrade) and
+# retry once. Verify with pacman -Q (rule: a failed transaction is silent).
+if pacman -Q t3code-bin >/dev/null 2>&1; then
+  msg_info "T3 Code desktop already installed: $(pacman -Q t3code-bin)"
+elif install_from_repo_or_aur t3code-bin t3code-bin \
+     || { sudo pacman -Sy >/dev/null 2>&1 && install_from_repo_or_aur t3code-bin t3code-bin; }; then
+  if pacman -Q t3code-bin >/dev/null 2>&1; then
+    msg_info "Pair it: on the t3code server box run 't3 pair --tailscale --ttl 1h --label $(hostname)', open T3 Code here, paste the link."
+  else
+    msg_warn "t3code-bin install reported success but pacman -Q cannot see it — check /var/log/pacman.log."
+  fi
+else
+  msg_warn "T3 Code desktop (t3code-bin) not installable from the omarchy repo/AUR — skipping."
+fi
+
 # ---------------------------------------------------------------------------
 # 10. Summary
 # ---------------------------------------------------------------------------
@@ -549,7 +569,7 @@ cat <<SUMMARY
     - bash overlay -> ~/.config/lpx/bashrc-overlay.sh
     - managed block in ~/.bashrc (overlay + Claude wrapper + ~/.bashrc.local)
     - Stage-2 harness via COWORK deploy.sh
-    - Optionals attempted: cloudflared, NordVPN (nordvpn-bin), superfile
+    - Optionals attempted: cloudflared, NordVPN (nordvpn-bin), superfile, T3 Code desktop (t3code-bin)
 
   Next:
     - Open a NEW shell, or run:  source ~/.bashrc   (to pick up the overlay)
