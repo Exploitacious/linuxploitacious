@@ -124,6 +124,15 @@
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/git-guard.sh ] || $H/.claude-config/hooks/git-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v rtk >/dev/null 2>&1 && exec rtk hook claude; [ -x \"$HOME/.local/bin/rtk\" ] && exec \"$HOME/.local/bin/rtk\" hook claude; exit 0"
+          }
+        ]
       }
     ],
     "PostToolUse": [
