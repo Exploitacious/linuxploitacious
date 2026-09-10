@@ -186,15 +186,6 @@
             "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/wip-refresh-nudge.sh && $H/.claude-config/hooks/wip-refresh-nudge.sh 2>/dev/null || true"
           }
         ]
-      },
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; test -x $H/.claude-config/hooks/umbrella-operating-model.sh && $H/.claude-config/hooks/umbrella-operating-model.sh reminder 2>/dev/null || true"
-          }
-        ]
       }
     ]
   },
