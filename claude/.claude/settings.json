@@ -126,6 +126,15 @@
         ]
       },
       {
+        "matcher": "Agent|Task|Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=$HOME/COWORK; [ -d $H ] || H=$HOME/OPS; [ ! -x $H/.claude-config/hooks/review-gate-guard.sh ] || $H/.claude-config/hooks/review-gate-guard.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
