@@ -314,8 +314,9 @@ scripts attempt to uninstall the plugins on already-provisioned hosts
 and report CLI failures, including already-absent plugins or marketplaces.
 
 Offline checks for the shared hooks, profile selection, plugin retirement,
-Omarchy file deployment, and SSH picker gating: `python3 scripts/test_stage1.py`.
-The Windows retirement check runs when `pwsh` is available.
+Omarchy file deployment, SSH picker gating, and the Stage 2 deploy-script gate:
+`python3 scripts/test_stage1.py`. The Windows gate is checked statically; the
+Windows retirement check runs when `pwsh` is available.
 
 **Stage 2 — HARNESS (optional):** Selecting `HARNESS` in the menu
 deploys the workspace repo — `~/COWORK/` (private, if your gh auth
@@ -324,9 +325,11 @@ created for you from `Exploitacious/OPS` if you don't have one) —
 then auto-invokes its `.claude-config/deploy.sh`. That Stage 2
 script owns everything harness-specific — skills symlink
 (`~/.claude/skills/` → `<harness>/SKILLS/`), commands symlink,
-`WORKFORCE/bin` PATH wiring, `claude-wrapper.sh` sourcing for
-master + root rcs, `ac-memory-init` auto-memory git-sync, daily
-backup cron, and additional plugins. Fresh OPS copies run a
+shell-rc `.local` seam wiring, root's Claude wrapper, auto-memory
+git-sync, daily backup cron, and additional plugins. Stage 1
+gates this handoff on the deploy script itself: if the cloned
+branch has no `.claude-config/deploy.sh`, Stage 1 warns and skips
+Stage 2 rather than guessing. Fresh OPS copies run a
 BOOTSTRAP interview on their first Claude Code session to
 personalize the harness. **This repo deliberately does NOT do any
 of those steps** — keeping the Stage 1 / Stage 2 boundary clean
@@ -402,19 +405,25 @@ work, the Stage 2 repo MUST expose at minimum:
 | Path | Purpose |
 |------|---------|
 | `.claude-config/deploy.sh` (Linux) | Stage 2 entry point. Stage 1 invokes via `bash $COWORK_DIR/.claude-config/deploy.sh`. Idempotent. |
-| `.claude-config/deploy.ps1` (Windows) | Same for Windows. Stage 1 invokes via `powershell.exe -File ...`. Idempotent. |
-| `WORKFORCE/` directory | Existence-checked by Stage 1 before invoking deploy.{sh,ps1}. If absent, Stage 1 skips Stage 2 with a warning. |
+| `.claude-config/deploy.ps1` (Windows) | Same for Windows. Stage 1 invokes it with `-File` under the interpreter it is running on (pwsh 7), not `powershell.exe`. Idempotent. |
+
+Stage 1 gates Stage 2 on the platform's deploy script existing, and on
+nothing else: if `deploy.sh` / `deploy.ps1` is absent, Stage 1 skips
+Stage 2 with a warning and a re-run hint. The gate deliberately does not
+key on any directory inside the harness, because the harness layout moves
+and the two repos land independently; the deploy script is the one entry
+point every harness version carries.
 
 Optional (referenced if present; silent otherwise):
 
 | Path | Purpose |
 |------|---------|
-| `WORKFORCE/bin/ac-reorient` | Invoked by the SessionStart hooks array in `claude/.claude/settings.json`. Guarded by `test -x`. |
-| `CONTEXT/` directory | Read by Claude Code per `claude/.claude/CLAUDE.md` "COWORK Context Awareness" section. Existence-checked. |
+| `.claude-config/hooks/*.sh` | Invoked by the hook arrays in `claude/.claude/settings.json` (SessionStart, PreCompact, PreToolUse, and the rest). Each is guarded by `test -x`, so a missing hook is a silent no-op. |
+| `CONTEXT/` directory | Read by Claude Code per the "Harness context" section of `claude/.claude/CLAUDE.md`. Existence-checked. |
 
 Stage 2 is responsible for everything else — its own symlinks
 (skills, commands), PATH wiring, plugin installs, scheduled
-tasks, auto-memory wiring, claude-wrapper sourcing, etc. Stage 1
+tasks, auto-memory wiring, root's Claude wrapper, etc. Stage 1
 deliberately does NOT do any of that work; the split keeps this
 repo public-safe and Stage 2 the single source of truth for
 private content. See Alex's COWORK `DEPLOYMENT.md` for a working
@@ -448,7 +457,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 | APPS | Browsers, dev tools, productivity (opt-in) | OFF |
 | TWEAKS | Dark mode, Explorer, taskbar prefs | OFF |
 | SSHKEY | GitHub SSH + gh auth + key upload | OFF |
-| COWORK | Multi-Agent Coordination (needs SSH) | OFF |
+| HARNESS | AI Harness: OPS template / private COWORK (needs SSH) | OFF |
 
 **Always runs (no menu toggle):** Claude Code plugin retirement (caveman + ponytail uninstall) after CONFIGS deploys `settings.json`.
 
@@ -469,7 +478,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 `shellSetup.sh` and `winSetup.ps1` are maintained in parallel. When adding a feature to one, check whether the other needs a matching change. The menu items should stay aligned — same names, same defaults, same order where practical.
 
-**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, WORKFORCE, ac-memory-init) is NOT this repo's responsibility — Stage 2 owns it.
+**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, hooks, memory tooling) is NOT this repo's responsibility — Stage 2 owns it.
 
 **What diverges by design:** Platform-specific tools (tmux vs WezTerm, stow vs Deploy-Symlink, apt vs winget), root/sudo handling (Linux-only), Docker setup (different install paths), swap management (Linux-only).
 

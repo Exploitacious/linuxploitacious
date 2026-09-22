@@ -158,10 +158,10 @@ case ":$PATH:" in
 esac
 # pnpm end
 
-# NOTE: WORKFORCE/bin PATH wiring is owned by COWORK's Stage 2 deployer
-# (~/COWORK/.claude-config/deploy.sh). It appends its own tagged block to
-# this file on first run. The old `COWORK/AGENTS/bin` entry was retired
-# during the WORKFORCE rename — do not re-add either form here.
+# NOTE: harness PATH wiring is owned by COWORK's Stage 2 deployer
+# (~/COWORK/.claude-config/deploy.sh), which writes its own tagged blocks to the
+# untracked ~/.zshrc.local seam. The old harness bin dirs this file once put on
+# PATH are retired — do not re-add a harness PATH entry here.
 
 # --- Multiplexer session picker on SSH login ---
 # Session layer migrated tmux -> herdr on this fleet's workspace box; tmux stays
@@ -280,13 +280,6 @@ fi
 
 # --- COWORK clawd (personal Claude profile) ---
 clawd() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-personal"; claude "$@"; )
-
-# --- COWORK Claude wrapper (root/master safety) ---
-# $HOME-relative and readability-guarded: this is a public provisioning repo,
-# so the path must not assume the operator's username, and the wrapper only
-# exists on boxes where COWORK is actually deployed. Sourced ABOVE the .local
-# seam below so machine-local overrides remain the last word.
-[ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"
 
 # Interactive workflow helpers (gwa/gwd/try/tdl/tsl/rsw/ssh…). Sourced from the
 # zsh stow package; absent until stowed, so the guard keeps a bare box clean.
