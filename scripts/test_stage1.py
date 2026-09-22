@@ -198,18 +198,16 @@ class Stage1Tests(unittest.TestCase):
 
     def test_settings_has_no_retired_fleet_hooks(self):
         text = (ROOT / "claude/.claude/settings.json").read_text()
-        for retired in ("WORKFORCE", "ac-reorient"):
+        for retired in ("WORKFORCE", "ac-reorient", "remote-session-register"):
             self.assertNotIn(retired, text)
         # Compare against the surviving hook contract, not a second read of
         # the same JSON. Losing another hook must fail this retirement check.
         expected = {
             "startup|clear": ["session-briefing.sh", "post-compact-resume.sh",
                               "handoff-check.sh", "vault-inbox-check.sh",
-                              "memory-index.sh", "remote-session-register.sh",
-                              "session-work-init.sh"],
+                              "memory-index.sh", "session-work-init.sh"],
             "resume|compact": ["post-compact-resume.sh", "handoff-check.sh",
-                               "session-briefing.sh", "remote-session-register.sh",
-                               "session-work-init.sh"],
+                               "session-briefing.sh", "session-work-init.sh"],
             "*": ["herdr-agent-state.sh"],
         }
         groups = SETTINGS["hooks"]["SessionStart"]
