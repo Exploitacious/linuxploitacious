@@ -27,10 +27,6 @@
           },
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/WORKFORCE/bin/ac-reorient\" && \"$H/WORKFORCE/bin/ac-reorient\" 2>/dev/null || true"
-          },
-          {
-            "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/post-compact-resume.sh\" && \"$H/.claude-config/hooks/post-compact-resume.sh\" 2>/dev/null || true"
           },
           {
@@ -73,10 +69,6 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/remote-session-register.sh\" && \"$H/.claude-config/hooks/remote-session-register.sh\" 2>/dev/null || true"
-          },
-          {
-            "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/WORKFORCE/bin/ac-reorient\" && \"$H/WORKFORCE/bin/ac-reorient\" 2>/dev/null || true"
           },
           {
             "type": "command",

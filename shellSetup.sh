@@ -2367,17 +2367,24 @@ EOF
         ;;
     esac
 
-    # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
-    # lives under WORKFORCE/FLEETPROJECTS/<slug>/runtime/ and is created
-    # lazily by ac-register, not at clone time.
-    if [ ! -d "$HARNESS_DIR/WORKFORCE" ]; then
-      msg_warn "$(basename "$HARNESS_DIR")/WORKFORCE/ not present in this branch. Skipping coordination setup."
+    # Stage 2 is gated on the harness's own deployer, not on a directory
+    # inside it: the harness layout moves (its multi-agent directory was
+    # renamed once and later retired), and this repo and the harness land
+    # independently, so a directory gate would skip Stage 2 on every new
+    # machine once that directory went away. .claude-config/deploy.sh is the
+    # Stage 2 entry point in every harness version, before and after that
+    # retirement.
+    local DEPLOY_SCRIPT="$HARNESS_DIR/.claude-config/deploy.sh"
+    if [ ! -f "$DEPLOY_SCRIPT" ]; then
+      msg_warn "No Stage 2 deployer at $DEPLOY_SCRIPT in this $(basename "$HARNESS_DIR") branch. Skipping Stage 2."
+      msg_warn "After fixing, run: bash $DEPLOY_SCRIPT"
       return
     fi
 
-    # Legacy cleanup: earlier shellSetup versions wired WORKFORCE/bin
-    # to PATH from this function. Now owned by COWORK's deploy.sh.
-    # Strip any AGENTS/bin block we may have left behind on this host.
+    # Legacy cleanup: earlier shellSetup versions wired the harness bin dir
+    # (COWORK/AGENTS/bin) to PATH from this function; harness PATH wiring is
+    # now owned by COWORK's deploy.sh. Strip any AGENTS/bin block we may have
+    # left behind on this host so a migrating machine stops exporting it.
     local SHELLRC
     if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
       SHELLRC="$HOME/.zshrc"
@@ -2395,29 +2402,21 @@ EOF
     # Hand off to the harness's own deploy script for Stage 2 setup.
     # deploy.sh is the single source of truth for everything
     # harness-internal: skill + commands symlinks
-    # (~/.claude/skills/ → <harness>/SKILLS/), WORKFORCE/bin chmod +
-    # PATH wiring, claude-wrapper sourcing, ac-memory-init invocation,
-    # daily backup cron entry, plugin install. See the harness's
-    # DEPLOYMENT.md for the full procedure.
-    local DEPLOY_SCRIPT="$HARNESS_DIR/.claude-config/deploy.sh"
-    if [ -f "$DEPLOY_SCRIPT" ]; then
-      msg_info "Invoking harness deploy.sh for Stage 2 setup..."
-      if bash "$DEPLOY_SCRIPT"; then
-        msg_success "Harness deploy.sh completed."
-      else
-        msg_error "Harness deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
-      fi
-    else
-      msg_warn "deploy.sh not found at $DEPLOY_SCRIPT — Stage 2 skipped."
-      msg_warn "After fixing, run: bash $DEPLOY_SCRIPT"
+    # (~/.claude/skills/ → <harness>/SKILLS/), shell-rc seam wiring,
+    # auto-memory init, daily backup cron entry, plugin install. See the
+    # harness's DEPLOYMENT.md for the full procedure.
+    msg_info "Invoking harness deploy.sh for Stage 2 setup..."
+    if ! bash "$DEPLOY_SCRIPT"; then
+      msg_error "Harness deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
+      return
     fi
+    msg_success "Harness deploy.sh completed."
 
-    msg_success "Harness deployed at $HARNESS_DIR. Open a new shell, then test with 'ac-status'."
+    msg_success "Harness deployed at $HARNESS_DIR. Open a new shell to pick up its shell config."
     if [ -f "$HARNESS_DIR/BOOTSTRAP.md" ] && [ ! -f "$HARNESS_DIR/CONTEXT/.bootstrapped" ]; then
       msg_info "Fresh OPS copy detected: your FIRST Claude Code session in $HARNESS_DIR"
       msg_info "will run the BOOTSTRAP interview to personalize the harness. Just launch and follow along."
     fi
-    msg_info "Activation triggers: type 'ACTIVATE AGENT' or 'ACTIVATE COORDINATOR' in any Claude Code session."
   }
 
   # --- MENU & EXECUTION ---

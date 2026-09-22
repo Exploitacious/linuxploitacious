@@ -366,21 +366,17 @@ sed -i -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$BASHRC"
 
 # Block content, in EXACT order:
 #   1) the overlay,
-#   2) the COWORK Claude wrapper. Its marker line is IDENTICAL to deploy.sh's
-#      WRAPPER_MARKER and it carries a `claude-wrapper.sh` source line, so
-#      deploy.sh's wire_wrapper_master DETECTS it and SKIPS appending its own
-#      copy after ~/.bashrc.local (which would break the wrapper-before-.local
-#      ordering that ultracode depends on),
-#   3) ~/.bashrc.local (deploy.sh writes WORKFORCE PATH + ultracode + tmpdir +
-#      clawd .env + workspace alias there; keep it LAST so locals win).
+#   2) ~/.bashrc.local (deploy.sh writes ultracode + tmpdir + clawd .env +
+#      workspace alias there; keep it LAST so locals win).
+# The block no longer sources a COWORK Claude wrapper: that wrapper is
+# root-only now and COWORK's deploy.sh wires it into /root's rc files, so the
+# replace-on-re-run above strips the old wrapper line from a migrating box.
 # The `$HOME`/`$-refs below are single-quoted ON PURPOSE: they must land in
 # ~/.bashrc LITERALLY and expand at shell-startup, not at install time.
 # shellcheck disable=SC2016
 {
   printf '\n%s\n' "$MARK_START"
   printf '%s\n' '[ -r "$HOME/.config/lpx/bashrc-overlay.sh" ] && . "$HOME/.config/lpx/bashrc-overlay.sh"'
-  printf '%s\n' '# --- COWORK Claude wrapper (root/master safety) ---'
-  printf '%s\n' '[ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && . "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"'
   printf '%s\n' '[ -r "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"'
   printf '%s\n' "$MARK_END"
 } >> "$BASHRC"
@@ -438,10 +434,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 8. Stage-2: COWORK deploy.sh (skills/commands symlinks, WORKFORCE PATH,
-#    ultracode + clawd .env + CLAUDE_CODE_TMPDIR + workspace alias into
-#    ~/.bashrc.local, MCP, plugins). Its daily-backup cron step self-skips when
-#    crontab is absent — expected on this box (no cronie); let it warn.
+# 8. Stage-2: COWORK deploy.sh (skills/commands symlinks, ultracode + clawd
+#    .env + CLAUDE_CODE_TMPDIR + workspace alias into ~/.bashrc.local, MCP,
+#    plugins). Its daily-backup cron step self-skips when crontab is absent —
+#    expected on this box (no cronie); let it warn.
 # ---------------------------------------------------------------------------
 msg_header "8. Stage-2 harness deploy (COWORK deploy.sh)"
 DEPLOY="$COWORK_DIR/.claude-config/deploy.sh"
@@ -570,7 +566,7 @@ cat <<SUMMARY
       + pbcopy / pbpaste / pbhistory (xclip -> wl-clipboard)
     - herdr config -> ~/.config/herdr/config.toml (default_shell = /usr/bin/bash)
     - bash overlay -> ~/.config/lpx/bashrc-overlay.sh
-    - managed block in ~/.bashrc (overlay + Claude wrapper + ~/.bashrc.local)
+    - managed block in ~/.bashrc (overlay + ~/.bashrc.local)
     - Stage-2 harness via COWORK deploy.sh
     - Optionals attempted: cloudflared, NordVPN (nordvpn-bin), superfile, T3 Code desktop (t3code-bin)
 

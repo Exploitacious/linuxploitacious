@@ -19,8 +19,10 @@ MESSAGES = """
 msg_info() { echo "INFO: $*"; }
 msg_success() { echo "SUCCESS: $*"; }
 msg_warn() { echo "WARN: $*"; }
+msg_error() { echo "ERROR: $*"; }
 msg_header() { :; }
 """
+STAGE2_GATE = "    # Stage 2 is gated on the harness's own deployer"
 
 
 def section(path, start, end):
@@ -116,6 +118,107 @@ class Stage1Tests(unittest.TestCase):
         self.assertIn("caveman", result.stdout)
         self.assertIn("ponytail", result.stdout)
         self.assertNotIn("WARN:", result.stdout)
+
+    def stage2(self, harness):
+        # The gate through the end of setup_harness; the section carries the
+        # function's closing brace, which closes the wrapper opened here.
+        body = STAGE2_GATE + section("shellSetup.sh", STAGE2_GATE,
+                                     "  # --- MENU & EXECUTION ---")
+        return self.shell(MESSAGES + 'stage2() {\n  local HARNESS_DIR="$1"\n'
+                          + body + '\nstage2 "$HARNESS"\n', HARNESS=str(harness))
+
+    def deployer(self, harness, status):
+        self.executable(harness / ".claude-config/deploy.sh",
+                        'touch "$HOME/deploy-ran"; exit ' + str(status))
+
+    def test_stage2_gate_runs_deploy_script_without_workforce(self):
+        # The harness retired WORKFORCE/; Stage 2 must still run on a new box.
+        harness = self.home / "COWORK"
+        self.deployer(harness, 0)
+        self.assertFalse((harness / "WORKFORCE").exists())
+        zshrc = self.home / ".zshrc"
+        zshrc.write_text("# keep\n# --- COWORK Multi-Agent Coordination ---\n"
+                         'export PATH="$HOME/COWORK/AGENTS/bin:$PATH"\n')
+        result = self.stage2(harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "deploy-ran").exists())
+        self.assertIn("SUCCESS: Harness deployed at " + str(harness), result.stdout)
+        self.assertNotIn("WARN:", result.stdout)
+        # The kept legacy cleanup still strips the old harness PATH block.
+        self.assertEqual(zshrc.read_text(), "# keep\n")
+
+    def test_stage2_gate_skips_with_warning_without_deploy_script(self):
+        # A leftover WORKFORCE/ must not stand in for the deployer.
+        harness = self.home / "COWORK"
+        (harness / "WORKFORCE").mkdir(parents=True)
+        result = self.stage2(harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("WARN: No Stage 2 deployer at " + str(harness)
+                      + "/.claude-config/deploy.sh", result.stdout)
+        self.assertIn("Skipping Stage 2.", result.stdout)
+        self.assertNotIn("SUCCESS:", result.stdout)
+        self.assertFalse((self.home / "deploy-ran").exists())
+
+    def test_stage2_gate_reports_failed_deploy_without_claiming_success(self):
+        harness = self.home / "OPS"
+        self.deployer(harness, 3)
+        result = self.stage2(harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "deploy-ran").exists())
+        self.assertIn("ERROR: Harness deploy.sh failed.", result.stdout)
+        self.assertNotIn("SUCCESS:", result.stdout)
+
+    def test_windows_stage2_gate_keys_on_deploy_script(self):
+        # Static: pwsh is absent on most Linux boxes, and the gate must hold
+        # on every one of them before a Windows box ever runs it.
+        text = (ROOT / "winSetup.ps1").read_text()
+        body = section("winSetup.ps1", STAGE2_GATE, "# ═")
+        assign = "$deployScript = Join-Path $CoworkDir '.claude-config\\deploy.ps1'"
+        gate = "if ($canProceed -and (Test-Path $deployScript)) {"
+        self.assertIn(gate, body)
+        self.assertLess(body.index(assign), body.index(gate))
+        self.assertIn('Write-Warn "No Stage 2 deployer at $deployScript', body)
+        self.assertNotIn("WORKFORCE", text)
+
+    def test_settings_has_no_retired_fleet_hooks(self):
+        text = (ROOT / "claude/.claude/settings.json").read_text()
+        self.assertEqual(json.loads(text), SETTINGS)
+        for retired in ("WORKFORCE", "ac-reorient"):
+            self.assertNotIn(retired, text)
+        # Every harness hook lives in the harness's hooks dir, which survives
+        # layout changes the way the retired fleet dir did not.
+        targets = [m[1] for c in HOOKS for m in [re.search(r"\$H(/[^\s\";]+)", c)] if m]
+        self.assertTrue(targets)
+        for target in targets:
+            self.assertTrue(target.startswith("/.claude-config/hooks/"), target)
+
+    def test_rc_files_do_not_source_claude_wrapper(self):
+        # The wrapper is root-only now; COWORK's deploy.sh wires /root's rcs.
+        for path in ("bash/.bashrc", "zsh/.zshrc", "omarchy/bashrc-overlay.sh",
+                     "omarchy/omarchySetup.sh"):
+            with self.subTest(path=path):
+                self.assertNotIn("claude-wrapper.sh", (ROOT / path).read_text())
+
+    def test_omarchy_managed_block_drops_old_wrapper_line(self):
+        start = 'msg_header "7. Wire ~/.bashrc managed block"'
+        body = start + section("omarchy/omarchySetup.sh", start,
+                               "# 7b. Stage-1 Claude files")
+        overlay = '[ -r "$HOME/.config/lpx/bashrc-overlay.sh" ] && . "$HOME/.config/lpx/bashrc-overlay.sh"\n'
+        local = '[ -r "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"\n'
+        bashrc = self.home / ".bashrc"
+        # A box provisioned before the wrapper went root-only.
+        bashrc.write_text(
+            "# omarchy default\n# >>> lpx-omarchy (managed) >>>\n" + overlay
+            + "# --- COWORK Claude wrapper (root/master safety) ---\n"
+            '[ -r "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh" ] && '
+            '. "$HOME/COWORK/WORKFORCE/bin/claude-wrapper.sh"\n'
+            + local + "# <<< lpx-omarchy (managed) <<<\n")
+        expected = ("# omarchy default\n\n# >>> lpx-omarchy (managed) >>>\n" + overlay
+                    + local + "# <<< lpx-omarchy (managed) <<<\n")
+        for _ in range(2):
+            result = self.shell("set -euo pipefail\n" + MESSAGES + body)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(bashrc.read_text(), expected)
 
     def test_t3_install_failure_does_not_refresh_package_database(self):
         body = section("omarchy/omarchySetup.sh", "# T3 Code desktop client:",

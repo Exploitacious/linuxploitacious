@@ -13,8 +13,8 @@
 # prompt (starship is Omarchy's), the bat/eza/tealdeer/zoxide/fzf theming blocks
 # (Omarchy owns those tools + theme), the fastfetch-on-login call, and the
 # nvm/pyenv/pnpm/opencode PATH blocks (runtimes come from mise; no npm/pip here).
-# The claude-wrapper.sh and ~/.bashrc.local sources are NOT here on purpose — the
-# managed block in ~/.bashrc adds those, AFTER this file, in the correct order.
+# The ~/.bashrc.local source is NOT here on purpose — the managed block in
+# ~/.bashrc adds it AFTER this file, so machine-local overrides win.
 
 # --- PATH: ~/.local/bin first (idempotent) ---
 # Native binaries (the lpx helpers) win over anything later on PATH. Re-sourcing

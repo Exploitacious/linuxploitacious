@@ -6,14 +6,14 @@ CLAUDE.md adds to them.
 ## Harness context
 
 If `~/COWORK/` (or `~/OPS/`) exists, its `CLAUDE.md` is the primary instruction
-layer and its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`)
-take precedence over anything here. Its foreman charter, identity digest, and
-operating model ride your system prompt on every launch path; the session
-briefing prints a `Boot:` line with the content sha, and `sha unset` means the
-launch bypassed that surface. In that case, read `CONTEXT/foreman-charter.md`,
-`CONTEXT/boot-digest.md`, and `SKILLS/umbrella-operating-model/SKILL.md` under
-the detected harness root (`~/COWORK/`, otherwise `~/OPS/`). This file is
-the fallback for a host with no harness deployed.
+layer and takes precedence over anything here. Its foreman charter, identity
+digest, and operating model ride your system prompt on every launch path; the
+session briefing prints a `Boot:` line with the content sha, and `sha unset`
+means the launch bypassed that surface. In that case, read
+`CONTEXT/foreman-charter.md`, `CONTEXT/boot-digest.md`, and
+`SKILLS/umbrella-operating-model/SKILL.md` under the detected harness root
+(`~/COWORK/`, otherwise `~/OPS/`). This file is the fallback for a host with no
+harness deployed.
 
 ## How to work
 

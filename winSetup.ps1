@@ -1352,13 +1352,19 @@ if ($Selected -contains 'HARNESS') {
         }
     }
 
-    # WORKFORCE/ replaced the legacy AGENTS/ name. Per-project runtime
-    # lives under WORKFORCE\FLEETPROJECTS\<slug>\runtime\ and is created
-    # lazily by ac-register, not at clone time.
-    if ($canProceed -and (Test-Path (Join-Path $CoworkDir 'WORKFORCE'))) {
-        # Legacy cleanup: earlier winSetup versions wired WORKFORCE\bin to
-        # PATH from this section. Now owned by COWORK's deploy.ps1. Strip
-        # any AGENTS\bin block this host may have left behind.
+    # Stage 2 is gated on the harness's own deployer, not on a directory
+    # inside it: the harness layout moves (its multi-agent directory was
+    # renamed once and later retired), and this repo and the harness land
+    # independently, so a directory gate would skip Stage 2 on every new
+    # machine once that directory went away. .claude-config\deploy.ps1 is the
+    # Stage 2 entry point in every harness version, before and after that
+    # retirement.
+    $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
+    if ($canProceed -and (Test-Path $deployScript)) {
+        # Legacy cleanup: earlier winSetup versions wired the harness bin dir
+        # (COWORK\AGENTS\bin) to PATH from this section; harness PATH wiring
+        # is now owned by COWORK's deploy.ps1. Strip any AGENTS\bin block this
+        # host may have left behind so a migrating machine stops exporting it.
         # OneDrive can redirect Documents to a renamed path ("Documents 1")
         # and may also serve files as cloud-only stubs that Test-Path sees
         # but Get-Content can't open. Treat the legacy cleanup as best-effort:
@@ -1380,8 +1386,8 @@ if ($Selected -contains 'HARNESS') {
         }
 
         # Hand off to COWORK's Stage 2 deployer for everything COWORK-internal:
-        # skill + commands symlinks, WORKFORCE\bin PATH wiring,
-        # ac-memory-init.ps1, daily backup scheduled task, plugin install.
+        # skill + commands symlinks, profile seam wiring, auto-memory init,
+        # daily backup scheduled task, plugin install.
         # See $CoworkDir\DEPLOYMENT.md for the full procedure.
         # Stage 2 symlinks land under ~/.claude/; this block can run BEFORE the
         # CONFIGS block (which also creates ~/.claude) or when CONFIGS isn't
@@ -1392,38 +1398,38 @@ if ($Selected -contains 'HARNESS') {
         if (-not (Test-Path $claudeHomeEnsure)) {
             New-Item -ItemType Directory -Path $claudeHomeEnsure -Force | Out-Null
         }
-        $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
-        if (Test-Path $deployScript) {
-            Write-Info 'Invoking harness deploy.ps1 for Stage 2 setup...'
-            # Spawn under the SAME interpreter we're running on (pwsh when
-            # we're on PS7). Hardcoding `powershell.exe` drops to PS5.1,
-            # which mis-decodes any UTF-8 non-ASCII in deploy.ps1 and
-            # cascades parse errors. The PS7+admin gate at the top of this
-            # script guarantees we're on pwsh.exe by the time we get here.
-            $currentInterp = (Get-Process -Id $PID).Path
-            try {
-                & $currentInterp -NoProfile -ExecutionPolicy Bypass -File $deployScript
-                if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
-                    Write-Success 'Harness deploy.ps1 completed.'
-                } else {
-                    Write-Err "Harness deploy.ps1 exited rc=$LASTEXITCODE. Re-run manually: $deployScript"
-                }
-            } catch {
-                Write-Err "Harness deploy.ps1 failed: $_"
+        Write-Info 'Invoking harness deploy.ps1 for Stage 2 setup...'
+        # Spawn under the SAME interpreter we're running on (pwsh when
+        # we're on PS7). Hardcoding `powershell.exe` drops to PS5.1,
+        # which mis-decodes any UTF-8 non-ASCII in deploy.ps1 and
+        # cascades parse errors. The PS7+admin gate at the top of this
+        # script guarantees we're on pwsh.exe by the time we get here.
+        $currentInterp = (Get-Process -Id $PID).Path
+        $deployOk = $false
+        try {
+            & $currentInterp -NoProfile -ExecutionPolicy Bypass -File $deployScript
+            if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
+                Write-Success 'Harness deploy.ps1 completed.'
+                $deployOk = $true
+            } else {
+                Write-Err "Harness deploy.ps1 exited rc=$LASTEXITCODE. Re-run manually: $deployScript"
             }
-        } else {
-            Write-Warn "deploy.ps1 not found at $deployScript -- Stage 2 skipped."
-            Write-Warn "After fixing, run: $deployScript"
+        } catch {
+            Write-Err "Harness deploy.ps1 failed: $_"
         }
 
-        Write-Success "Harness deployed at $CoworkDir."
-        if ((Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md')) -and -not (Test-Path (Join-Path $CoworkDir 'CONTEXT\.bootstrapped'))) {
-            Write-Info "Fresh OPS copy detected: your FIRST Claude Code session in $CoworkDir"
-            Write-Info 'will run the BOOTSTRAP interview to personalize the harness. Just launch and follow along.'
+        # Claim the harness is deployed only when Stage 2 actually succeeded;
+        # a failed deploy.ps1 already reported its error above.
+        if ($deployOk) {
+            Write-Success "Harness deployed at $CoworkDir."
+            if ((Test-Path (Join-Path $CoworkDir 'BOOTSTRAP.md')) -and -not (Test-Path (Join-Path $CoworkDir 'CONTEXT\.bootstrapped'))) {
+                Write-Info "Fresh OPS copy detected: your FIRST Claude Code session in $CoworkDir"
+                Write-Info 'will run the BOOTSTRAP interview to personalize the harness. Just launch and follow along.'
+            }
         }
-        Write-Info 'Activation triggers: type ACTIVATE AGENT or ACTIVATE COORDINATOR in any Claude Code session.'
     } elseif ($canProceed) {
-        Write-Warn 'WORKFORCE/ not present in this branch. Skipping coordination setup.'
+        Write-Warn "No Stage 2 deployer at $deployScript in this branch. Skipping Stage 2."
+        Write-Warn "After fixing, run: $deployScript"
     }
 }
 
@@ -1505,8 +1511,7 @@ if ($Selected -contains 'SSHKEY') {
 
 if ($Selected -contains 'COWORK') {
     Write-Host '  COWORK:' -ForegroundColor White
-    Write-Host '    Multi-Agent Coordination deployed to ~/COWORK'
-    Write-Host '    Triggers: ACTIVATE AGENT / ACTIVATE COORDINATOR'
+    Write-Host '    AI harness in ~/COWORK or ~/OPS; Stage 2 runs .claude-config\deploy.ps1'
     Write-Host ''
 }
 
