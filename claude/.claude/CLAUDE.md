@@ -49,10 +49,12 @@ natural break or when the user says wrap up.
 ## Models
 
 - Primary foreman: Fable 5.1 (`claude-fable-5-1[1m]`, the settings pin).
-- Fallback foreman: Opus 4.8 (`claude-opus-4-8[1m]`) when Fable usage is out.
-- Default build, review, and audit worker: Opus 4.8. Light lanes: Sonnet 5
-  (`model: "sonnet"`).
-- Banned everywhere: Opus 5 (`claude-opus-5`) and Haiku (any version).
+- Fallback foreman: Opus 5.5 (`claude-opus-5-5[1m]`) when Fable usage is out.
+- Default build, review, and audit worker: Opus 5.5. Light lanes: Sonnet 5
+  (`model: "sonnet"`). Opus 4.8 (`claude-opus-4-8[1m]`) stays allowed as the
+  manual fallback if 5.5 misbehaves (ruling 2026-09-22).
+- Banned everywhere: Opus 5 (`claude-opus-5`, the exact id; 5.5 is not Opus 5)
+  and Haiku (any version).
   `ANTHROPIC_DEFAULT_HAIKU_MODEL` stays pinned to `claude-sonnet-5` as the
   tripwire; removing it brings real Haiku back.
 
