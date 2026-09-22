@@ -1359,8 +1359,9 @@ if ($Selected -contains 'HARNESS') {
     # machine once that directory went away. .claude-config\deploy.ps1 is the
     # Stage 2 entry point in every harness version, before and after that
     # retirement.
+    $deployOk = $false
     $deployScript = Join-Path $CoworkDir '.claude-config\deploy.ps1'
-    if ($canProceed -and (Test-Path $deployScript)) {
+    if ($canProceed -and (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
         # Legacy cleanup: earlier winSetup versions wired the harness bin dir
         # (COWORK\AGENTS\bin) to PATH from this section; harness PATH wiring
         # is now owned by COWORK's deploy.ps1. Strip any AGENTS\bin block this
@@ -1405,7 +1406,6 @@ if ($Selected -contains 'HARNESS') {
         # cascades parse errors. The PS7+admin gate at the top of this
         # script guarantees we're on pwsh.exe by the time we get here.
         $currentInterp = (Get-Process -Id $PID).Path
-        $deployOk = $false
         try {
             & $currentInterp -NoProfile -ExecutionPolicy Bypass -File $deployScript
             if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
@@ -1468,7 +1468,7 @@ Refresh-Path
 Write-Host ''
 Write-Header 'Setup Complete'
 Write-Host ''
-$installedNames = ($MenuItems | Where-Object { $_.On -and $_.Key -notin @('CONFIGS','APPS','TWEAKS','SSHKEY','COWORK') } |
+$installedNames = ($MenuItems | Where-Object { $_.On -and $_.Key -notin @('CONFIGS','APPS','TWEAKS','SSHKEY','HARNESS') } |
     ForEach-Object { $_.Label }) -join ', '
 if ($installedNames) {
     Write-Host "  Installed: $installedNames" -ForegroundColor White
@@ -1509,9 +1509,9 @@ if ($Selected -contains 'SSHKEY') {
     Write-Host ''
 }
 
-if ($Selected -contains 'COWORK') {
-    Write-Host '  COWORK:' -ForegroundColor White
-    Write-Host '    AI harness in ~/COWORK or ~/OPS; Stage 2 runs .claude-config\deploy.ps1'
+if (($Selected -contains 'HARNESS') -and $deployOk) {
+    Write-Host '  HARNESS:' -ForegroundColor White
+    Write-Host "    AI harness deployed at $CoworkDir"
     Write-Host ''
 }
 

@@ -159,11 +159,20 @@ class Stage1Tests(unittest.TestCase):
         self.assertNotIn("SUCCESS:", result.stdout)
         self.assertFalse((self.home / "deploy-ran").exists())
 
+    def test_stage2_gate_runs_deploy_script_with_workforce(self):
+        harness = self.home / "COWORK"
+        self.deployer(harness, 0)
+        (harness / "WORKFORCE").mkdir()
+        result = self.stage2(harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "deploy-ran").exists())
+        self.assertIn("SUCCESS: Harness deployed at " + str(harness), result.stdout)
+
     def test_stage2_gate_reports_failed_deploy_without_claiming_success(self):
         harness = self.home / "OPS"
         self.deployer(harness, 3)
         result = self.stage2(harness)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.home / "deploy-ran").exists())
         self.assertIn("ERROR: Harness deploy.sh failed.", result.stdout)
         self.assertNotIn("SUCCESS:", result.stdout)
@@ -174,17 +183,41 @@ class Stage1Tests(unittest.TestCase):
         text = (ROOT / "winSetup.ps1").read_text()
         body = section("winSetup.ps1", STAGE2_GATE, "# ═")
         assign = "$deployScript = Join-Path $CoworkDir '.claude-config\\deploy.ps1'"
-        gate = "if ($canProceed -and (Test-Path $deployScript)) {"
+        gate = "if ($canProceed -and (Test-Path -LiteralPath $deployScript -PathType Leaf)) {"
         self.assertIn(gate, body)
         self.assertLess(body.index(assign), body.index(gate))
         self.assertIn('Write-Warn "No Stage 2 deployer at $deployScript', body)
         self.assertNotIn("WORKFORCE", text)
 
+    def test_windows_summary_only_claims_successful_harness_deploy(self):
+        body = section("winSetup.ps1", "#  DONE", "Write-Host '  Keybinds")
+        self.assertIn("'SSHKEY','HARNESS')", body)
+        self.assertNotIn("'COWORK'", body)
+        self.assertIn("if (($Selected -contains 'HARNESS') -and $deployOk) {", body)
+        self.assertIn('Write-Host "    AI harness deployed at $CoworkDir"', body)
+
     def test_settings_has_no_retired_fleet_hooks(self):
         text = (ROOT / "claude/.claude/settings.json").read_text()
-        self.assertEqual(json.loads(text), SETTINGS)
         for retired in ("WORKFORCE", "ac-reorient"):
             self.assertNotIn(retired, text)
+        # Compare against the surviving hook contract, not a second read of
+        # the same JSON. Losing another hook must fail this retirement check.
+        expected = {
+            "startup|clear": ["session-briefing.sh", "post-compact-resume.sh",
+                              "handoff-check.sh", "vault-inbox-check.sh",
+                              "memory-index.sh", "remote-session-register.sh",
+                              "session-work-init.sh"],
+            "resume|compact": ["post-compact-resume.sh", "handoff-check.sh",
+                               "session-briefing.sh", "remote-session-register.sh",
+                               "session-work-init.sh"],
+            "*": ["herdr-agent-state.sh"],
+        }
+        groups = SETTINGS["hooks"]["SessionStart"]
+        self.assertEqual([group["matcher"] for group in groups], list(expected))
+        for group in groups:
+            names = [re.search(r"/([\w-]+\.sh)", hook["command"]).group(1)
+                     for hook in group["hooks"]]
+            self.assertEqual(names, expected[group["matcher"]])
         # Every harness hook lives in the harness's hooks dir, which survives
         # layout changes the way the retired fleet dir did not.
         targets = [m[1] for c in HOOKS for m in [re.search(r"\$H(/[^\s\";]+)", c)] if m]

@@ -2408,7 +2408,8 @@ EOF
     msg_info "Invoking harness deploy.sh for Stage 2 setup..."
     if ! bash "$DEPLOY_SCRIPT"; then
       msg_error "Harness deploy.sh failed. Re-run manually: bash $DEPLOY_SCRIPT"
-      return
+      # --run aggregates function exit codes, so logging alone is not enough.
+      return 1
     fi
     msg_success "Harness deploy.sh completed."
 
