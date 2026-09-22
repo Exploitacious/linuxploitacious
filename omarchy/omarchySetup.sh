@@ -417,7 +417,9 @@ if [ -d "$CLAUDE_SRC" ]; then
       msg_warn "Backed up existing $(basename "$src")"
     fi
     [ -L "$tgt" ] && rm -f "$tgt"
-    ln -s "$src" "$tgt" && msg_success "Linked: $tgt -> $src"
+    # A failed link must stop Stage 1 before Stage 2 mirrors an incomplete profile.
+    ln -s "$src" "$tgt"
+    msg_success "Linked: $tgt -> $src"
   done
 else
   msg_warn "$CLAUDE_SRC not found — skipping Level-1 Claude files."
@@ -540,19 +542,20 @@ fi
 # Same package name in the [omarchy] repo and the AUR; repo first. The omarchy
 # repo rotates package files quickly, so a STALE sync DB makes the download
 # 404 (2026-09-08: the DB offered 0.0.33-2, the repo only had 0.0.39-1). On
-# failure refresh the sync DBs (-Sy alone: still no -u, no system upgrade) and
-# retry once. Verify with pacman -Q (rule: a failed transaction is silent).
+# failure leave the sync DBs alone: -Sy followed by a selective install can
+# partially upgrade Arch and break installed libraries. A system upgrade is
+# outside this script's scope; let the operator update Omarchy before retrying.
+# Verify with pacman -Q because an install helper's success is not proof.
 if pacman -Q t3code-bin >/dev/null 2>&1; then
   msg_info "T3 Code desktop already installed: $(pacman -Q t3code-bin)"
-elif install_from_repo_or_aur t3code-bin t3code-bin \
-     || { sudo pacman -Sy >/dev/null 2>&1 && install_from_repo_or_aur t3code-bin t3code-bin; }; then
+elif install_from_repo_or_aur t3code-bin t3code-bin; then
   if pacman -Q t3code-bin >/dev/null 2>&1; then
     msg_info "Pair it: on the t3code server box run 't3 pair --tailscale --ttl 1h --label $(hostname)', open T3 Code here, paste the link."
   else
     msg_warn "t3code-bin install reported success but pacman -Q cannot see it — check /var/log/pacman.log."
   fi
 else
-  msg_warn "T3 Code desktop (t3code-bin) not installable from the omarchy repo/AUR — skipping."
+  msg_warn "T3 Code desktop (t3code-bin) not installable from the omarchy repo/AUR. If the sync DB is stale, update Omarchy through its normal system update flow, then re-run setup."
 fi
 
 # ---------------------------------------------------------------------------

@@ -307,9 +307,15 @@ project directory.
 **Stage 1 — Plugins:** The caveman and ponytail plugins are retired
 (operator ruling 2026-08-31). Their terse-prose and lazy-engineering
 modes are merged into the always-on `umbrella-operating-model` skill,
-injected via the `umbrella-operating-model.sh` hook on SessionStart,
-SubagentStart, and UserPromptSubmit. The Stage-1 script now uninstalls
-the plugins on any already-provisioned host.
+included in the main session's system prompt by the Stage-2 launch shim
+and injected into lanes by the `umbrella-operating-model.sh` SubagentStart
+hook. There is no per-turn operating-model reminder hook. The Stage-1
+scripts attempt to uninstall the plugins on already-provisioned hosts
+and report CLI failures, including already-absent plugins or marketplaces.
+
+Offline checks for the shared hooks, profile selection, plugin retirement,
+Omarchy file deployment, and SSH picker gating: `python3 scripts/test_stage1.py`.
+The Windows retirement check runs when `pwsh` is available.
 
 **Stage 2 — HARNESS (optional):** Selecting `HARNESS` in the menu
 deploys the workspace repo — `~/COWORK/` (private, if your gh auth

@@ -193,10 +193,9 @@ else CACHE_C=$RED; fi
 TOTAL_TIME=$(fmt_time "$TOTAL_MS")
 API_TIME=$(fmt_time "$API_MS")
 
-# Umbrella operating-model badge — the model is unconditionally on via the
-# SessionStart/SubagentStart/UserPromptSubmit hooks, so this is a static pin
-# with no plugin state file to resolve. Replaces the retired caveman + ponytail
-# badges (operator ruling 2026-08-31).
+# Umbrella branding, not a runtime check: the Stage-2 launch shim carries the
+# operating model in the main system prompt; SubagentStart injects it into lanes.
+# No plugin state file remains after caveman + ponytail retirement (2026-08-31).
 UMB="  ${B}${GRN}[Umbrella]${RST}"
 
 # Formatted cost

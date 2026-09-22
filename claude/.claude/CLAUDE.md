@@ -10,9 +10,10 @@ layer and its activation triggers (`ACTIVATE AGENT`, `ACTIVATE COORDINATOR`)
 take precedence over anything here. Its foreman charter, identity digest, and
 operating model ride your system prompt on every launch path; the session
 briefing prints a `Boot:` line with the content sha, and `sha unset` means the
-launch bypassed that surface, so read `CONTEXT/foreman-charter.md` and
-`CONTEXT/boot-digest.md` yourself. This file is the fallback for a host with
-no harness deployed.
+launch bypassed that surface. In that case, read `CONTEXT/foreman-charter.md`,
+`CONTEXT/boot-digest.md`, and `SKILLS/umbrella-operating-model/SKILL.md` under
+the detected harness root (`~/COWORK/`, otherwise `~/OPS/`). This file is
+the fallback for a host with no harness deployed.
 
 ## How to work
 
@@ -50,9 +51,13 @@ natural break or when the user says wrap up.
 
 - Primary foreman: Fable 5.1 (`claude-fable-5-1[1m]`, the settings pin).
 - Fallback foreman: Opus 5.5 (`claude-opus-5-5[1m]`) when Fable usage is out.
-- Default build, review, and audit worker: Opus 5.5. Light lanes: Sonnet 5
+- Default build and audit worker: Opus 5.5. Light lanes: Sonnet 5
   (`model: "sonnet"`). Opus 4.8 (`claude-opus-4-8[1m]`) stays allowed as the
   manual fallback if 5.5 misbehaves (ruling 2026-09-22).
+- Reviews run on GPT-6 Astra through the harness's
+  `.claude-config/bin/astra-review.sh` in write mode. Claude review lanes are
+  blocked by `review-gate-guard.sh`; the `ASTRA-FALLBACK:` exception requires
+  a confirmed Codex outage.
 - Banned everywhere: Opus 5 (`claude-opus-5`, the exact id; 5.5 is not Opus 5)
   and Haiku (any version).
   `ANTHROPIC_DEFAULT_HAIKU_MODEL` stays pinned to `claude-sonnet-5` as the

@@ -1432,15 +1432,25 @@ if ($Selected -contains 'HARNESS') {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
-# always-on umbrella-operating-model skill (injected via umbrella-operating-model.sh).
+# always-on umbrella-operating-model skill (launch-shim system prompt for main
+# sessions, SubagentStart hook for lanes).
 # This block used to INSTALL caveman; it now UNINSTALLS any caveman/ponytail left on
 # an already-provisioned host. Idempotent no-op once they are gone.
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Header 'Retiring caveman + ponytail plugins'
     foreach ($plg in @('caveman', 'ponytail')) {
-        & claude plugin uninstall "${plg}@${plg}" 2>&1 | Out-Null
-        & claude plugin marketplace remove $plg 2>&1 | Out-Null
-        Write-Success "Ensured retired plugin removed: $plg"
+        $pluginOut = & claude plugin uninstall "${plg}@${plg}" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Removed retired plugin: $plg"
+        } else {
+            Write-Warn "Plugin retirement (${plg}): $pluginOut"
+        }
+        $marketplaceOut = & claude plugin marketplace remove $plg 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Removed retired marketplace: $plg"
+        } else {
+            Write-Warn "Marketplace retirement (${plg}): $marketplaceOut"
+        }
     }
 }
 

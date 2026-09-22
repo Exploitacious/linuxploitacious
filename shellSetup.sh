@@ -2085,12 +2085,13 @@ EOF
 
   # --- CLAUDE CODE PLUGINS: retirement (runs after config so settings.json exists) ---
   # Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
-  # always-on umbrella-operating-model skill (injected via the
-  # umbrella-operating-model.sh hook), so the third-party plugins are retired.
+  # always-on umbrella-operating-model skill (launch-shim system prompt for
+  # main sessions, SubagentStart hook for lanes), so the plugins are retired.
   # This function used to INSTALL them; it now UNINSTALLS any left on an
   # already-provisioned host, and is a no-op once they are gone (idempotent).
 
   retire_claude_plugins() {
+    local plg plugin_output marketplace_output
     if ! command -v claude &> /dev/null; then
       msg_warn "Claude CLI not found in PATH. Skipping caveman/ponytail plugin retirement."
       return
@@ -2099,15 +2100,17 @@ EOF
     msg_header "Retiring caveman + ponytail plugins"
 
     for plg in caveman ponytail; do
-      if claude plugin uninstall "${plg}@${plg}" >/dev/null 2>&1; then
+      if plugin_output=$(claude plugin uninstall "${plg}@${plg}" 2>&1); then
         msg_success "Removed retired plugin: ${plg}"
+      else
+        msg_warn "Plugin retirement (${plg}): ${plugin_output}"
       fi
-      claude plugin marketplace remove "$plg" >/dev/null 2>&1 || true
-      # Belt-and-suspenders: drop the marketplace dir directly. Guarded so only
-      # this exact path is ever removed, never a broader tree.
-      mkt_dir="$HOME/.claude/plugins/marketplaces/${plg}"
-      if [ -d "$mkt_dir" ]; then
-        rm -rf "$mkt_dir" && msg_success "Removed retired marketplace dir: ${plg}"
+      # Let the CLI own profile selection and cleanup. Deleting ~/.claude paths
+      # after a failed command can break a still-registered or different profile.
+      if marketplace_output=$(claude plugin marketplace remove "$plg" 2>&1); then
+        msg_success "Removed retired marketplace: ${plg}"
+      else
+        msg_warn "Marketplace retirement (${plg}): ${marketplace_output}"
       fi
     done
   }
