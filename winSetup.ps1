@@ -1428,27 +1428,29 @@ if ($Selected -contains 'HARNESS') {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CLAUDE PLUGINS -- Install after CONFIGS deploys settings.json
+#  CLAUDE PLUGINS -- retire caveman + ponytail after CONFIGS deploys settings.json
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Unconditional -- runs whenever claude is in PATH (matches shellSetup.sh behavior).
-# settings.json (deployed above) contains extraKnownMarketplaces for caveman.
+# Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
+# always-on umbrella-operating-model skill (launch-shim system prompt for main
+# sessions, SubagentStart hook for lanes).
+# This block used to INSTALL caveman; it now UNINSTALLS any caveman/ponytail left on
+# an already-provisioned host. Idempotent no-op once they are gone.
 if (Get-Command claude -ErrorAction SilentlyContinue) {
-    Write-Header 'Claude Code Plugins'
-    Write-Info 'Registering caveman plugin marketplace...'
-    $marketplaceOut = & claude plugin marketplace add JuliusBrussee/caveman 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Success 'Marketplace registered.'
-        Write-Info 'Installing caveman plugin...'
-        $pluginOut = & claude plugin install caveman@caveman 2>&1
+    Write-Header 'Retiring caveman + ponytail plugins'
+    foreach ($plg in @('caveman', 'ponytail')) {
+        $pluginOut = & claude plugin uninstall "${plg}@${plg}" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Success 'Caveman plugin installed.'
+            Write-Success "Removed retired plugin: $plg"
         } else {
-            Write-Warn "Plugin install returned: $pluginOut"
-            Write-Warn 'Run manually: claude plugin install caveman@caveman'
+            Write-Warn "Plugin retirement (${plg}): $pluginOut"
         }
-    } else {
-        Write-Warn "Marketplace add returned: $marketplaceOut"
+        $marketplaceOut = & claude plugin marketplace remove $plg 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Removed retired marketplace: $plg"
+        } else {
+            Write-Warn "Marketplace retirement (${plg}): $marketplaceOut"
+        }
     }
 }
 

@@ -387,6 +387,57 @@ sed -i -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$BASHRC"
 msg_success "managed block wired at bottom of ~/.bashrc."
 
 # ---------------------------------------------------------------------------
+# 7b. Stage-1 Claude files + tailscaled.
+#     The generic shellSetup.sh lays down the Level-1 Claude files
+#     (deploy_claude_config); this Omarchy variant originally skipped them, so
+#     `claude`/`clawd` booted on Claude's onboarding stub (model:sonnet, no
+#     hooks/statusline/model-pins). deploy.sh (Stage-2) MIRRORS these to the
+#     personal profile but does NOT lay down the Level-1 files — that is
+#     Stage-1's job. Gap found + fixed on t2omarchy 2026-08-25. The caveman +
+#     ponytail plugins this section used to install are retired (operator ruling
+#     2026-08-31, merged into the umbrella-operating-model skill); Stage-2
+#     deploy.sh now uninstalls any leftovers. Runs before section 8 so deploy.sh
+#     has the files to mirror.
+# ---------------------------------------------------------------------------
+msg_header "7b. Claude Stage-1 files + tailscaled"
+
+# Level-1 Claude config: symlink from the repo (Stage-1-owned), back up real files.
+CLAUDE_SRC="$LPX_DIR/claude/.claude"
+CLAUDE_DIR="$HOME/.claude"
+if [ -d "$CLAUDE_SRC" ]; then
+  mkdir -p "$CLAUDE_DIR"
+  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/CLAUDE.md; do
+    [ -f "$src" ] || continue
+    tgt="$CLAUDE_DIR/$(basename "$src")"
+    if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
+      msg_info "Already linked: $tgt"; continue
+    fi
+    if [ -e "$tgt" ] && [ ! -L "$tgt" ]; then
+      mv "$tgt" "${tgt}.backup_$(date +%Y%m%d_%H%M%S)"
+      msg_warn "Backed up existing $(basename "$src")"
+    fi
+    [ -L "$tgt" ] && rm -f "$tgt"
+    # A failed link must stop Stage 1 before Stage 2 mirrors an incomplete profile.
+    ln -s "$src" "$tgt"
+    msg_success "Linked: $tgt -> $src"
+  done
+else
+  msg_warn "$CLAUDE_SRC not found — skipping Level-1 Claude files."
+fi
+
+# Enable tailscaled so remote access survives a reboot (`tailscale up` alone does
+# not persist — a t2omarchy reboot dropped the tailnet until this was set 2026-08-25).
+if command -v tailscale >/dev/null 2>&1 && systemctl list-unit-files tailscaled.service >/dev/null 2>&1; then
+  if sudo -n systemctl enable --now tailscaled >/dev/null 2>&1; then
+    msg_success "tailscaled enabled + started (survives reboot)."
+  else
+    msg_warn "Could not enable tailscaled — run: sudo systemctl enable --now tailscaled"
+  fi
+else
+  msg_info "tailscale not installed — skipping tailscaled enable."
+fi
+
+# ---------------------------------------------------------------------------
 # 8. Stage-2: COWORK deploy.sh (skills/commands symlinks, WORKFORCE PATH,
 #    ultracode + clawd .env + CLAUDE_CODE_TMPDIR + workspace alias into
 #    ~/.bashrc.local, MCP, plugins). Its daily-backup cron step self-skips when
@@ -405,9 +456,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Optionals: cloudflared, NordVPN, superfile (guard, warn-don't-abort)
+# 9. Optionals: cloudflared, NordVPN, superfile, T3 Code desktop (guard, warn-don't-abort)
 # ---------------------------------------------------------------------------
-msg_header "9. Optionals (cloudflared, NordVPN, superfile)"
+msg_header "9. Optionals (cloudflared, NordVPN, superfile, T3 Code desktop)"
 
 # Try official repos first, then AUR fallbacks (yay). $1 = pacman name; the rest
 # = AUR candidate package names.
@@ -486,6 +537,27 @@ else
   msg_warn "superfile not installable from repos/AUR — skipping."
 fi
 
+# T3 Code desktop client: the Electron app that pairs with the harness's
+# t3code server over the tailnet (same role as the Windows/phone clients).
+# Same package name in the [omarchy] repo and the AUR; repo first. The omarchy
+# repo rotates package files quickly, so a STALE sync DB makes the download
+# 404 (2026-09-08: the DB offered 0.0.33-2, the repo only had 0.0.39-1). On
+# failure leave the sync DBs alone: -Sy followed by a selective install can
+# partially upgrade Arch and break installed libraries. A system upgrade is
+# outside this script's scope; let the operator update Omarchy before retrying.
+# Verify with pacman -Q because an install helper's success is not proof.
+if pacman -Q t3code-bin >/dev/null 2>&1; then
+  msg_info "T3 Code desktop already installed: $(pacman -Q t3code-bin)"
+elif install_from_repo_or_aur t3code-bin t3code-bin; then
+  if pacman -Q t3code-bin >/dev/null 2>&1; then
+    msg_info "Pair it: on the t3code server box run 't3 pair --tailscale --ttl 1h --label $(hostname)', open T3 Code here, paste the link."
+  else
+    msg_warn "t3code-bin install reported success but pacman -Q cannot see it — check /var/log/pacman.log."
+  fi
+else
+  msg_warn "T3 Code desktop (t3code-bin) not installable from the omarchy repo/AUR. If the sync DB is stale, update Omarchy through its normal system update flow, then re-run setup."
+fi
+
 # ---------------------------------------------------------------------------
 # 10. Summary
 # ---------------------------------------------------------------------------
@@ -500,7 +572,7 @@ cat <<SUMMARY
     - bash overlay -> ~/.config/lpx/bashrc-overlay.sh
     - managed block in ~/.bashrc (overlay + Claude wrapper + ~/.bashrc.local)
     - Stage-2 harness via COWORK deploy.sh
-    - Optionals attempted: cloudflared, NordVPN (nordvpn-bin), superfile
+    - Optionals attempted: cloudflared, NordVPN (nordvpn-bin), superfile, T3 Code desktop (t3code-bin)
 
   Next:
     - Open a NEW shell, or run:  source ~/.bashrc   (to pick up the overlay)

@@ -123,7 +123,7 @@ case ":$PATH:" in
 esac
 
 # --- Tmux session picker on SSH login ---
-if [[ -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
+if [[ $- == *i* && -t 0 && -z "$TMUX" && -n "$SSH_CONNECTION" ]] && command -v tmux >/dev/null 2>&1; then
   _tmux_sessions=()
   while IFS= read -r line; do
     [[ -n "$line" ]] && _tmux_sessions+=("$line")
