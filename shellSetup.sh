@@ -2085,8 +2085,9 @@ EOF
 
   # --- CLAUDE CODE PLUGINS: retirement (runs after config so settings.json exists) ---
   # Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
-  # always-on umbrella-operating-model skill (launch-shim system prompt for
-  # main sessions, SubagentStart hook for lanes), so the plugins are retired.
+  # harness operating model (the harness core that ~/.claude/CLAUDE.md imports,
+  # which main sessions and lanes both load, plus the umbrella-operating-model
+  # skill), so the plugins are retired.
   # This function used to INSTALL them; it now UNINSTALLS any left on an
   # already-provisioned host, and is a no-op once they are gone (idempotent).
 
