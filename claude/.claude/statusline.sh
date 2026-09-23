@@ -193,8 +193,8 @@ else CACHE_C=$RED; fi
 TOTAL_TIME=$(fmt_time "$TOTAL_MS")
 API_TIME=$(fmt_time "$API_MS")
 
-# Umbrella branding, not a runtime check: the Stage-2 launch shim carries the
-# operating model in the main system prompt; SubagentStart injects it into lanes.
+# Umbrella branding, not a runtime check: the operating model rides the harness
+# core that ~/.claude/CLAUDE.md imports, for main sessions and lanes alike.
 # No plugin state file remains after caveman + ponytail retirement (2026-08-31).
 UMB="  ${B}${GRN}[Umbrella]${RST}"
 

@@ -1438,8 +1438,8 @@ if ($Selected -contains 'HARNESS') {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Operator ruling 2026-08-31: the caveman + ponytail modes are merged into the
-# always-on umbrella-operating-model skill (launch-shim system prompt for main
-# sessions, SubagentStart hook for lanes).
+# harness operating model (the harness core that ~/.claude/CLAUDE.md imports,
+# which main sessions and lanes both load, plus the umbrella-operating-model skill).
 # This block used to INSTALL caveman; it now UNINSTALLS any caveman/ponytail left on
 # an already-provisioned host. Idempotent no-op once they are gone.
 if (Get-Command claude -ErrorAction SilentlyContinue) {

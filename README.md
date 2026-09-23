@@ -306,12 +306,12 @@ project directory.
 
 **Stage 1 — Plugins:** The caveman and ponytail plugins are retired
 (operator ruling 2026-08-31). Their terse-prose and lazy-engineering
-modes are merged into the always-on `umbrella-operating-model` skill,
-included in the main session's system prompt by the Stage-2 launch shim
-and injected into lanes by the `umbrella-operating-model.sh` SubagentStart
-hook. There is no per-turn operating-model reminder hook. The Stage-1
-scripts attempt to uninstall the plugins on already-provisioned hosts
-and report CLI failures, including already-absent plugins or marketplaces.
+modes are merged into the harness operating model: the essentials live in
+the harness core that `claude/.claude/CLAUDE.md` imports, which every session
+and subagent loads, and the detail in the `umbrella-operating-model` skill.
+No hook injects it, per turn or per lane. The Stage-1 scripts attempt to
+uninstall the plugins on already-provisioned hosts and report CLI failures,
+including already-absent plugins or marketplaces.
 
 Offline checks for the shared hooks, profile selection, plugin retirement,
 Omarchy file deployment, SSH picker gating, and the Stage 2 deploy-script gate:

@@ -223,6 +223,45 @@ class Stage1Tests(unittest.TestCase):
         for target in targets:
             self.assertTrue(target.startswith("/.claude-config/hooks/"), target)
 
+    def test_claude_md_is_a_public_core_pointer(self):
+        # ~/.claude/CLAUDE.md is symlinked from this public repo on every host.
+        # It carries one @import of the harness core plus generic defaults;
+        # the rules themselves live in the private harness, never here, and
+        # the retired injection chain (charter, digest, boot shim) must not
+        # come back as prose that claims to ride the system prompt.
+        text = (ROOT / "claude/.claude/CLAUDE.md").read_text()
+        lines = text.splitlines()
+        # A bare import line, not inside backticks or a fence, so Claude Code
+        # expands it (docs: code spans and fenced blocks are skipped).
+        self.assertIn("@~/COWORK/CONTEXT/core.md", lines)
+        self.assertNotIn("```", text)
+        self.assertIn("~/OPS/CONTEXT/core.md", text)
+        self.assertIn("If the imported file is unavailable", text)
+        self.assertIn("not an automatic import", text)
+        self.assertLess(len(text.encode()), 2048)
+        for retired in ("foreman-charter", "boot-digest", "boot-surface",
+                        "operating-doctrine", "working-preferences", "Boot:",
+                        "system prompt", "umbrella-operating-model",
+                        "Vicars", "Umbrella"):
+            self.assertNotIn(retired, text)
+
+    def test_settings_model_pin_and_env_pins(self):
+        # Opus 5.5 is the default foreman (ruling 2026-09-22); the env pins
+        # are the model-alias tripwires and stay as they are.
+        self.assertEqual(SETTINGS["model"], "claude-opus-5-5[1m]")
+        env = SETTINGS["env"]
+        self.assertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "claude-opus-5-5[1m]")
+        self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5[1m]")
+        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-sonnet-5")
+
+    def test_settings_has_no_subagent_operating_model_hook(self):
+        # Subagents load ~/.claude/CLAUDE.md and its core import themselves
+        # (Explore and Plan skip it by design), so a SubagentStart injection
+        # of the operating model would be a second copy of the core.
+        text = (ROOT / "claude/.claude/settings.json").read_text()
+        self.assertNotIn("SubagentStart", SETTINGS["hooks"])
+        self.assertNotIn("umbrella-operating-model", text)
+
     def test_rc_files_do_not_source_claude_wrapper(self):
         # The wrapper is root-only now; COWORK's deploy.sh wires /root's rcs.
         for path in ("bash/.bashrc", "zsh/.zshrc", "omarchy/bashrc-overlay.sh",
