@@ -15,7 +15,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "claude-opus-5-5[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -155,17 +155,6 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/context-watch.sh\" && \"$H/.claude-config/hooks/context-watch.sh\" 2>/dev/null || true"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/umbrella-operating-model.sh\" && \"$H/.claude-config/hooks/umbrella-operating-model.sh\" 2>/dev/null || true"
           }
         ]
       }
