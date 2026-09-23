@@ -3,9 +3,9 @@
 @~/COWORK/CONTEXT/core.md
 
 The import above is the harness core: one file, loaded into every session and
-every subagent that reads this file. If `~/COWORK/` is absent on this host,
-read `~/OPS/CONTEXT/core.md` instead (the public template keeps the same
-file). With no harness at all, these defaults apply:
+every subagent that reads this file. If the imported file is unavailable,
+read `~/OPS/CONTEXT/core.md` if that file exists. This fallback is an explicit
+read, not an automatic import. If neither file exists, these defaults apply:
 
 - Answer first, then elaborate only if needed. No sycophantic openers, no
   hedging; say plainly when confidence is low.

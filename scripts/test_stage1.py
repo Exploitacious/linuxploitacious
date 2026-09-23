@@ -236,6 +236,8 @@ class Stage1Tests(unittest.TestCase):
         self.assertIn("@~/COWORK/CONTEXT/core.md", lines)
         self.assertNotIn("```", text)
         self.assertIn("~/OPS/CONTEXT/core.md", text)
+        self.assertIn("If the imported file is unavailable", text)
+        self.assertIn("not an automatic import", text)
         self.assertLess(len(text.encode()), 2048)
         for retired in ("foreman-charter", "boot-digest", "boot-surface",
                         "operating-doctrine", "working-preferences", "Boot:",
