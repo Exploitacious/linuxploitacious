@@ -177,6 +177,16 @@
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/wip-refresh-nudge.sh\" && \"$H/.claude-config/hooks/wip-refresh-nudge.sh\" 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/skill-hint.sh\" && \"$H/.claude-config/hooks/skill-hint.sh\" 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
       }
     ]
   },
