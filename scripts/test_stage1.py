@@ -251,8 +251,8 @@ class Stage1Tests(unittest.TestCase):
         self.assertEqual(SETTINGS["model"], "claude-opus-5-5[1m]")
         env = SETTINGS["env"]
         self.assertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "claude-opus-5-5[1m]")
-        self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5[1m]")
-        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-sonnet-5")
+        self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5-5[1m]")
+        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-sonnet-5-5")
 
     def test_settings_has_no_subagent_operating_model_hook(self):
         # Subagents load ~/.claude/CLAUDE.md and its core import themselves
