@@ -402,7 +402,7 @@ CLAUDE_SRC="$LPX_DIR/claude/.claude"
 CLAUDE_DIR="$HOME/.claude"
 if [ -d "$CLAUDE_SRC" ]; then
   mkdir -p "$CLAUDE_DIR"
-  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/CLAUDE.md; do
+  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/rtk-hook.sh "$CLAUDE_SRC"/CLAUDE.md; do
     [ -f "$src" ] || continue
     tgt="$CLAUDE_DIR/$(basename "$src")"
     if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
