@@ -213,6 +213,7 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": true,
+  "idleCompaction": false,
   "modelSettings": {
     "claude-haiku-5-5": {
       "autoCompactWindow": 100000

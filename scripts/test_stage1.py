@@ -373,11 +373,16 @@ class Stage1Tests(unittest.TestCase):
         # runs, 2.1.299). CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers every model's
         # threshold to that percent of its window (2.1.300), which could compact
         # a foreman under the 600K point COWORK's pre-compact.sh relies on.
+        # idleCompaction is false: Claude Code's idle compaction (server-gated,
+        # off today) can compact an idle main thread from 100K, well before the
+        # ruled 967K backstop and under that 600K point; false turns it off,
+        # true does not force it on (2.1.300 schema).
         env = settings.get("env", {})
         self.assertEqual(env.get("DISABLE_AUTO_COMPACT"), "0")
         for key in ("DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"):
             self.assertNotIn(key, env)
         self.assertIs(settings.get("autoCompactEnabled"), True)
+        self.assertIs(settings.get("idleCompaction"), False)
         self.assertNotIn("autoCompactWindow", settings)
         windows = {model: entry["autoCompactWindow"]
                    for model, entry in settings.get("modelSettings", {}).items()
@@ -402,6 +407,8 @@ class Stage1Tests(unittest.TestCase):
             "autoCompactEnabled false": lambda s: s.update(autoCompactEnabled=False),
             "autoCompactEnabled as a string": lambda s: s.update(autoCompactEnabled="true"),
             "autoCompactEnabled removed": drop("autoCompactEnabled"),
+            "idleCompaction true": lambda s: s.update(idleCompaction=True),
+            "idleCompaction removed": drop("idleCompaction"),
             "modelSettings removed": drop("modelSettings"),
             "Haiku window raised": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(autoCompactWindow=200000),
             "Haiku window as a string": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(autoCompactWindow="100000"),
