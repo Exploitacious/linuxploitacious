@@ -366,8 +366,14 @@ class Stage1Tests(unittest.TestCase):
         # The value is pinned exactly because Claude Code drops a bad per-model
         # value silently (its 2.1.299 schema catches it) and `claude doctor`
         # does not flag one, while it does flag a non-boolean autoCompactEnabled.
+        # DISABLE_AUTO_COMPACT is "0", not absent: a removed key leaves an old
+        # "1" in force (a running session keeps it through a settings reload,
+        # a `claude` started from it inherits it, and winSetup's merge keeps a
+        # key the base no longer has), while "0" overrides all three (scratch
+        # runs, 2.1.299).
         env = settings.get("env", {})
-        for key in ("DISABLE_AUTO_COMPACT", "DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"):
+        self.assertEqual(env.get("DISABLE_AUTO_COMPACT"), "0")
+        for key in ("DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"):
             self.assertNotIn(key, env)
         self.assertIs(settings.get("autoCompactEnabled"), True)
         self.assertNotIn("autoCompactWindow", settings)
@@ -387,6 +393,7 @@ class Stage1Tests(unittest.TestCase):
             return lambda s: s.pop(key)
         mutations = {
             "env DISABLE_AUTO_COMPACT back": lambda s: s["env"].update(DISABLE_AUTO_COMPACT="1"),
+            "env DISABLE_AUTO_COMPACT removed": lambda s: s["env"].pop("DISABLE_AUTO_COMPACT"),
             "env DISABLE_COMPACT": lambda s: s["env"].update(DISABLE_COMPACT="true"),
             "env window override": lambda s: s["env"].update(CLAUDE_CODE_AUTO_COMPACT_WINDOW="100000"),
             "autoCompactEnabled false": lambda s: s.update(autoCompactEnabled=False),
