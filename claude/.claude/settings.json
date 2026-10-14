@@ -7,7 +7,8 @@
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-5-5",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5[1m]"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5[1m]",
+    "CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS": "10"
   },
   "attribution": {
     "commit": "",
@@ -207,5 +208,6 @@
   "theme": "dark",
   "autoCompactEnabled": false,
   "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "switchModelsOnFlag": true
 }
