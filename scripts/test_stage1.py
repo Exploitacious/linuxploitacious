@@ -352,6 +352,61 @@ class Stage1Tests(unittest.TestCase):
         self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5-5[1m]")
         self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-haiku-5-5")
 
+    def assert_compaction_policy(self, settings):
+        # Auto-compaction is on harness-wide and Haiku 5.5 compacts inside a
+        # 100K window (ruling 2026-10-14): Haiku 5.5 bills every rate at 5x
+        # once a request's prompt passes 100K tokens. Opus and Sonnet keep
+        # their 1M default (compaction near 967K, a backstop under manual
+        # compaction at natural breaks). Claude Code 2.1.299 reads two
+        # process-wide switches, the env DISABLE_AUTO_COMPACT (DISABLE_COMPACT
+        # stops every compaction) and autoCompactEnabled; either one closed
+        # turns the per-model window into a no-op. CLAUDE_CODE_AUTO_COMPACT_WINDOW
+        # outranks every per-model window, and a top-level autoCompactWindow or
+        # another model's entry would move Opus or Sonnet off their 1M window.
+        # The value is pinned exactly because Claude Code drops a bad per-model
+        # value silently (its 2.1.299 schema catches it) and `claude doctor`
+        # does not flag one, while it does flag a non-boolean autoCompactEnabled.
+        env = settings.get("env", {})
+        for key in ("DISABLE_AUTO_COMPACT", "DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"):
+            self.assertNotIn(key, env)
+        self.assertIs(settings.get("autoCompactEnabled"), True)
+        self.assertNotIn("autoCompactWindow", settings)
+        windows = {model: entry["autoCompactWindow"]
+                   for model, entry in settings.get("modelSettings", {}).items()
+                   if "autoCompactWindow" in entry}
+        self.assertEqual(windows, {"claude-haiku-5-5": 100000})
+        self.assertIs(type(windows["claude-haiku-5-5"]), int)
+
+    def test_auto_compaction_on_with_a_100k_haiku_window(self):
+        self.assert_compaction_policy(SETTINGS)
+
+    def test_auto_compaction_policy_rejects_each_drift(self):
+        # Every drift that would leave Haiku 5.5 running past 100K, or move the
+        # Opus and Sonnet window, must fail the policy check above.
+        def drop(key):
+            return lambda s: s.pop(key)
+        mutations = {
+            "env DISABLE_AUTO_COMPACT back": lambda s: s["env"].update(DISABLE_AUTO_COMPACT="1"),
+            "env DISABLE_COMPACT": lambda s: s["env"].update(DISABLE_COMPACT="true"),
+            "env window override": lambda s: s["env"].update(CLAUDE_CODE_AUTO_COMPACT_WINDOW="100000"),
+            "autoCompactEnabled false": lambda s: s.update(autoCompactEnabled=False),
+            "autoCompactEnabled as a string": lambda s: s.update(autoCompactEnabled="true"),
+            "autoCompactEnabled removed": drop("autoCompactEnabled"),
+            "modelSettings removed": drop("modelSettings"),
+            "Haiku window raised": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(autoCompactWindow=200000),
+            "Haiku window as a string": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(autoCompactWindow="100000"),
+            "Haiku window as a float": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(autoCompactWindow=100000.0),
+            "Haiku key misspelled": lambda s: s.update(modelSettings={"claude-haiku-5.5": {"autoCompactWindow": 100000}}),
+            "top-level window": lambda s: s.update(autoCompactWindow=1000000),
+            "Sonnet window added": lambda s: s["modelSettings"].update({"claude-sonnet-5-5": {"autoCompactWindow": 500000}}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name):
+                settings = json.loads(json.dumps(SETTINGS))
+                mutate(settings)
+                with self.assertRaises(AssertionError):
+                    self.assert_compaction_policy(settings)
+
     def test_guards_fail_closed_and_helpers_fail_open(self):
         # The three PreToolUse guards block the call when they crash, time
         # out or exit with anything but 0 or 2 (onFailure, Claude Code

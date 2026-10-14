@@ -2,7 +2,6 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 30,
   "env": {
-    "DISABLE_AUTO_COMPACT": "1",
     "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5[1m]",
@@ -212,7 +211,12 @@
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
+  "modelSettings": {
+    "claude-haiku-5-5": {
+      "autoCompactWindow": 100000
+    }
+  },
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "switchModelsOnFlag": true
