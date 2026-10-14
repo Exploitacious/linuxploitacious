@@ -370,10 +370,12 @@ class Stage1Tests(unittest.TestCase):
         # "1" in force (a running session keeps it through a settings reload,
         # a `claude` started from it inherits it, and winSetup's merge keeps a
         # key the base no longer has), while "0" overrides all three (scratch
-        # runs, 2.1.299).
+        # runs, 2.1.299). CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers every model's
+        # threshold to that percent of its window (2.1.300), which could compact
+        # a foreman under the 600K point COWORK's pre-compact.sh relies on.
         env = settings.get("env", {})
         self.assertEqual(env.get("DISABLE_AUTO_COMPACT"), "0")
-        for key in ("DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"):
+        for key in ("DISABLE_COMPACT", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"):
             self.assertNotIn(key, env)
         self.assertIs(settings.get("autoCompactEnabled"), True)
         self.assertNotIn("autoCompactWindow", settings)
@@ -396,6 +398,7 @@ class Stage1Tests(unittest.TestCase):
             "env DISABLE_AUTO_COMPACT removed": lambda s: s["env"].pop("DISABLE_AUTO_COMPACT"),
             "env DISABLE_COMPACT": lambda s: s["env"].update(DISABLE_COMPACT="true"),
             "env window override": lambda s: s["env"].update(CLAUDE_CODE_AUTO_COMPACT_WINDOW="100000"),
+            "env threshold percent override": lambda s: s["env"].update(CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="50"),
             "autoCompactEnabled false": lambda s: s.update(autoCompactEnabled=False),
             "autoCompactEnabled as a string": lambda s: s.update(autoCompactEnabled="true"),
             "autoCompactEnabled removed": drop("autoCompactEnabled"),
@@ -538,6 +541,43 @@ sudo() { printf '%s\n' "$*" >> "$HOME/sudo-calls"; return 0; }
             finally:
                 os.close(master)
                 os.close(slave)
+
+    def test_statusline_autocompact_badge(self):
+        # Auto-compaction on is the normal state since 2026-10-14, so "AC:on"
+        # is the quiet green and "AC:off" the yellow warning. Off is either
+        # switch closed: autoCompactEnabled false, or a truthy
+        # DISABLE_AUTO_COMPACT or DISABLE_COMPACT in the env the statusline
+        # inherits from the session (Claude Code lowercases and trims, then
+        # takes 1, true, yes or on).
+        green, yellow = "\033[38;5;78m", "\033[38;5;220m"
+        config = self.home / ".claude"
+        config.mkdir()
+        cases = (
+            ("Stage-1 settings", {}, {}, "on"),
+            ("autoCompactEnabled absent", {"drop": True}, {}, "on"),
+            ("autoCompactEnabled false", {"autoCompactEnabled": False}, {}, "off"),
+            ("env DISABLE_AUTO_COMPACT 0", {}, {"DISABLE_AUTO_COMPACT": "0"}, "on"),
+            ("env DISABLE_AUTO_COMPACT 1", {}, {"DISABLE_AUTO_COMPACT": "1"}, "off"),
+            ("env DISABLE_AUTO_COMPACT ' Yes '", {}, {"DISABLE_AUTO_COMPACT": " Yes "}, "off"),
+            ("env DISABLE_COMPACT true", {}, {"DISABLE_COMPACT": "true"}, "off"),
+            ("env DISABLE_COMPACT 2", {}, {"DISABLE_COMPACT": "2"}, "on"),
+        )
+        for name, change, env, state in cases:
+            with self.subTest(name):
+                settings = json.loads(json.dumps(SETTINGS))
+                if change.pop("drop", False):
+                    settings.pop("autoCompactEnabled")
+                settings.update(change)
+                (config / "settings.json").write_text(json.dumps(settings))
+                base = {k: v for k, v in self.env.items() if k not in ("DISABLE_AUTO_COMPACT", "DISABLE_COMPACT")}
+                result = subprocess.run(
+                    ["bash", str(ROOT / "claude/.claude/statusline.sh")],
+                    env=base | {"CLAUDE_CONFIG_DIR": str(config)} | env, text=True,
+                    input=json.dumps({"model": {"display_name": "Opus 5.5"}}),
+                    capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                color = green if state == "on" else yellow
+                self.assertIn("AC:\033[0m%s%s\033[0m" % (color, state), result.stdout)
 
     def test_statusline_profiles(self):
         for personal in (False, True):

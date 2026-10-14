@@ -149,8 +149,9 @@ pad_to() {
 # Posture badge — autocompact + effort, read from the ACTIVE profile's
 # settings.json (CLAUDE_CONFIG_DIR resolves per profile; both symlink to the
 # same source). Not in the statusline JSON, so we read the config directly.
-# Gives the operator a persistent, visible "autocompact is off" indicator the
-# TUI otherwise never surfaces.
+# Auto-compaction on is the normal state since 2026-10-14 (Haiku 5.5 lanes
+# compact inside 100K), so "on" is the quiet green and "off" the yellow
+# warning the TUI otherwise never surfaces.
 POSTURE=""
 SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 if [ -r "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
@@ -160,8 +161,16 @@ if [ -r "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # the literal "false"/"true"/"null".
     ac=$(jq -r '.autoCompactEnabled' "$SETTINGS_FILE" 2>/dev/null)
     eff=$(jq -r '.effortLevel // empty' "$SETTINGS_FILE" 2>/dev/null)
-    # autoCompactEnabled absent (null) => Claude default ON; explicit false => OFF.
-    if [ "$ac" = "false" ]; then ac_txt="off"; ac_c="$GRN"; else ac_txt="on"; ac_c="$YEL"; fi
+    # Either switch closed stops auto-compaction: autoCompactEnabled false
+    # (absent means on), or a truthy DISABLE_AUTO_COMPACT or DISABLE_COMPACT in
+    # the env this statusline inherits from the session, read the way Claude
+    # Code reads it (lowercase, trim, then 1, true, yes or on).
+    ac_env_on() { case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in 1|true|yes|on) return 0 ;; esac; return 1; }
+    if [ "$ac" = "false" ] || ac_env_on "${DISABLE_AUTO_COMPACT:-}" || ac_env_on "${DISABLE_COMPACT:-}"; then
+        ac_txt="off"; ac_c="$YEL"
+    else
+        ac_txt="on"; ac_c="$GRN"
+    fi
     [ -n "$eff" ] || eff="default"
     POSTURE="   ${D}AC:${RST}${ac_c}${ac_txt}${RST} ${D}·${RST} ${CYN}${eff}${RST}"
 fi
