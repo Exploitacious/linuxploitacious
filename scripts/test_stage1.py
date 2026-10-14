@@ -342,13 +342,37 @@ class Stage1Tests(unittest.TestCase):
             self.assertNotIn(retired, text)
 
     def test_settings_model_pin_and_env_pins(self):
-        # Opus 5.5 is the default foreman (ruling 2026-09-22); the env pins
-        # are the model-alias tripwires and stay as they are.
+        # Opus 5.5 is the default foreman (ruling 2026-09-22). The haiku alias
+        # points at Haiku 5.5, the only Haiku allowed (ruling 2026-10-14); the
+        # key never comes out, because Claude Code older than 2.1.293 and the
+        # third-party clouds resolve the bare alias to Haiku 4.5.
         self.assertEqual(SETTINGS["model"], "claude-opus-5-5[1m]")
         env = SETTINGS["env"]
         self.assertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "claude-opus-5-5[1m]")
         self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5-5[1m]")
-        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-sonnet-5-5")
+        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-haiku-5-5")
+
+    def test_guards_fail_closed_and_helpers_fail_open(self):
+        # The three PreToolUse guards block the call when they crash, time
+        # out or exit with anything but 0 or 2 (onFailure, Claude Code
+        # 2.1.295; ruling 2026-10-14). Every other hook must fail open: a
+        # broken rtk rewriter or context readout would otherwise block every
+        # Bash call or prompt. A misspelled onFailure value makes Claude Code
+        # drop the whole settings file, so the value is pinned exactly.
+        guards = ('secrets-guard.sh" pre', 'git-guard.sh"', 'review-gate-guard.sh"')
+        seen = []
+        for event, groups in SETTINGS["hooks"].items():
+            for group in groups:
+                for hook in group["hooks"]:
+                    command = hook.get("command", "").rstrip()
+                    is_guard = event == "PreToolUse" and command.endswith(guards)
+                    if is_guard:
+                        seen.append(command)
+                        self.assertEqual(hook.get("onFailure"), "block", command)
+                        self.assertEqual(hook.get("timeout"), 30, command)
+                    else:
+                        self.assertNotIn("onFailure", hook, f"{event}: {command}")
+        self.assertEqual(len(seen), 3, seen)
 
     def test_settings_has_no_subagent_operating_model_hook(self):
         # Subagents load ~/.claude/CLAUDE.md and its core import themselves

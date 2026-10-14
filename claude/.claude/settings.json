@@ -6,7 +6,7 @@
     "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5[1m]",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-5-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-5-5",
     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5[1m]",
     "CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS": "10"
   },
@@ -98,7 +98,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/secrets-guard.sh\" ] || \"$H/.claude-config/hooks/secrets-guard.sh\" pre"
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/secrets-guard.sh\" ] || \"$H/.claude-config/hooks/secrets-guard.sh\" pre",
+            "timeout": 30,
+            "onFailure": "block"
           }
         ]
       },
@@ -107,7 +109,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/git-guard.sh\" ] || \"$H/.claude-config/hooks/git-guard.sh\""
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/git-guard.sh\" ] || \"$H/.claude-config/hooks/git-guard.sh\"",
+            "timeout": 30,
+            "onFailure": "block"
           }
         ]
       },
@@ -116,7 +120,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/review-gate-guard.sh\" ] || \"$H/.claude-config/hooks/review-gate-guard.sh\""
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/review-gate-guard.sh\" ] || \"$H/.claude-config/hooks/review-gate-guard.sh\"",
+            "timeout": 30,
+            "onFailure": "block"
           }
         ]
       },
