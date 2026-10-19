@@ -317,9 +317,12 @@ uninstall the plugins on already-provisioned hosts and report CLI failures,
 including already-absent plugins or marketplaces.
 
 Offline checks for the shared hooks, profile selection, plugin retirement,
-Omarchy file deployment, SSH picker gating, and the Stage 2 deploy-script gate:
-`python3 scripts/test_stage1.py`. The Windows gate is checked statically; the
-Windows retirement check runs when `pwsh` is available.
+Omarchy file deployment, SSH picker gating, the Stage 2 deploy-script gate, and
+the model pins against the OPS template's model checks (every OPS install runs
+them on this `settings.json`): `python3 scripts/test_stage1.py`. The Windows
+gate is checked statically; the Windows retirement check runs when `pwsh` is
+available. With `OPS_DIR` set to an OPS checkout, the suite also compares its
+copy of the OPS model rules with that checkout's `verify-ops.sh`.
 
 **Stage 2 — HARNESS (optional):** Selecting `HARNESS` in the menu
 deploys the workspace repo — `~/COWORK/` (private, if your gh auth

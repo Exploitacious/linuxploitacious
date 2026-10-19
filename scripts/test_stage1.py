@@ -29,6 +29,82 @@ def section(path, start, end):
     return (ROOT / path).read_text().split(start, 1)[1].split(end, 1)[0]
 
 
+# OPS's model checks as data. Every OPS install runs verify-ops.sh (public repo
+# Exploitacious/OPS, .claude-config/bin/verify-ops.sh) against this
+# settings.json, so a model change here that those checks reject fails every
+# fresh OPS install; that happened once already (OPS drift audit 2026-10-18,
+# findings C3 and C4). Copied from verify-ops.sh at OPS 659bf41: check 14
+# (check_model_policy, OPS_FOREMAN_PIN), check 15 (check_opus5_ban) and check
+# 15b (check_retired_model_pins and _check_haiku_pin, HAIKU_OK). verify-ops.sh
+# has no effort check, so an effort change reaches OPS only through the
+# ops-port pass. When OPS changes these checks, the ops-port skill (COWORK
+# SKILLS/ops-port) updates this block in the same pass;
+# test_ops_model_rules_match_the_real_verify_ops compares the two whenever
+# OPS_DIR names an OPS checkout.
+OPS_FOREMAN_PIN = "claude-opus-5-5[1m]"
+OPS_HAIKU_OK = "claude-haiku-5-5"
+OPS_RETIRED = ("claude-sonnet-5", "claude-opus-4-8")
+# An id ends at its last digit: claude-sonnet-5 is a prefix of claude-sonnet-5-5.
+OPS_ID_END = r"(\[|[^A-Za-z0-9-]|$)"
+OPS_OPUS5 = re.compile(r"claude-opus-5" + OPS_ID_END, re.M)
+OPS_TOKEN = re.compile(r"[a-z0-9][a-z0-9._:@/-]*(\[[^\]]*\])?", re.I)
+OPS_HAIKU_TOKEN = re.compile(r"claude[-_][a-z0-9._@:-]*haiku|haiku[-_][0-9]", re.I)
+OPS_HAIKU_ALIAS = re.compile(r"haiku(\[1m\])?", re.I)
+
+
+def ops_settings_text(settings):
+    """verify-ops _ops_settings_text: every object key and string value, one per
+    line (jq -r '.. | if type == "object" then keys[] elif type == "string" then . else empty end')."""
+    out = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            out.extend(sorted(value))
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+        elif isinstance(value, str):
+            out.append(value)
+
+    walk(settings)
+    return "\n".join(out)
+
+
+def ops_string_values(settings):
+    if isinstance(settings, dict):
+        return [s for v in settings.values() for s in ops_string_values(v)]
+    if isinstance(settings, list):
+        return [s for v in settings for s in ops_string_values(v)]
+    return [settings] if isinstance(settings, str) else []
+
+
+def ops_model_verdicts(settings):
+    """The four verdict lines verify-ops.sh prints for one settings file, in
+    order: check 14, check 15, check 15b's pin scan, check 15b's Haiku pin."""
+    model = settings.get("model") if isinstance(settings, dict) else None
+    model = model if isinstance(model, str) else ""
+    text = ops_settings_text(settings)
+    # Check 14 only WARNs: an Operator may pin another tier on purpose.
+    policy = "ok" if model in ("", OPS_FOREMAN_PIN) else "warn"
+    opus5 = "fail" if OPS_OPUS5.search(text) else "ok"
+    hits = [i for i in OPS_RETIRED if re.search(re.escape(i) + OPS_ID_END, text, re.M)]
+    for line in text.splitlines():
+        for match in OPS_TOKEN.finditer(line):
+            token = re.sub(r"[._@:-]+$", "", match.group(0))
+            if (OPS_HAIKU_TOKEN.search(match.group(0)) and not re.fullmatch(r"[a-z_]+", token, re.I)
+                    and token != OPS_HAIKU_OK):
+                hits.append(token)
+    hits += [s for s in ops_string_values(settings) if OPS_HAIKU_ALIAS.fullmatch(s)]
+    retired = "fail" if hits else "ok"
+    env = settings.get("env") if isinstance(settings, dict) else None
+    pin = env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL") if isinstance(env, dict) else None
+    pin = "" if pin in (None, False) else pin if isinstance(pin, str) else json.dumps(pin)
+    haiku_pin = "ok" if pin == OPS_HAIKU_OK else "fail"
+    return [policy, opus5, retired, haiku_pin]
+
+
 class Stage1Tests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="stage1-test-")
@@ -351,6 +427,73 @@ class Stage1Tests(unittest.TestCase):
         self.assertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "claude-opus-5-5[1m]")
         self.assertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "claude-sonnet-5-5[1m]")
         self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-haiku-5-5")
+
+    def test_settings_pass_the_ops_model_checks(self):
+        # OK on all four, the WARN-only check 14 included: a pin OPS does not
+        # name as its foreman means OPS's doctrine is behind, and an ops-port
+        # pass is due before this ships.
+        self.assertEqual(ops_model_verdicts(SETTINGS), ["ok", "ok", "ok", "ok"])
+
+    # Settings drifts and the verdicts verify-ops.sh gives them, by hand, so
+    # the rules above are checked against expectations, not against themselves.
+    OPS_MODEL_DRIFTS = {
+        "foreman pin retired Opus 4.8": (lambda s: s.update(model="claude-opus-4-8[1m]"),
+                                         ["warn", "ok", "fail", "ok"]),
+        "foreman pin Opus 5": (lambda s: s.update(model="claude-opus-5[1m]"), ["warn", "fail", "ok", "ok"]),
+        "Opus alias on Opus 5": (lambda s: s["env"].update(ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"),
+                                 ["ok", "fail", "ok", "ok"]),
+        "lane pin retired Sonnet 5": (lambda s: s["env"].update(CLAUDE_CODE_SUBAGENT_MODEL="claude-sonnet-5[1m]"),
+                                      ["ok", "ok", "fail", "ok"]),
+        "Sonnet alias retired": (lambda s: s["env"].update(ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-5"),
+                                 ["ok", "ok", "fail", "ok"]),
+        "Haiku pin removed": (lambda s: s["env"].pop("ANTHROPIC_DEFAULT_HAIKU_MODEL"), ["ok", "ok", "ok", "fail"]),
+        "Haiku pin with a context suffix": (
+            lambda s: s["env"].update(ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-5-5[1m]"),
+            ["ok", "ok", "fail", "fail"]),
+        "Haiku 4.5 pinned": (lambda s: s["env"].update(ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-haiku-4-5"),
+                             ["ok", "ok", "fail", "fail"]),
+        "bare haiku alias as the lane model": (lambda s: s["env"].update(CLAUDE_CODE_SUBAGENT_MODEL="haiku"),
+                                               ["ok", "ok", "fail", "ok"]),
+        "a foreman OPS does not know yet": (lambda s: s.update(model="claude-opus-6[1m]"),
+                                            ["warn", "ok", "ok", "ok"]),
+        "no top-level pin": (lambda s: s.pop("model"), ["ok", "ok", "ok", "ok"]),
+    }
+
+    def drifted(self, mutate):
+        settings = json.loads(json.dumps(SETTINGS))
+        mutate(settings)
+        return settings
+
+    def test_ops_model_rules_reject_each_drift(self):
+        for name, (mutate, expected) in self.OPS_MODEL_DRIFTS.items():
+            with self.subTest(name):
+                self.assertEqual(ops_model_verdicts(self.drifted(mutate)), expected)
+
+    @unittest.skipUnless(os.environ.get("OPS_DIR"),
+                         "set OPS_DIR to an OPS checkout to compare these rules with its verify-ops.sh")
+    def test_ops_model_rules_match_the_real_verify_ops(self):
+        # Runs OPS's own checks 14, 15 and 15b on the shipped settings and on
+        # every drift above, in a throwaway HOME with no OPS tree, so only the
+        # settings file is judged. Any difference means the rules above are
+        # stale: update them from verify-ops.sh.
+        gate = Path(os.environ["OPS_DIR"]) / ".claude-config/bin/verify-ops.sh"
+        self.assertTrue(gate.is_file(), f"OPS_DIR has no {gate}")
+        self.assertTrue(shutil.which("jq", path=self.env["PATH"]), "jq is required to run verify-ops.sh")
+        config = self.home / ".claude"
+        config.mkdir()
+        cases = {"shipped settings": (lambda s: None, ["ok", "ok", "ok", "ok"])} | self.OPS_MODEL_DRIFTS
+        for name, (mutate, _) in cases.items():
+            with self.subTest(name):
+                settings = self.drifted(mutate)
+                (config / "settings.json").write_text(json.dumps(settings, indent=2))
+                result = subprocess.run(
+                    ["/bin/bash", "--noprofile", "--norc", "-c",
+                     'source "$1" || exit 90; check_model_policy; check_opus5_ban; check_retired_model_pins',
+                     "ops-model-parity", str(gate)],
+                    env=self.env, text=True, capture_output=True, timeout=30)
+                verdicts = [line.split(":", 1)[0].lower() for line in result.stdout.splitlines()
+                            if line.startswith(("OK:", "WARN:", "FAIL:"))]
+                self.assertEqual(verdicts, ops_model_verdicts(settings), result.stdout + result.stderr)
 
     def assert_compaction_policy(self, settings):
         # Auto-compaction is on harness-wide and Haiku 5.5 compacts inside a
