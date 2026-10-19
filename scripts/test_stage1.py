@@ -377,9 +377,11 @@ class Stage1Tests(unittest.TestCase):
         expected = {
             "startup|clear": ["session-briefing.sh", "post-compact-resume.sh",
                               "handoff-check.sh", "vault-inbox-check.sh",
-                              "memory-index.sh", "session-work-init.sh"],
+                              "memory-index.sh", "session-work-init.sh",
+                              "seatpool-notice.sh"],
             "resume|compact": ["post-compact-resume.sh", "handoff-check.sh",
-                               "session-briefing.sh", "session-work-init.sh"],
+                               "session-briefing.sh", "session-work-init.sh",
+                               "seatpool-notice.sh"],
             "*": ["herdr-agent-state.sh"],
         }
         groups = SETTINGS["hooks"]["SessionStart"]
@@ -394,6 +396,25 @@ class Stage1Tests(unittest.TestCase):
         self.assertTrue(targets)
         for target in targets:
             self.assertTrue(target.startswith("/.claude-config/hooks/"), target)
+
+    def test_seatpool_notice_hook_is_registered_and_never_blocks(self):
+        # COWORK's seat pool notice (claude-fleet SETUP SP-4/SP-7): SessionStart (both
+        # matchers, asserted above), every prompt and Stop. The script stays silent with no
+        # notice and in PERSONAL; a host without it must still exit 0 (the "|| true"), so a
+        # missing hook never turns into a blocking exit 2.
+        def notice_hooks(event):
+            return [hook for group in SETTINGS["hooks"][event] for hook in group["hooks"]
+                    if "/seatpool-notice.sh" in hook["command"]]
+        for event in ("UserPromptSubmit", "Stop"):
+            hooks = notice_hooks(event)
+            self.assertEqual(len(hooks), 1, event)
+            self.assertTrue(hooks[0]["command"].endswith("|| true"), event)
+        for hook in notice_hooks("SessionStart"):
+            self.assertTrue(hook["command"].endswith("|| true"))
+        result = subprocess.run(["/bin/bash", "-c", notice_hooks("Stop")[0]["command"]],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
+                                input="{}", capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
 
     def test_claude_md_is_a_public_core_pointer(self):
         # ~/.claude/CLAUDE.md is symlinked from this public repo on every host.

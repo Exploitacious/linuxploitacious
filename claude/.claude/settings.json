@@ -46,6 +46,10 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-work-init.sh\" && \"$H/.claude-config/hooks/session-work-init.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/seatpool-notice.sh\" && \"$H/.claude-config/hooks/seatpool-notice.sh\" 2>/dev/null || true"
           }
         ]
       },
@@ -67,6 +71,10 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-work-init.sh\" && \"$H/.claude-config/hooks/session-work-init.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/seatpool-notice.sh\" && \"$H/.claude-config/hooks/seatpool-notice.sh\" 2>/dev/null || true"
           }
         ]
       },
@@ -163,6 +171,11 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/context-watch.sh\" && \"$H/.claude-config/hooks/context-watch.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/seatpool-notice.sh\" && \"$H/.claude-config/hooks/seatpool-notice.sh\" 2>/dev/null || true",
+            "timeout": 5
           }
         ]
       }
@@ -192,6 +205,16 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/skill-hint.sh\" && \"$H/.claude-config/hooks/skill-hint.sh\" 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/seatpool-notice.sh\" && \"$H/.claude-config/hooks/seatpool-notice.sh\" 2>/dev/null || true",
             "timeout": 5
           }
         ]
