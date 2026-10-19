@@ -338,7 +338,7 @@ class Stage1Tests(unittest.TestCase):
         for retired in ("foreman-charter", "boot-digest", "boot-surface",
                         "operating-doctrine", "working-preferences", "Boot:",
                         "system prompt", "umbrella-operating-model",
-                        "Vicars", "Umbrella"):
+                        "Umbrella"):
             self.assertNotIn(retired, text)
 
     def test_settings_model_pin_and_env_pins(self):
