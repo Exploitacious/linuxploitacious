@@ -346,19 +346,17 @@ intentionally excluded from ROOT's stow deployment to avoid
 conflicting with this symlink.
 
 **Personalizing Claude with a context directory:** The global
-CLAUDE.md includes a "Context Awareness" section that checks for
-`~/COWORK/CONTEXT/` (falling back to `~/OPS/CONTEXT/`) at session
-start. If you fork this repo with a different harness path,
-replace it with your own. The idea: keep a directory
-somewhere on your machine with markdown files that describe who
-you are, how you communicate, and how you want Claude to behave
-(`about-me.md`, `brand-voice.md`, `working-preferences.md`, or
-whatever fits). The global CLAUDE.md points Claude there so every
-session starts with that context, even when you're working in an
-unrelated project. You don't need a full COWORK setup — any
-directory with a few context files works. Project-level
-`CLAUDE.md` files then layer on top for project-specific
-instructions.
+CLAUDE.md imports one file, `~/COWORK/CONTEXT/core.md` (an `@`
+import), into every session and every subagent. If that file is
+missing it tells Claude to read `~/OPS/CONTEXT/core.md` instead, and
+with neither present a few built-in defaults apply. If you fork this
+repo with a different harness path, change the import. The idea:
+keep one markdown file that says who you are, how you communicate,
+and how you want Claude to behave, and let it point to longer
+context files that load only when a task needs them. You don't need
+a full COWORK setup; any file at that path works. Project-level
+`CLAUDE.md` and `AGENTS.md` files then layer on top for
+project-specific instructions.
 
 ---
 
@@ -383,10 +381,10 @@ HARNESS flow at a different template/private repo:
    detection call (`gh repo view Exploitacious/COWORK`) and the
    template source (`Exploitacious/OPS`). Swap for your own repos.
 2. **`winSetup.ps1` HARNESS section** — same two references.
-3. **`claude/.claude/CLAUDE.md`** "Harness Context Awareness"
-   section — checks `~/COWORK/` then `~/OPS/`. Replace with your
-   own harness path, or delete the section; the rest of the file
-   is generic.
+3. **`claude/.claude/CLAUDE.md`** core import: imports
+   `~/COWORK/CONTEXT/core.md` and falls back to reading
+   `~/OPS/CONTEXT/core.md`. Replace both with your own harness
+   path, or delete them; the built-in defaults below are generic.
 4. **`claude/.claude/settings.json`** hooks — resolve
    `$HOME/COWORK` falling back to `$HOME/OPS`. The `test -x`
    guards make them silent without a harness; replace the paths
