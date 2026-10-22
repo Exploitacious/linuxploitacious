@@ -9,7 +9,8 @@
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-5-5",
     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5[1m]",
     "CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS": "10",
-    "CLAUDE_CODE_SHELL": "/bin/bash"
+    "CLAUDE_CODE_SHELL": "/bin/bash",
+    "CLAUDE_CODE_DISABLE_ORG_MEMORY": "1"
   },
   "attribution": {
     "commit": "",
@@ -46,6 +47,10 @@
           },
           {
             "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/memory-digest.sh\" && \"$H/.claude-config/hooks/memory-digest.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-work-init.sh\" && \"$H/.claude-config/hooks/session-work-init.sh\" 2>/dev/null || true"
           },
           {
@@ -68,6 +73,10 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-briefing.sh\" && \"$H/.claude-config/hooks/session-briefing.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/memory-digest.sh\" && \"$H/.claude-config/hooks/memory-digest.sh\" 2>/dev/null || true"
           },
           {
             "type": "command",
@@ -232,7 +241,7 @@
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
   "tui": "fullscreen",
-  "autoMemoryEnabled": true,
+  "autoMemoryEnabled": false,
   "autoDreamEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",

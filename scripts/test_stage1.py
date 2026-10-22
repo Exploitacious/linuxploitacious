@@ -377,11 +377,11 @@ class Stage1Tests(unittest.TestCase):
         expected = {
             "startup|clear": ["session-briefing.sh", "post-compact-resume.sh",
                               "handoff-check.sh", "vault-inbox-check.sh",
-                              "memory-index.sh", "session-work-init.sh",
-                              "seatpool-notice.sh"],
+                              "memory-index.sh", "memory-digest.sh",
+                              "session-work-init.sh", "seatpool-notice.sh"],
             "resume|compact": ["post-compact-resume.sh", "handoff-check.sh",
-                               "session-briefing.sh", "session-work-init.sh",
-                               "seatpool-notice.sh"],
+                               "session-briefing.sh", "memory-digest.sh",
+                               "session-work-init.sh", "seatpool-notice.sh"],
             "*": ["herdr-agent-state.sh"],
         }
         groups = SETTINGS["hooks"]["SessionStart"]
@@ -396,6 +396,28 @@ class Stage1Tests(unittest.TestCase):
         self.assertTrue(targets)
         for target in targets:
             self.assertTrue(target.startswith("/.claude-config/hooks/"), target)
+
+    def test_claude_memory_features_stay_off(self):
+        # Alex 2026-10-21: "please ensure that all Anthropic Claude Code /
+        # Claude Cloud memories are always turned off." autoMemoryEnabled is
+        # the only local switch that stops the prompt block, the MEMORY.md
+        # load, auto-dream and the server-flagged post-turn extractor together
+        # (autoDreamEnabled alone leaves the extractor). A defined falsy
+        # CLAUDE_CODE_DISABLE_AUTO_MEMORY ("0", "false") forces the engine ON
+        # over the setting, so the key must never appear in env.
+        # CLAUDE_CODE_DISABLE_ORG_MEMORY gates only the cloud org-memory store,
+        # never the organization instructions (2026-10-22 memory study).
+        self.assertIs(SETTINGS["autoMemoryEnabled"], False)
+        self.assertIs(SETTINGS["autoDreamEnabled"], False)
+        self.assertNotIn("CLAUDE_CODE_DISABLE_AUTO_MEMORY", SETTINGS["env"])
+        self.assertEqual(SETTINGS["env"]["CLAUDE_CODE_DISABLE_ORG_MEMORY"], "1")
+        # With the engine off the harness digest is the only memory load, so
+        # it must fire on every SessionStart source, compaction included.
+        groups = {g["matcher"]: [h["command"] for h in g["hooks"]]
+                  for g in SETTINGS["hooks"]["SessionStart"]}
+        for matcher in ("startup|clear", "resume|compact"):
+            self.assertTrue(any("/.claude-config/hooks/memory-digest.sh" in c
+                                for c in groups[matcher]), matcher)
 
     def test_seatpool_notice_hook_is_registered_and_never_blocks(self):
         # COWORK's seat pool notice (claude-fleet SETUP SP-4/SP-7): SessionStart (both
