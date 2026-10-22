@@ -232,7 +232,7 @@
   "effortLevel": "xhigh",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
-  "autoDreamEnabled": true,
+  "autoDreamEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": true,
