@@ -10,7 +10,8 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5[1m]",
     "CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS": "10",
     "CLAUDE_CODE_SHELL": "/bin/bash",
-    "CLAUDE_CODE_DISABLE_ORG_MEMORY": "1"
+    "CLAUDE_CODE_DISABLE_ORG_MEMORY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
   },
   "attribution": {
     "commit": "",
@@ -185,6 +186,11 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/seatpool-notice.sh\" && \"$H/.claude-config/hooks/seatpool-notice.sh\" 2>/dev/null || true",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/disk-alert.sh\" && \"$H/.claude-config/hooks/disk-alert.sh\" 2>/dev/null || true",
             "timeout": 5
           }
         ]

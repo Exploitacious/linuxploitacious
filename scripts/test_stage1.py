@@ -438,6 +438,25 @@ class Stage1Tests(unittest.TestCase):
                                 input="{}", capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
+    def test_disk_alert_hook_is_registered_and_never_blocks(self):
+        # COWORK's disk alert (Alex, 2026-10-28): a Stop hook that tells the session when the
+        # shared disk passes 85% and 95%. It must be one Stop entry with a short timeout, and a
+        # host without the hook must still exit 0 (the "|| true").
+        hooks = [hook for group in SETTINGS["hooks"]["Stop"] for hook in group["hooks"]
+                 if "/disk-alert.sh" in hook["command"]]
+        self.assertEqual(len(hooks), 1)
+        self.assertTrue(hooks[0]["command"].endswith("|| true"))
+        self.assertLessEqual(hooks[0].get("timeout", 600), 10)
+        result = subprocess.run(["/bin/bash", "-c", hooks[0]["command"]],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
+                                input="{}", capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_python_bytecode_is_not_written(self):
+        # Alex, 2026-10-28: lanes left 13.7 GB of __pycache__ across the project checkouts on
+        # t3cowork. Every Claude session and its Bash commands inherit this env.
+        self.assertEqual(SETTINGS["env"]["PYTHONDONTWRITEBYTECODE"], "1")
+
     def test_claude_md_is_a_public_core_pointer(self):
         # ~/.claude/CLAUDE.md is symlinked from this public repo on every host.
         # It carries one @import of the harness core plus generic defaults;
