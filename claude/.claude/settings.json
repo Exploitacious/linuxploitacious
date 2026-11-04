@@ -245,6 +245,7 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": false,
+  "disableClaudeAiConnectors": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": true,

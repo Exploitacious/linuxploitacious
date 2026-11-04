@@ -321,6 +321,19 @@ class Stage1Tests(unittest.TestCase):
             self.assertTrue(any("/.claude-config/hooks/memory-digest.sh" in c
                                 for c in groups[matcher]), matcher)
 
+    def test_claude_ai_cloud_connectors_stay_off(self):
+        # Alex 2026-11-04: "we're never going to use Anthropic Claude 'Cloud'
+        # connectors". Every MCP server reaches Claude Code locally through
+        # MetaMCP (COWORK .claude-config/mcp-servers.tsv). A claude.ai
+        # connector adds a second login path and a second, staler tool
+        # inventory beside the local one (the 2026-09-04 ruling). In Claude
+        # Code 2.1.318 the setting stops the connector list from being fetched
+        # or connected at all; the env var ENABLE_CLAUDEAI_MCP_SERVERS is only
+        # a second way to disable, so it stays out of env and this one switch
+        # owns the behaviour.
+        self.assertIs(SETTINGS["disableClaudeAiConnectors"], True)
+        self.assertNotIn("ENABLE_CLAUDEAI_MCP_SERVERS", SETTINGS["env"])
+
     def test_seatpool_notice_hook_is_registered_and_never_blocks(self):
         # COWORK's seat pool notice (claude-fleet SETUP SP-4/SP-7): SessionStart (both
         # matchers, asserted above), every prompt and Stop. The script stays silent with no
