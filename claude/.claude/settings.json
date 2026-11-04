@@ -246,6 +246,11 @@
   "enabledPlugins": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-haiku-5-5": {
+      "autoCompactWindow": 100000
+    }
+  },
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": false,
@@ -253,12 +258,7 @@
   "theme": "dark",
   "autoCompactEnabled": true,
   "idleCompaction": false,
-  "modelSettings": {
-    "claude-haiku-5-5": {
-      "autoCompactWindow": 100000
-    }
-  },
+  "switchModelsOnFlag": true,
   "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true,
-  "switchModelsOnFlag": true
+  "agentPushNotifEnabled": true
 }
