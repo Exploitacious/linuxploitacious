@@ -514,11 +514,14 @@ EOF
     # so tracking "latest" would drift the fleet unpredictably. Bump this by a
     # considered migration (edit here, add a migrations/*.sh that re-runs the
     # installer), never automatically.
-    local HERDR_VERSION="0.8.2"
+    # 0.9.3 since 2026-11-04: herdr-web 0.6.1 (rc-web hub and bridges) needs a Herdr daemon of
+    # 0.9.0 or newer (protocol 22); 0.8.2 made a fresh box's hub crash-loop. t3cowork has run
+    # the 0.9.3 release asset since 2026-10-03 (same sha256 as below).
+    local HERDR_VERSION="0.9.3"
     # Release-asset checksums, pinned alongside the version (recompute on bump:
     # curl -fsSL <asset-url> | sha256sum).
-    local HERDR_SHA256_x86_64="976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4"
-    local HERDR_SHA256_aarch64="f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d"
+    local HERDR_SHA256_x86_64="18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7"
+    local HERDR_SHA256_aarch64="4de7aa3e25678812e92960de64f7c2aaa1bca1f0f80a3c5e559837e231e1f5c0"
 
     msg_header "Installing herdr ${HERDR_VERSION} (multiplexer for AI coding agents)"
     mkdir -p "$HOME/.local/bin"
