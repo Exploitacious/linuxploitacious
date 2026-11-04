@@ -402,7 +402,7 @@ CLAUDE_SRC="$LPX_DIR/claude/.claude"
 CLAUDE_DIR="$HOME/.claude"
 if [ -d "$CLAUDE_SRC" ]; then
   mkdir -p "$CLAUDE_DIR"
-  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/rtk-hook.sh "$CLAUDE_SRC"/CLAUDE.md; do
+  for src in "$CLAUDE_SRC"/settings.json "$CLAUDE_SRC"/statusline.sh "$CLAUDE_SRC"/CLAUDE.md; do
     [ -f "$src" ] || continue
     tgt="$CLAUDE_DIR/$(basename "$src")"
     if [ -L "$tgt" ] && [ "$(readlink -f "$tgt")" = "$(readlink -f "$src")" ]; then
@@ -416,6 +416,17 @@ if [ -d "$CLAUDE_SRC" ]; then
     # A failed link must stop Stage 1 before Stage 2 mirrors an incomplete profile.
     ln -s "$src" "$tgt"
     msg_success "Linked: $tgt -> $src"
+  done
+  # A file removed from claude/.claude (rtk-hook.sh, retired 2026-11-04) would
+  # leave its link here dangling; remove only dangling links into this folder.
+  for tgt in "$CLAUDE_DIR"/*; do
+    [ -L "$tgt" ] && [ ! -e "$tgt" ] || continue
+    case "$(readlink "$tgt")" in
+      # A dead link is cosmetic, so a failed removal warns instead of stopping Stage 1.
+      "$CLAUDE_SRC"/*)
+        if rm -f "$tgt"; then msg_info "Removed stale link: $tgt"
+        else msg_warn "Could not remove stale link: $tgt"; fi ;;
+    esac
   done
 else
   msg_warn "$CLAUDE_SRC not found — skipping Level-1 Claude files."

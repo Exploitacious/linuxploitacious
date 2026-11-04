@@ -130,7 +130,7 @@ class Stage1Tests(unittest.TestCase):
                 syntax = subprocess.run(["bash", "-n", "-c", command],
                                         capture_output=True, text=True)
                 self.assertEqual(syntax.returncode, 0, syntax.stderr)
-                # No installed rtk or harness can escape this fixture.
+                # No installed tool or harness can escape this fixture.
                 result = self.shell(command, PATH=str(self.home))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, "")
@@ -161,112 +161,14 @@ class Stage1Tests(unittest.TestCase):
         result = self.shell(command)
         self.assertEqual(result.stdout.strip(), "wrong-profile")
 
-    def test_rtk_path_and_fallback(self):
-        command = next(c for c in HOOKS if "rtk hook claude" in c)
-        bindir = self.home / "bin"
-        bindir.mkdir()
-        self.executable(self.home / ".local/bin/rtk", 'echo "fallback:$*"')
-        result = self.shell(command, PATH=str(bindir))
-        self.assertEqual(result.stdout.strip(), "fallback:hook claude")
-        self.executable(bindir / "rtk", 'echo "path:$*"')
-        result = self.shell(command, PATH=str(bindir))
-        self.assertEqual(result.stdout.strip(), "path:hook claude")
-
-    # rtk-hook.sh: the PreToolUse(Bash) wrapper. Claude Code's own worktree-isolation
-    # guard refuses `rtk git ...` from an isolated lane (cwd <repo>/.claude/worktrees/<name>),
-    # so the wrapper must leave that lane's commands untouched and rewrite everywhere
-    # else. Each case runs the real script against a stub rtk that records its call and
-    # echoes the stdin it was handed, so "rewritten" and "payload passed unchanged" are
-    # both observable.
-    RTK_STUB = 'echo "rtk-called:$*"; cat'
-
-    def rtk_payload(self, cwd, command="git status"):
-        return json.dumps({"session_id": "s", "cwd": cwd, "hook_event_name": "PreToolUse",
-                           "tool_name": "Bash", "tool_input": {"command": command}})
-
-    def run_rtk_wrapper(self, payload, jq=True):
-        bindir = self.home / ("bin-jq" if jq else "bin-nojq")
-        bindir.mkdir(exist_ok=True)
-        self.executable(bindir / "rtk", self.RTK_STUB)
-        for tool in ("bash", "cat", "sed", "head") + (("jq",) if jq else ()):
-            link = bindir / tool
-            if not link.exists():
-                link.symlink_to(shutil.which(tool))
-        return subprocess.run(["/bin/bash", str(ROOT / "claude/.claude/rtk-hook.sh")],
-                              env=self.env | {"PATH": str(bindir)}, input=payload,
-                              text=True, capture_output=True, timeout=10)
-
-    def test_rtk_wrapper_rewrites_outside_isolated_worktrees(self):
-        for jq in (True, False):
-            for cwd in ("/home/u/COWORK", "/home/u/COWORK/.claude", "/home/u/repo/.claude/worktreesX",
-                        "/home/u/.claude/worktrees-old/repo", "/home/u/repo/worktrees/.claude"):
-                with self.subTest(jq=jq, cwd=cwd):
-                    payload = self.rtk_payload(cwd)
-                    result = self.run_rtk_wrapper(payload, jq)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertTrue(result.stdout.startswith("rtk-called:hook claude\n"), result.stdout)
-                    # rtk gets the payload exactly as Claude Code sent it.
-                    self.assertEqual(result.stdout.split("\n", 1)[1], payload)
-
-    def test_rtk_wrapper_skips_isolated_worktrees(self):
-        for jq in (True, False):
-            for cwd in ("/home/u/COWORK/.claude/worktrees/lane", "/home/u/COWORK/.claude/worktrees/lane/sub/dir",
-                        "C:\\Users\\u\\COWORK\\.claude\\worktrees\\lane"):
-                with self.subTest(jq=jq, cwd=cwd):
-                    result = self.run_rtk_wrapper(self.rtk_payload(cwd), jq)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    # No output at all: Claude Code reads that as "no rewrite".
-                    self.assertEqual((result.stdout, result.stderr), ("", ""))
-
-    def test_rtk_wrapper_judges_cwd_not_the_command_text(self):
-        # A command that merely names a worktree path, run from an ordinary cwd,
-        # is still rewritten; an isolated cwd stays untouched whatever the command is.
-        for jq in (True, False):
-            with self.subTest(jq=jq):
-                named = self.run_rtk_wrapper(self.rtk_payload("/home/u/repo", "git -C /a/.claude/worktrees/b status"), jq)
-                self.assertTrue(named.stdout.startswith("rtk-called:hook claude"), named.stdout)
-                quoted = self.run_rtk_wrapper(self.rtk_payload("/home/u/repo", 'echo "cwd":"/x/.claude/worktrees/y"'), jq)
-                self.assertTrue(quoted.stdout.startswith("rtk-called:hook claude"), quoted.stdout)
-                isolated = self.run_rtk_wrapper(self.rtk_payload("/home/u/repo/.claude/worktrees/b", "ls"), jq)
-                self.assertEqual(isolated.stdout, "")
-
-    def test_rtk_wrapper_fails_toward_the_old_behavior(self):
-        # An unreadable payload or a missing cwd is not a worktree: rtk runs as before.
-        for payload in ("not json", "{}", '{"cwd": null}', ""):
-            for jq in (True, False):
-                with self.subTest(payload=payload, jq=jq):
-                    result = self.run_rtk_wrapper(payload, jq)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertTrue(result.stdout.startswith("rtk-called:hook claude"), result.stdout)
-        # With no rtk anywhere it exits 0 and says nothing.
-        bare = self.home / "bare"
-        bare.mkdir()
-        for tool in ("bash", "cat", "sed", "head"):
-            (bare / tool).symlink_to(shutil.which(tool))
-        result = subprocess.run(["/bin/bash", str(ROOT / "claude/.claude/rtk-hook.sh")],
-                                env=self.env | {"PATH": str(bare)}, input=self.rtk_payload("/home/u/repo"),
-                                text=True, capture_output=True, timeout=10)
-        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
-
-    def test_rtk_settings_hook_goes_through_the_wrapper_when_installed(self):
-        command = next(c for c in HOOKS if "rtk hook claude" in c)
-        self.assertIn("rtk-hook.sh", command)
-        bindir = self.home / "bin"
-        bindir.mkdir()
-        self.executable(bindir / "rtk", self.RTK_STUB)
-        for tool in ("bash", "cat", "sed", "head", "jq"):
-            (bindir / tool).symlink_to(shutil.which(tool))
-        script = self.home / ".claude/rtk-hook.sh"
-        script.parent.mkdir(parents=True)
-        script.symlink_to(ROOT / "claude/.claude/rtk-hook.sh")
-        run = lambda cwd: subprocess.run(
-            ["/bin/bash", "--noprofile", "--norc", "-c", command], env=self.env | {"PATH": str(bindir)},
-            input=self.rtk_payload(cwd), text=True, capture_output=True, timeout=10)
-        self.assertTrue(run("/home/u/repo").stdout.startswith("rtk-called:hook claude"))
-        self.assertEqual(run("/home/u/repo/.claude/worktrees/lane").stdout, "")
-        # Without the installed script the hook is the old direct call, worktree or not.
-        script.unlink()
-        self.assertTrue(run("/home/u/repo/.claude/worktrees/lane").stdout.startswith("rtk-called:hook claude"))
+    def test_no_rtk_rewrite_hook(self):
+        # The rtk PreToolUse(Bash) rewrite was retired 2026-11-04: it handed the
+        # agent compressed or truncated output instead of what the command printed
+        # (truncated file reads, a false "no tests" from pytest, `grep -h` read as
+        # no matches, git refused in isolated worktree lanes) for a small token
+        # saving. Bringing a rewrite hook back is a new decision, not a fix.
+        self.assertFalse([c for c in HOOKS if "rtk" in c])
+        self.assertFalse((ROOT / "claude/.claude/rtk-hook.sh").exists())
 
     def retirement(self, stub):
         function = "  retire_claude_plugins() {" + section(
@@ -633,7 +535,7 @@ class Stage1Tests(unittest.TestCase):
         # The three PreToolUse guards block the call when they crash, time
         # out or exit with anything but 0 or 2 (onFailure, Claude Code
         # 2.1.295; ruling 2026-10-14). Every other hook must fail open: a
-        # broken rtk rewriter or context readout would otherwise block every
+        # broken helper or context readout would otherwise block every
         # Bash call or prompt. A misspelled onFailure value makes Claude Code
         # drop the whole settings file, so the value is pinned exactly.
         guards = ('secrets-guard.sh" pre', 'git-guard.sh"', 'review-gate-guard.sh"')
@@ -718,8 +620,40 @@ sudo() { printf '%s\n' "$*" >> "$HOME/sudo-calls"; return 0; }
         backups = list(config.glob("settings.json.backup_*"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), "old config")
-        for name in ("settings.json", "CLAUDE.md", "statusline.sh", "rtk-hook.sh"):
+        for name in ("settings.json", "CLAUDE.md", "statusline.sh"):
             self.assertEqual((config / name).resolve(), ROOT / "claude/.claude" / name)
+
+    def plant_stale_links(self):
+        config = self.home / ".claude"
+        config.mkdir(exist_ok=True)
+        ours = config / "rtk-hook.sh"
+        ours.symlink_to(ROOT / "claude/.claude/rtk-hook.sh")
+        foreign = config / "foreign.sh"
+        foreign.symlink_to(self.home / "elsewhere/missing.sh")
+        return config, ours, foreign
+
+    def assert_stale_links_pruned(self, config, ours, foreign):
+        # Only a dangling link into claude/.claude goes; a dangling link that
+        # points anywhere else is someone else's and stays.
+        self.assertFalse(os.path.lexists(ours))
+        self.assertTrue(os.path.lexists(foreign))
+        for name in ("settings.json", "CLAUDE.md", "statusline.sh"):
+            self.assertEqual((config / name).resolve(), ROOT / "claude/.claude" / name)
+
+    def test_linux_claude_config_prunes_its_own_dangling_links(self):
+        config, ours, foreign = self.plant_stale_links()
+        function = "deploy_claude_config() {" + section(
+            "shellSetup.sh", "deploy_claude_config() {", "  # --- CLAUDE CODE PLUGINS")
+        result = self.shell(MESSAGES + function + "\ndeploy_claude_config\n", REPO_DIR=str(ROOT))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Removed stale link", result.stdout)
+        self.assert_stale_links_pruned(config, ours, foreign)
+
+    def test_omarchy_stage1_prunes_its_own_dangling_links(self):
+        config, ours, foreign = self.plant_stale_links()
+        result = self.stage1_files()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_stale_links_pruned(config, ours, foreign)
 
     def test_omarchy_stage1_stops_on_failed_link(self):
         result = self.stage1_files('ln() { case "$*" in *settings.json*) return 1;; '

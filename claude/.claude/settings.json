@@ -144,15 +144,6 @@
             "onFailure": "block"
           }
         ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"$HOME/.claude/rtk-hook.sh\" ] && exec bash \"$HOME/.claude/rtk-hook.sh\"; command -v rtk >/dev/null 2>&1 && exec rtk hook claude; [ -x \"$HOME/.local/bin/rtk\" ] && exec \"$HOME/.local/bin/rtk\" hook claude; exit 0"
-          }
-        ]
       }
     ],
     "PostToolUse": [

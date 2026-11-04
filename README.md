@@ -290,13 +290,10 @@ HARNESS menu option sets you up with your own private copy of it.
 **Stage 1 — Level 1 files (this repo):** The `claude/` directory
 deploys `~/.claude/CLAUDE.md` (behavioral rules, conversational
 compression), `~/.claude/settings.json` (model, effort level,
-permissions), `~/.claude/statusline.sh`, and `~/.claude/rtk-hook.sh` (the
-rtk PreToolUse wrapper: it skips the `rtk git ...` rewrite inside Claude
-Code's isolated worktree lanes, whose built-in guard refuses it). On Linux
-all four use absolute symlinks instead of stow (necessary because stow's relative
+permissions), and `~/.claude/statusline.sh`. On Linux
+all three use absolute symlinks instead of stow (necessary because stow's relative
 symlinks break when chained through the ROOT profile's `~/.claude` →
-`/home/user/.claude` symlink). On Windows `rtk-hook.sh` is not deployed (the
-settings hook then calls rtk directly, as before), `CLAUDE.md` + `statusline.sh`
+`/home/user/.claude` symlink). On Windows `CLAUDE.md` + `statusline.sh`
 are symlinks, but `settings.json` is **materialized as a real file
 deep-merged from the tracked base** (base wins on managed keys,
 local-only keys preserved) — Claude Code has no user-level
@@ -457,7 +454,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 | PYTHON | Python 3, pip globals, pipx tools | ON |
 | JQ | jq JSON processor (Claude statusline) | ON |
 | CLAUDE | Claude Code + OpenCode + legacy cleanup | ON |
-| CONFIGS | Symlink all dotfiles + Level 1 Claude config (CLAUDE.md, settings.json, statusline.sh, and on Linux rtk-hook.sh). **Does NOT deploy COWORK content** — Stage 2 (`deploy.ps1`) owns that. | ON |
+| CONFIGS | Symlink all dotfiles + Level 1 Claude config (CLAUDE.md, settings.json, statusline.sh). **Does NOT deploy COWORK content** — Stage 2 (`deploy.ps1`) owns that. | ON |
 | APPS | Browsers, dev tools, productivity (opt-in) | OFF |
 | TWEAKS | Dark mode, Explorer, taskbar prefs | OFF |
 | SSHKEY | GitHub SSH + gh auth + key upload | OFF |
@@ -482,7 +479,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 `shellSetup.sh` and `winSetup.ps1` are maintained in parallel. When adding a feature to one, check whether the other needs a matching change. The menu items should stay aligned — same names, same defaults, same order where practical.
 
-**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh + rtk-hook.sh), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, hooks, memory tooling) is NOT this repo's responsibility — Stage 2 owns it.
+**What to sync:** Tool installations, config file deployments, Level 1 Claude Code setup (CLAUDE.md + settings.json + statusline.sh), AI tool management (install, legacy cleanup), menu structure. Stage 2 content (skills, commands, hooks, memory tooling) is NOT this repo's responsibility — Stage 2 owns it.
 
 **What diverges by design:** Platform-specific tools (tmux vs WezTerm, stow vs Deploy-Symlink, apt vs winget), root/sudo handling (Linux-only), Docker setup (different install paths), swap management (Linux-only).
 
@@ -588,8 +585,7 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │   └── .claude/                       # deploy_claude_config() with absolute
 │       ├── CLAUDE.md                  # symlinks. See "Claude Code Setup" §.
 │       ├── settings.json              #   -> ~/.claude/CLAUDE.md
-│       ├── rtk-hook.sh                #   -> ~/.claude/settings.json
-│       └── statusline.sh              #   -> ~/.claude/rtk-hook.sh
+│       └── statusline.sh              #   -> ~/.claude/settings.json
 │                                      #   -> ~/.claude/statusline.sh
 ├── rustscan/                          # Package: RustScan config
 │   └── .rustscan.toml                 #   -> ~/.rustscan.toml

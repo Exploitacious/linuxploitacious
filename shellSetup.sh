@@ -2077,6 +2077,18 @@ EOF
       msg_success "Linked: $target -> $source"
     done
 
+    # A file removed from claude/.claude (rtk-hook.sh, retired 2026-11-04) would
+    # leave its link here dangling; remove only dangling links into this folder.
+    local link
+    for link in "$CLAUDE_DIR"/*; do
+      [ -L "$link" ] && [ ! -e "$link" ] || continue
+      case "$(readlink "$link")" in
+        "$SOURCE_DIR"/*)
+          if rm -f "$link"; then msg_info "Removed stale link: $link"
+          else msg_warn "Could not remove stale link: $link"; fi ;;
+      esac
+    done
+
     # Skills + commands symlinks are owned by the harness's Stage 2
     # deployer (~/COWORK or ~/OPS .claude-config/deploy.sh), NOT this
     # function. Stage 1's job here is strictly Level 1 files (CLAUDE.md,
