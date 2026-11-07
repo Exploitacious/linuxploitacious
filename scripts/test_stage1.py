@@ -373,16 +373,22 @@ class Stage1Tests(unittest.TestCase):
 
     # The hooks the harness lanes added on 2026-11-07, and where each one must be
     # registered: (event, matcher) pairs. Each script lives in the harness, not here, and
-    # prints nothing when it has nothing to say. askuser-cancel.sh is also on
-    # PostToolUseFailure: a declined question may reach Claude Code as a failed tool call
-    # rather than a completed one, and the script reads whichever event arrives.
+    # prints nothing when it has nothing to say. Two registrations are not the obvious ones:
+    #   askuser-cancel.sh: UserPromptSubmit and Stop, never a tool event. A rejected
+    #     AskUserQuestion never runs, so Claude Code fires no PostToolUse, PostToolUseFailure
+    #     or PermissionDenied for it (probed on 2.1.319 by the harness prompt-hooks lane);
+    #     the message that cancelled the question arrives as a prompt, and Stop is the backstop.
+    #   time-checkpoint.sh: PostToolUse on the Autotask ticket_manage tool only; the script
+    #     acts when a ticket is moved to Complete or Verification Requested with no time entry.
+    TICKET_MANAGE = "mcp__umbrella-autotask__autotask__ticket_manage"
     LANE_HOOKS = {
         "lane-rules.sh": {("SubagentStart", ".*"), ("SessionStart", "startup|clear"),
                           ("SessionStart", "resume|compact")},
         "foreman-context.sh": {("SessionStart", "startup|clear"), ("SessionStart", "resume|compact")},
         "report-lint.sh": {("Stop", ".*")},
-        "askuser-cancel.sh": {("PostToolUse", "AskUserQuestion"), ("PostToolUseFailure", "AskUserQuestion")},
+        "askuser-cancel.sh": {("UserPromptSubmit", ".*"), ("Stop", ".*")},
         "memory-hint.sh": {("UserPromptSubmit", ".*")},
+        "time-checkpoint.sh": {("PostToolUse", TICKET_MANAGE)},
     }
 
     def registrations(self, script):
@@ -397,6 +403,32 @@ class Stage1Tests(unittest.TestCase):
                 self.assertEqual({(event, matcher) for event, matcher, _ in found}, expected)
                 # One entry per (event, matcher): a duplicate would run the hook twice.
                 self.assertEqual(len(found), len(expected))
+
+    def test_askuser_cancel_is_on_the_events_a_rejected_question_fires(self):
+        # A user-rejected AskUserQuestion fires no tool event, so a PostToolUse or
+        # PostToolUseFailure registration is inert for the one case the hook exists for
+        # (harness friction review I-26). Pin the absence as well as the presence:
+        # PostToolUseFailure is also left out because an older team-box Claude Code may
+        # not know that event name (UNVERIFIED offline; local Claude Code is 2.1.319).
+        events = {event for event, _, _ in self.registrations("askuser-cancel.sh")}
+        self.assertEqual(events, {"UserPromptSubmit", "Stop"})
+        self.assertNotIn("PostToolUseFailure", SETTINGS["hooks"])
+        self.assertFalse([g["matcher"] for g in SETTINGS["hooks"]["PostToolUse"]
+                          if "AskUserQuestion" in g["matcher"]])
+
+    def test_time_checkpoint_matcher_selects_only_autotask_ticket_manage(self):
+        # The matcher is a regex over the tool name. It must hit the real MCP tool name and
+        # no other Autotask tool: time_manage is where the entry is written, and a nudge
+        # after it would be noise. The hook also filters tool_name and status itself.
+        found = self.registrations("time-checkpoint.sh")
+        self.assertEqual([(event, matcher) for event, matcher, _ in found],
+                         [("PostToolUse", self.TICKET_MANAGE)])
+        matcher = found[0][1]
+        self.assertTrue(re.search(matcher, "mcp__umbrella-autotask__autotask__ticket_manage"))
+        for other in ("mcp__umbrella-autotask__autotask__time_manage",
+                      "mcp__umbrella-autotask__autotask__ticket_context",
+                      "mcp__umbrella-autotask__autotask__project_manage", "Bash", "Write"):
+            self.assertFalse(re.search(matcher, other), other)
 
     def test_lane_hooks_use_the_guarded_pattern_and_fail_open(self):
         prefix = 'H="$HOME/COWORK"; [ -d "$H" ] || H="$HOME/OPS"; test -x "$H/.claude-config/hooks/'

@@ -189,11 +189,11 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion",
+        "matcher": "mcp__umbrella-autotask__autotask__ticket_manage",
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/time-checkpoint.sh\" && \"$H/.claude-config/hooks/time-checkpoint.sh\" 2>/dev/null || true",
             "timeout": 10
           }
         ]
@@ -204,18 +204,6 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/context-watch.sh\" && \"$H/.claude-config/hooks/context-watch.sh\" posttool 2>/dev/null || true"
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
-            "timeout": 10
           }
         ]
       }
@@ -241,6 +229,11 @@
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/report-lint.sh\" && \"$H/.claude-config/hooks/report-lint.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
             "timeout": 10
           }
         ]
@@ -273,6 +266,16 @@
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/memory-hint.sh\" && \"$H/.claude-config/hooks/memory-hint.sh\" 2>/dev/null || true",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       },
