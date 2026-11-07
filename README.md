@@ -103,7 +103,7 @@ The script uses a two-stage architecture:
 
 **Always runs (no menu toggle):** Claude Code and OpenCode install via their official vendor scripts (`curl -fsSL https://claude.ai/install.sh | bash` and `curl -fsSL https://opencode.ai/install | bash`), dropping native binaries into `~/.local/bin/claude` and `~/.opencode/bin/opencode`. Legacy pnpm/npm-global installations of these tools (and Gemini) are detected and removed on every run to prevent shims from shadowing the native binaries.
 
-> **Supply chain note:** The two installers are fetched unpinned at setup time. Acceptable for a personal dotfiles repo; pin to a version (`bash -s <version>` for Claude) or checksum-verify if you plan to run this on machines you don't own.
+> **Supply chain note:** The Claude Code and OpenCode installers, and the `uv` installer (PYTHON step and migration `1794070546.sh`), are fetched unpinned at setup time. Acceptable for a personal dotfiles repo; pin to a version (`bash -s <version>` for Claude) or checksum-verify if you plan to run this on machines you don't own.
 
 ---
 
@@ -137,7 +137,7 @@ Current migrations (each one is also covered by `scripts/test_stage1.py`):
 |-----------|---------------------------------|
 | `1787420449.sh` | Installs the modern CLI toolset (`CLITOOLS`, see [Modern CLI tools](#modern-cli-tools-clitools)). |
 | `1793811465.sh` | Upgrades herdr to the pinned 0.9.3 (see [Herdr multiplexer](#herdr-multiplexer-herdr)). |
-| `1794070543.sh` | Installs poppler (`poppler-utils`, `poppler` on Arch) and `uv` when missing, so the agent Read tool can render a PDF and `msg-read` runs. Fails closed with no terminal and no passwordless sudo. |
+| `1794070546.sh` | Installs poppler (`poppler-utils`, `poppler` on Arch) and `uv` when missing, so the agent Read tool can render a PDF and `msg-read` runs. Fails closed with no terminal and no passwordless sudo. |
 | `1794070544.sh` | Appends to the pyenv global list the version that holds a Stage-1 pip tool whose shim does not resolve (ruff, pytest, black...). The current default stays first. |
 | `1794070545.sh` | Copies the T3 thread-scope `OOMPolicy=continue` drop-in into `~/.config/systemd/user/` (see [The systemd package](#the-systemd-package)) and reloads the user manager. |
 
@@ -438,8 +438,10 @@ Optional (referenced if present; silent otherwise):
 The hook registrations follow one pattern: resolve `$HOME/COWORK` (falling back to
 `$HOME/OPS`), `test -x` the script, run it with `2>/dev/null || true`. The three
 PreToolUse guards fail closed (`onFailure: block`, 30 s); every other hook fails
-open with a timeout of 10 s or less (5 s for the per-prompt ones), and prints
-nothing when it has nothing to say. Because of `|| true`, a hook cannot signal
+open and prints nothing when it has nothing to say. The hooks added on 2026-11-07
+carry a timeout of 10 s or less (5 s for `memory-hint.sh`); older registrations
+without a `timeout` use Claude Code's default. The guard drops stderr only, so a
+hook that prints to stdout and then fails still shows what it printed. Because of `|| true`, a hook cannot signal
 through its exit code (a blocking `exit 2` would become 0): the Stop hooks and
 prompt hooks answer with JSON on stdout.
 
@@ -797,8 +799,9 @@ setting that changes it (`$SHELL` and `shell_environment_policy.set` are both
 ignored). Two bash habits then fail as zsh errors: `ls *.log` with no match is
 `zsh: no matches found`, and a word starting with `=` is expanded as a command
 path. `zsh/.zshenv` sets `nonomatch` and `noequals` when zsh is given a `-c`
-command string (`ZSH_EXECUTION_STRING` is set), so those commands behave as in
-bash. Interactive shells and script files keep zsh's defaults. The login shell
+command string (`ZSH_EXECUTION_STRING` is set, `zsh -i -c` included), so those
+commands behave as in bash. Interactive shells and script files keep zsh's
+defaults. The login shell
 itself is not changed.
 
 ## Shell workflow functions

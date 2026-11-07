@@ -24,7 +24,9 @@ fi
 TOOLS=(pipx poetry virtualenv pre-commit black ruff mypy isort pytest ipython)
 
 # Installed CPython versions, newest first (a virtualenv shows up as 3.x.y/envs/name).
-mapfile -t versions < <(pyenv versions --bare 2>/dev/null | grep -E '^[0-9][^/]*$' | sort -rV)
+# The pattern needs major.minor, so a pyenv-virtualenv env named like 3dtool is not taken
+# for a Python version.
+mapfile -t versions < <(pyenv versions --bare 2>/dev/null | grep -E '^[0-9]+\.[0-9]+[^/]*$' | sort -rV)
 # The current global list, "system" included: dropping it would change the default Python.
 mapfile -t current < <(pyenv global 2>/dev/null)
 changed=0
@@ -44,6 +46,15 @@ for tool in "${TOOLS[@]}"; do
 done
 
 if [ "$changed" -eq 1 ]; then
+  # `pyenv global` refuses a list naming a version that is no longer installed. Keep the
+  # owner's list exactly as it is in that case (never drop an entry) and report it, so a
+  # stale entry does not stop the migrations after this one.
+  for entry in "${current[@]}"; do
+    if [ "$entry" != "system" ] && [ ! -d "$PYENV_ROOT/versions/$entry" ]; then
+      echo "pyenv global lists $entry, which is not installed; leaving the list unchanged (fix it with 'pyenv global')" >&2
+      exit 0
+    fi
+  done
   pyenv global "${current[@]}" || exit 1
   pyenv rehash
 fi

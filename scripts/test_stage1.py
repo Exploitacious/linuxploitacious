@@ -650,6 +650,37 @@ class Stage1Tests(unittest.TestCase):
         self.assertEqual(resolved[0], "system")
         self.assertIn("3.14.7", resolved)
 
+    @unittest.skipUnless(shutil.which("pyenv") or (Path.home() / ".pyenv/bin/pyenv").exists(),
+                         "pyenv is not installed")
+    def test_pyenv_tools_migration_keeps_a_stale_list_and_skips_env_names(self):
+        script = self.migration("keep the pyenv shims")
+        # 3dtool is a pyenv-virtualenv style name that starts with a digit: not a version.
+        root = self.pyenv_root({"3.14.5": ["python"], "3.14.7": ["python", "ruff"],
+                                "3dtool": ["python", "black"]})
+        env = self.pyenv_env(root)
+        run = lambda: subprocess.run(["/bin/bash", str(script)], env=self.env | env, input="",
+                                     text=True, capture_output=True, timeout=60)
+        # A global list naming an uninstalled version: never dropped, never blocks the run.
+        (root / "version").write_text("3.14.5\n3.9.99\n")
+        result = run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("3.9.99, which is not installed", result.stderr)
+        self.assertEqual((root / "version").read_text(), "3.14.5\n3.9.99\n")
+        # With a clean list, ruff's version is appended and the env name never is.
+        (root / "version").write_text("3.14.5\n")
+        subprocess.run(["pyenv", "rehash"], env=self.env | env, check=True)
+        result = run()
+        self.assertNotIn("3dtool", self.pyenv_global(env))
+        self.assertEqual(self.pyenv_global(env), ["3.14.5", "3.14.7"])
+
+    def test_poppler_migration_runs_after_the_unprivileged_ones(self):
+        # lpx-migrate stops at the first failure, and the poppler step fails on a headless box
+        # with no passwordless sudo: it must not hold back the pyenv and drop-in migrations.
+        poppler = int(self.migration("poppler and uv").stem)
+        for other in ("keep the pyenv shims", "OOMPolicy=continue"):
+            with self.subTest(other=other):
+                self.assertGreater(poppler, int(self.migration(other).stem))
+
     def test_pyenv_tools_migration_does_nothing_without_pyenv(self):
         script = self.migration("keep the pyenv shims")
         bin_dir = self.stub_bin()

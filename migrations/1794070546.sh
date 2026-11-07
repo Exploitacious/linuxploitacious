@@ -7,7 +7,10 @@
 # (about 100 failed calls in two weeks) and every .msg started a throwaway venv.
 #
 # Both steps are always attempted; the exit status is non-zero if either one failed, so
-# lpx-migrate fails closed and the box is not marked done. Each step is a no-op when its
+# lpx-migrate fails closed and the box is not marked done. It is numbered after the pyenv
+# and OOM drop-in migrations on purpose: lpx-migrate stops at the first failure, and a
+# headless box with no passwordless sudo fails this one until someone runs it with a
+# terminal, which must not hold back migrations that need no privilege. Each step is a no-op when its
 # tool is already there. With no terminal and no passwordless sudo the poppler step
 # fails instead of waiting for a password prompt nobody can answer.
 set -uo pipefail
