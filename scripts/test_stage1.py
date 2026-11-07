@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """Offline Stage-1 checks. Run with: python3 scripts/test_stage1.py."""
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -7,8 +11,12 @@ import pty
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import textwrap
+import types
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -782,110 +790,6 @@ class Stage1Tests(unittest.TestCase):
         result = self.run_migration(script, self.stub_bin())
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    # ----- msg-read: the sanctioned .msg reader -----
-
-    MSG_READ = ROOT / "scripts/.local/bin/msg-read"
-    STUB_EXTRACT_MSG = '''
-class Attachment:
-    def __init__(self, name, data):
-        self.name, self.data = name, data
-    def getFilename(self):
-        return self.name
-    def save(self, customPath=None, customFilename=None):
-        with open(customPath + "/" + customFilename, "w") as handle:
-            handle.write("embedded message")
-
-class Message:
-    sender = "Sender Name <sender@example.test>"
-    to = "Recipient <to@example.test>"
-    cc = ""
-    date = "2026-01-02 03:04:05"
-    subject = "Quarterly report"
-    body = ""
-    htmlBody = (b"<html><head><style>p{color:red}</style></head><body><p>Hello <b>there</b></p>"
-                b"<script>var x = 1;</script><div>second line</div></body></html>")
-    attachments = [Attachment("../escape.txt", b"one"), Attachment("report.pdf", b"%PDF-1"),
-                   Attachment("report.pdf", b"%PDF-2"), Attachment("", b"zz"),
-                   Attachment("inner.eml", object())]
-    def close(self):
-        pass
-
-def openMsg(path):
-    if path.endswith("broken.msg"):
-        raise ValueError("not an OLE file")
-    return Message()
-'''
-
-    def msg_read(self, *args, with_uv=True, stub=None):
-        stubs = Path(self.temp.name) / "msg-stub"
-        shutil.rmtree(stubs, ignore_errors=True)
-        stubs.mkdir()
-        (stubs / "extract_msg.py").write_text(stub or self.STUB_EXTRACT_MSG)
-        bin_dir = Path(self.temp.name) / "msg-bin"
-        shutil.rmtree(bin_dir, ignore_errors=True)
-        bin_dir.mkdir()
-        if with_uv:  # runs the helper the way `uv run ... python - args` would, with the stub module
-            self.executable(bin_dir / "uv",
-                            'echo "$*" > "$HOME/uv-args"\nwhile [ "$1" != python ]; do shift; done\nshift\n'
-                            'exec python3 "$@"')
-        return subprocess.run(["bash", str(self.MSG_READ), *map(str, args)], text=True, capture_output=True,
-                              timeout=30, env=self.env | {"PATH": f"{bin_dir}:/usr/bin:/bin",
-                                                          "PYTHONPATH": str(stubs)})
-
-    def test_msg_read_prints_headers_attachments_and_a_text_body(self):
-        result = self.msg_read("mail.msg")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        out = result.stdout
-        self.assertIn("From: Sender Name <sender@example.test>", out)
-        self.assertIn("Subject: Quarterly report", out)
-        self.assertNotIn("Cc:", out)  # an empty header is not printed
-        self.assertIn("Attachments (5):", out)
-        self.assertIn("1. ../escape.txt (3 bytes)", out)
-        self.assertIn("5. inner.eml (embedded message)", out)
-        body = out.split("--- body ---", 1)[1]
-        self.assertIn("Hello there", body)  # HTML turned into text when there is no plain body
-        self.assertIn("second line", body)
-        self.assertNotIn("var x", body)
-        self.assertNotIn("color:red", body)
-        # extract-msg is requested through uv with a floor and a ceiling, outside any project.
-        uv_args = (self.home / "uv-args").read_text()
-        for part in ("run", "--no-project", "--with", "extract-msg>=0.55,<1", "python"):
-            self.assertIn(part, uv_args)
-
-    def test_msg_read_saves_attachments_without_escaping_or_overwriting(self):
-        out = self.home / "saved"
-        result = self.msg_read("-o", out, "mail.msg")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(sorted(p.name for p in out.iterdir()),
-                         ["attachment-4", "escape.txt", "inner.eml.msg", "report-2.pdf", "report.pdf"])
-        self.assertFalse((self.home / "escape.txt").exists())  # `../escape.txt` stayed inside -o
-        self.assertEqual((out / "report.pdf").read_bytes(), b"%PDF-1")
-        self.assertEqual((out / "report-2.pdf").read_bytes(), b"%PDF-2")
-        self.assertEqual((out / "inner.eml.msg").read_text(), "embedded message")
-        self.assertIn(f"-> {out}/report-2.pdf", result.stdout)
-        # Run again: the existing files are not overwritten, they get new suffixes.
-        self.msg_read("-o", out, "mail.msg")
-        self.assertEqual((out / "report.pdf").read_bytes(), b"%PDF-1")
-        self.assertTrue((out / "report-3.pdf").exists())
-
-    def test_msg_read_reports_each_bad_file_and_keeps_going(self):
-        result = self.msg_read("broken.msg", "notes.txt", "mail.msg")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("broken.msg: ValueError: not an OLE file", result.stderr)
-        self.assertIn("notes.txt: not a .msg file", result.stderr)
-        self.assertIn("=== mail.msg ===", result.stdout)  # a banner when there is more than one file
-        self.assertIn("Subject: Quarterly report", result.stdout)
-
-    def test_msg_read_usage_and_missing_uv(self):
-        self.assertEqual(self.msg_read().returncode, 2)
-        self.assertEqual(self.msg_read("-x", "mail.msg").returncode, 2)
-        self.assertEqual(self.msg_read("-o").returncode, 2)
-        if shutil.which("uv", path="/usr/bin:/bin"):
-            self.skipTest("uv is installed system-wide")
-        result = self.msg_read("mail.msg", with_uv=False)
-        self.assertEqual(result.returncode, 127)
-        self.assertIn("astral.sh/uv/install.sh", result.stderr)
-
     # ----- zsh -c behaves like bash for the two habits that fail as zsh errors -----
 
     ZSHENV = ROOT / "zsh/.zshenv"
@@ -1337,6 +1241,179 @@ function claude { $global:LASTEXITCODE = STATUS; 'CLI result' }
             self.assertIn("WARN:" if status else "SUCCESS:", result.stdout)
             if status:
                 self.assertNotIn("SUCCESS:", result.stdout)
+
+
+
+# ---------------------------------------------------------------------------
+# msg-read: the sanctioned .msg reader (scripts/.local/bin/msg-read). The code
+# is identical to the team-box copy and these cases mirror its tests.
+# ---------------------------------------------------------------------------
+
+MSG_READ = ROOT / "scripts/.local/bin/msg-read"
+
+
+def load_msg_read():
+    loader = importlib.machinery.SourceFileLoader("msg_read_under_test", str(MSG_READ))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = mod
+    loader.exec_module(mod)
+    return mod
+
+
+class StubAttachment:
+    def __init__(self, name, data, mimetype=None, short=None):
+        self.longFilename, self.shortFilename, self.name, self.mimetype, self.data = name, short, name, mimetype, data
+
+
+class StubMsg:
+    def __init__(self, attachments=(), body="Hello\r\nworld", html=None):
+        self.sender, self.to, self.cc, self.date, self.subject = "Pat <p@example.invalid>", "Recipient", None, None, "Invoice"
+        self.body, self.htmlBody, self.attachments = body, html, list(attachments)
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class MsgReadTest(unittest.TestCase):
+    def setUp(self):
+        self.m = load_msg_read()
+        self.tmp = Path(tempfile.mkdtemp(prefix="msg-read-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def with_stub(self, mapping):
+        def open_msg(path):
+            value = mapping[path]
+            if isinstance(value, Exception):
+                raise value
+            return value
+        return patch.dict(sys.modules, {"extract_msg": types.SimpleNamespace(openMsg=open_msg)})
+
+    def test_attachment_names_cannot_escape_or_hide(self):
+        s = self.m.safe_name
+        self.assertEqual(s("../../etc/passwd", 1), "passwd")
+        self.assertEqual(s("..\\..\\boot.ini", 1), "boot.ini")
+        self.assertEqual(s(".bashrc", 1), "bashrc")
+        self.assertEqual(s("", 3), "attachment-3")
+        self.assertEqual(s("a\x00b\x1f.pdf", 1), "ab.pdf")
+        self.assertEqual(s("/", 2), "attachment-2")
+        self.assertLessEqual(len(s("x" * 500, 1)), 150)
+
+    def test_saving_never_overwrites_and_never_follows_a_planted_symlink(self):
+        d = self.tmp / "out"
+        d.mkdir()
+        (d / "a.pdf").write_text("mine")
+        target = self.tmp / "victim"
+        target.write_text("victim")
+        (d / "b.pdf").symlink_to(target)
+        p1 = self.m.write_new(str(d), "a.pdf", b"new")
+        p2 = self.m.write_new(str(d), "b.pdf", b"new")
+        self.assertEqual((d / "a.pdf").read_text(), "mine")
+        self.assertEqual(target.read_text(), "victim")
+        self.assertEqual((Path(p1).name, Path(p2).name), ("a-1.pdf", "b-1.pdf"))
+
+    def test_saving_rejects_a_planted_message_directory_symlink(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (self.tmp / "m").symlink_to(outside, target_is_directory=True)
+        msg = StubMsg([StubAttachment("payload.txt", b"must stay inside")])
+        with self.with_stub({"m.msg": msg}), contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            rc = self.m.main(["--save", str(self.tmp), "m.msg"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_an_attachment_that_cannot_be_exported_is_not_silently_skipped(self):
+        msg = StubMsg([StubAttachment("unknown", object())])
+        with self.with_stub({"m.msg": msg}), self.assertRaisesRegex(ValueError, "cannot be exported"):
+            self.m.read_one("m.msg", types.SimpleNamespace(no_body=True, max_chars=0, save=str(self.tmp)))
+
+    def test_read_prints_headers_body_and_attachments_and_saves_them(self):
+        msg = StubMsg([StubAttachment("inv.pdf", b"%PDF-1", "application/pdf"), StubAttachment("../x.txt", b"x"),
+                       StubAttachment("fwd", types.SimpleNamespace(exportBytes=lambda: b"EMBEDDED"))])
+        out = io.StringIO()
+        with self.with_stub({"m.msg": msg}), contextlib.redirect_stdout(out):
+            rc = self.m.main(["--save", str(self.tmp), "m.msg"])
+        self.assertEqual(rc, 0)
+        text = out.getvalue()
+        for needle in ("From: Pat", "Subject: Invoice", "Attachments (3):", "inv.pdf (6 bytes, application/pdf)",
+                       "embedded message", "Hello\nworld"):
+            self.assertIn(needle, text)
+        self.assertEqual(sorted(os.listdir(self.tmp / "m")), ["fwd.msg", "inv.pdf", "x.txt"])
+        self.assertEqual((self.tmp / "m" / "fwd.msg").read_bytes(), b"EMBEDDED")
+        self.assertTrue(msg.closed)
+
+    def test_html_only_body_is_reduced_to_text(self):
+        msg = StubMsg(body="", html=b"<html><body><p>Hi&nbsp;there</p><br/>Total: 5 &amp; 6</body></html>")
+        with self.with_stub({"m.msg": msg}):
+            info = self.m.read_one("m.msg", types.SimpleNamespace(no_body=False, max_chars=0, save=None))
+        self.assertIn("Total: 5 & 6", info["body"])
+        self.assertNotIn("<p>", info["body"])
+
+    def test_max_chars_truncates_and_says_so(self):
+        with self.with_stub({"m.msg": StubMsg(body="x" * 100)}):
+            info = self.m.read_one("m.msg", types.SimpleNamespace(no_body=False, max_chars=10, save=None))
+        self.assertTrue(info["body"].startswith("x" * 10 + "\n[... 90 more characters"))
+
+    def test_one_bad_file_does_not_hide_the_others_and_sets_the_exit_status(self):
+        out, err = io.StringIO(), io.StringIO()
+        with self.with_stub({"bad.msg": ValueError("not an MSG file"), "good.msg": StubMsg()}), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = self.m.main(["bad.msg", "good.msg"])
+        self.assertEqual(rc, 1)
+        self.assertIn("bad.msg: ValueError: not an MSG file", err.getvalue())
+        self.assertIn("Subject: Invoice", out.getvalue())
+
+    def test_json_output(self):
+        out = io.StringIO()
+        with self.with_stub({"m.msg": StubMsg([StubAttachment("a.txt", b"abc")])}), contextlib.redirect_stdout(out):
+            self.m.main(["--json", "--no-body", "m.msg"])
+        doc = json.loads(out.getvalue())
+        self.assertEqual(doc[0]["attachments"][0],
+                         {"index": 1, "name": "a.txt", "size": 3, "mimetype": None, "embedded_message": False})
+        self.assertNotIn("body", doc[0])
+
+    def test_script_header_is_a_uv_script_with_a_pinned_dependency(self):
+        head = MSG_READ.read_text().splitlines()[:5]
+        self.assertTrue(head[0].startswith("#!/usr/bin/env -S uv run"))
+        self.assertIn("--script", head[0])
+        self.assertIn("--python-preference only-system", head[0], "the system python, never a download")
+        self.assertTrue(any(re.search(r'dependencies = \["extract-msg==\d+\.\d+\.\d+"\]', line) for line in head))
+        self.assertTrue(os.access(MSG_READ, os.X_OK))
+
+    @unittest.skipUnless(os.environ.get("STAGE1_TEST_UV") == "1" and shutil.which("uv"),
+                         "opt-in (needs uv and PyPI): STAGE1_TEST_UV=1")
+    def test_against_the_real_library_with_a_generated_msg(self):
+        gen = self.tmp / "mk.py"
+        gen.write_text(textwrap.dedent("""
+            import struct, sys
+            from extract_msg import OleWriter
+            u = lambda s: s.encode('utf-16-le')
+            w = OleWriter()
+            w.addEntry('__properties_version1.0', b'\\x00' * 8 + struct.pack('<IIII', 0, 1, 0, 1) + b'\\x00' * 8)
+            w.addEntry('__substg1.0_001A001F', u('IPM.Note'))
+            w.addEntry('__substg1.0_0037001F', u('Quarterly invoice'))
+            w.addEntry('__substg1.0_1000001F', u('Please see the attached invoice.'))
+            w.addEntry('__substg1.0_0C1A001F', u('Pat Sender'))
+            w.addEntry('__attach_version1.0_#00000000', storage=True)
+            w.addEntry('__attach_version1.0_#00000000/__properties_version1.0', b'\\x00' * 8)
+            w.addEntry('__attach_version1.0_#00000000/__substg1.0_3707001F', u('invoice.pdf'))
+            w.addEntry('__attach_version1.0_#00000000/__substg1.0_37010102', b'%PDF-1.4 fake')
+            w.addEntry('__nameid_version1.0', storage=True)
+            for n in ('00020102', '00030102', '00040102'):
+                w.addEntry('__nameid_version1.0/__substg1.0_' + n, b'')
+            w.write(sys.argv[1])
+        """))
+        sample = self.tmp / "sample.msg"
+        subprocess.run(["uv", "run", "--quiet", "--no-project", "--with", "extract-msg==0.58.2", "python", str(gen),
+                        str(sample)], check=True, timeout=300)
+        out = self.tmp / "saved"
+        p = subprocess.run([str(MSG_READ), "--save", str(out), str(sample)], capture_output=True, text=True,
+                           timeout=300, check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("Subject: Quarterly invoice", p.stdout)
+        self.assertEqual((out / "sample" / "invoice.pdf").read_bytes(), b"%PDF-1.4 fake")
 
 
 if __name__ == "__main__":
