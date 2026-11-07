@@ -117,7 +117,8 @@ msg_header "1. Targeted packages (pacman -S --needed, no system upgrade)"
 # -Syu / -u: refreshing + upgrading the whole system is a hard constraint on this
 # box. Install one at a time so a single unknown/renamed package warns and the
 # run continues instead of aborting.
-PKGS=(stow wget unzip tree jq fd tealdeer inotify-tools git-delta dust wl-clipboard)
+# poppler: pdftotext and pdftoppm, which Claude Code's Read tool needs to read a PDF.
+PKGS=(stow wget unzip tree jq fd tealdeer inotify-tools git-delta dust wl-clipboard poppler)
 for _pkg in "${PKGS[@]}"; do
   if sudo pacman -S --needed --noconfirm "$_pkg"; then
     msg_info "ok: $_pkg"

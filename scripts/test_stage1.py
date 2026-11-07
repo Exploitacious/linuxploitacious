@@ -436,6 +436,437 @@ class Stage1Tests(unittest.TestCase):
         for guard in ("secrets-guard.sh", "git-guard.sh", "review-gate-guard.sh"):
             self.assertTrue(any(e == "PreToolUse" for e, _, _ in self.registrations(guard)), guard)
 
+    def test_poppler_is_installed_on_every_package_family(self):
+        # Claude Code's Read tool renders a PDF through pdftoppm, and agents call
+        # pdftotext: poppler is a base package, not something each box adds by hand.
+        text = (ROOT / "shellSetup.sh").read_text()
+        for name, package in (("DEBIAN_PKGS", "poppler-utils"), ("ARCH_PKGS", "poppler"),
+                              ("FEDORA_PKGS", "poppler-utils")):
+            with self.subTest(family=name):
+                line = re.search(rf"local {name}=\((.*)\)", text)[1].split()
+                self.assertIn(package, line)
+        omarchy = (ROOT / "omarchy/omarchySetup.sh").read_text()
+        self.assertIn("poppler", re.search(r"^PKGS=\((.*)\)$", omarchy, re.M)[1].split())
+
+    # ----- pyenv: the global list keeps the Python that holds the pip tools -----
+
+    def pyenv_binary(self):
+        found = shutil.which("pyenv") or str(Path.home() / ".pyenv/bin/pyenv")
+        return found if os.access(found, os.X_OK) else None
+
+    def pyenv_root(self, versions):
+        """A throwaway PYENV_ROOT with fake installed versions: {version: [commands]}."""
+        root = Path(self.temp.name) / "pyenv"
+        for version, commands in versions.items():
+            bin_dir = root / "versions" / version / "bin"
+            bin_dir.mkdir(parents=True)
+            for command in commands:
+                self.executable(bin_dir / command, "exit 0")
+        return root
+
+    def pyenv_env(self, root):
+        link_dir = Path(self.temp.name) / "pyenv-path"
+        link_dir.mkdir(exist_ok=True)
+        if not (link_dir / "pyenv").exists():
+            (link_dir / "pyenv").symlink_to(self.pyenv_binary())
+        return {"PYENV_ROOT": str(root), "PATH": f"{link_dir}:/usr/bin:/bin"}
+
+    def pyenv_global(self, env):
+        return subprocess.run(["pyenv", "global"], env=self.env | env, capture_output=True,
+                              text=True).stdout.split()
+
+    @unittest.skipUnless(shutil.which("pyenv") or (Path.home() / ".pyenv/bin/pyenv").exists(),
+                         "pyenv is not installed")
+    def test_pyenv_set_global_keeps_the_previous_default_after_the_latest(self):
+        function = "  pyenv_set_global() {" + section(
+            "shellSetup.sh", "  pyenv_set_global() {", "  install_python_env() {")
+        root = self.pyenv_root({"3.14.5": ["python"], "3.14.7": ["python", "ruff"], "3.13.9": ["python"]})
+        env = self.pyenv_env(root)
+        run = lambda version: self.shell(function + f'\npyenv_set_global {version}\n', **env)
+        subprocess.run(["pyenv", "global", "3.14.5"], env=self.env | env, check=True)
+        # The defect: ruff lives in 3.14.7 and the global list names only 3.14.5.
+        self.assertNotEqual(subprocess.run(["pyenv", "which", "ruff"], env=self.env | env,
+                                           capture_output=True).returncode, 0)
+        result = run("3.14.7")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.pyenv_global(env), ["3.14.7", "3.14.5"])
+        self.assertEqual(subprocess.run(["pyenv", "which", "ruff"], env=self.env | env,
+                                        capture_output=True).returncode, 0)
+        # Idempotent, and the list never grows past three entries.
+        run("3.14.7")
+        self.assertEqual(self.pyenv_global(env), ["3.14.7", "3.14.5"])
+        run("3.13.9")
+        self.assertEqual(self.pyenv_global(env), ["3.13.9", "3.14.7", "3.14.5"])
+        (root / "version").write_text("3.14.7\n3.14.5\n3.13.9\n")
+        run("3.14.7")
+        self.assertEqual(self.pyenv_global(env), ["3.14.7", "3.14.5", "3.13.9"])
+        # A version that is no longer installed is dropped, not passed to pyenv global.
+        (root / "version").write_text("3.14.5\n2.7.18\n")
+        result = run("3.14.7")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.pyenv_global(env), ["3.14.7", "3.14.5"])
+        # A box on `system` Python moves to the new pyenv default; `system` is not carried.
+        (root / "version").write_text("system\n")
+        run("3.14.7")
+        self.assertEqual(self.pyenv_global(env), ["3.14.7"])
+
+    def test_python_step_sets_the_global_through_the_helper_and_installs_uv(self):
+        step = section("shellSetup.sh", "  install_python_env() {", "  # --- AI CLI TOOLS")
+        self.assertIn('pyenv_set_global "$LATEST_PY"', step)
+        self.assertNotIn('pyenv global "$LATEST_PY"', step)
+        # uv comes from the vendor installer without editing rc files, and success is
+        # judged by the binary: the pipeline's own status is sh's.
+        self.assertIn("UV_NO_MODIFY_PATH=1", step)
+        self.assertIn('[ -x "$HOME/.local/bin/uv" ]', step)
+
+    # ----- migrations for boxes provisioned before these changes -----
+
+    def migration(self, name_part):
+        """The one migration script whose header comment starts with `# Migration: <name_part>`."""
+        found = [p for p in sorted((ROOT / "migrations").glob("*.sh"))
+                 if p.read_text().splitlines()[1].startswith("# Migration: " + name_part)]
+        self.assertEqual(len(found), 1, name_part)
+        return found[0]
+
+    def stub_bin(self, **commands):
+        """A PATH directory holding only the coreutils a migration needs plus the given stubs."""
+        bin_dir = Path(self.temp.name) / "stub-bin"
+        shutil.rmtree(bin_dir, ignore_errors=True)
+        bin_dir.mkdir()
+        for tool in ("id", "sh", "env", "cat", "mkdir", "mv", "install", "cmp", "readlink", "dirname",
+                     "date", "touch", "chmod", "grep", "sort", "tr", "ln", "bash"):
+            real = shutil.which(tool, path="/usr/bin:/bin")
+            if real:
+                (bin_dir / tool).symlink_to(real)
+        for name, body in commands.items():
+            self.executable(bin_dir / name, body)
+        return bin_dir
+
+    def run_migration(self, script, bin_dir, tty=False):
+        return subprocess.run(["/bin/bash", str(script)], env=self.env | {"PATH": str(bin_dir)},
+                              input="", text=True, capture_output=True, timeout=30)
+
+    FAKE_PACKAGE_MANAGER = (  # an install (apt-get/dnf install, pacman -S) drops the poppler commands
+        'echo "$0 $*" >> "$HOME/calls"\n'
+        'case "$*" in *install*|*-S*) for c in pdftotext pdftoppm; do '
+        'printf "#!/bin/sh\\nexit 0\\n" > "$(dirname "$0")/$c"; chmod +x "$(dirname "$0")/$c"; done;; esac'
+    )
+    FAKE_UV_INSTALLER = (  # curl prints an installer script that puts uv in ~/.local/bin
+        "echo \"curl $*\" >> \"$HOME/calls\"\n"
+        "echo 'mkdir -p \"$HOME/.local/bin\"; echo \"UV_NO_MODIFY_PATH=$UV_NO_MODIFY_PATH\" >> \"$HOME/calls\"; "
+        "printf \"#!/bin/sh\\nexit 0\\n\" > \"$HOME/.local/bin/uv\"; chmod +x \"$HOME/.local/bin/uv\"'"
+    )
+
+    def test_poppler_uv_migration_installs_both_and_is_idempotent(self):
+        script = self.migration("poppler and uv")
+        bin_dir = self.stub_bin(sudo='echo "sudo $*" >> "$HOME/calls"\n[ "$1" = -n ] && exit 0\nexec "$@"',
+                                **{"apt-get": self.FAKE_PACKAGE_MANAGER, "curl": self.FAKE_UV_INSTALLER})
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = (self.home / "calls").read_text()
+        self.assertIn("apt-get install -y poppler-utils", calls)
+        self.assertIn("astral.sh/uv/install.sh", calls)
+        self.assertIn("UV_NO_MODIFY_PATH=1", calls)  # the installer must not edit the rc files
+        self.assertTrue((self.home / ".local/bin/uv").exists())
+        self.assertIn("poppler installed", result.stdout)
+        # Second run: everything is present, nothing is called again.
+        (self.home / "calls").unlink()
+        again = self.run_migration(script, bin_dir)
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertFalse((self.home / "calls").exists())
+
+    def test_poppler_uv_migration_supports_pacman_and_dnf(self):
+        script = self.migration("poppler and uv")
+        for manager, expected in (("pacman", "pacman -S --noconfirm --needed poppler"),
+                                  ("dnf", "dnf install -y poppler-utils")):
+            with self.subTest(manager=manager):
+                (self.home / "calls").unlink(missing_ok=True)
+                shutil.rmtree(self.home / ".local", ignore_errors=True)
+                bin_dir = self.stub_bin(sudo='[ "$1" = -n ] && exit 0\nexec "$@"',
+                                        **{manager: self.FAKE_PACKAGE_MANAGER, "curl": self.FAKE_UV_INSTALLER})
+                result = self.run_migration(script, bin_dir)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(expected, (self.home / "calls").read_text())
+
+    def test_poppler_uv_migration_fails_closed_but_still_tries_uv(self):
+        script = self.migration("poppler and uv")
+        # No sudo password available and no terminal: fail instead of waiting on a prompt.
+        bin_dir = self.stub_bin(sudo='exit 1', **{"apt-get": self.FAKE_PACKAGE_MANAGER,
+                                                  "curl": self.FAKE_UV_INSTALLER})
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no terminal to ask on", result.stderr)
+        self.assertNotIn("apt-get", (self.home / "calls").read_text())
+        self.assertTrue((self.home / ".local/bin/uv").exists())  # uv was attempted anyway
+        # No package manager at all.
+        shutil.rmtree(self.home / ".local")
+        bin_dir = self.stub_bin(sudo='[ "$1" = -n ] && exit 0\nexec "$@"', curl=self.FAKE_UV_INSTALLER)
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no supported package manager", result.stderr)
+        # A package manager that "succeeds" without leaving the commands behind.
+        bin_dir = self.stub_bin(sudo='[ "$1" = -n ] && exit 0\nexec "$@"',
+                                **{"apt-get": "exit 0", "curl": self.FAKE_UV_INSTALLER})
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("still not on PATH", result.stderr)
+
+    def test_poppler_uv_migration_does_not_trust_a_failed_uv_download(self):
+        script = self.migration("poppler and uv")
+        bin_dir = self.stub_bin(sudo='[ "$1" = -n ] && exit 0\nexec "$@"',
+                                **{"apt-get": self.FAKE_PACKAGE_MANAGER, "curl": "exit 22"})
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("did not leave ~/.local/bin/uv", result.stderr)
+
+    @unittest.skipUnless(shutil.which("pyenv") or (Path.home() / ".pyenv/bin/pyenv").exists(),
+                         "pyenv is not installed")
+    def test_pyenv_tools_migration_appends_the_version_that_holds_a_dangling_tool(self):
+        script = self.migration("keep the pyenv shims")
+        root = self.pyenv_root({"3.14.5": ["python"], "3.14.7": ["python", "ruff", "black"],
+                                "3.13.9": ["python", "pytest"]})
+        env = self.pyenv_env(root)
+        subprocess.run(["pyenv", "global", "3.14.5"], env=self.env | env, check=True)
+        subprocess.run(["pyenv", "rehash"], env=self.env | env, check=True)
+
+        def run():
+            return subprocess.run(["/bin/bash", str(script)], env=self.env | env, input="", text=True,
+                                  capture_output=True, timeout=60)
+        result = run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # The default stays first; the versions that hold ruff/black and pytest follow it.
+        self.assertEqual(self.pyenv_global(env), ["3.14.5", "3.14.7", "3.13.9"])
+        for tool in ("ruff", "black", "pytest"):
+            self.assertEqual(subprocess.run(["pyenv", "which", tool], env=self.env | env,
+                                            capture_output=True).returncode, 0, tool)
+        # Idempotent.
+        self.assertIn("pyenv global: 3.14.5 3.14.7 3.13.9", run().stdout)
+        self.assertEqual(self.pyenv_global(env), ["3.14.5", "3.14.7", "3.13.9"])
+        # `system` stays the first entry when that is what the box uses (whether a tool such
+        # as pytest also exists on the host PATH does not matter here, only ruff's version).
+        (root / "version").write_text("system\n")
+        run()
+        resolved = self.pyenv_global(env)
+        self.assertEqual(resolved[0], "system")
+        self.assertIn("3.14.7", resolved)
+
+    def test_pyenv_tools_migration_does_nothing_without_pyenv(self):
+        script = self.migration("keep the pyenv shims")
+        bin_dir = self.stub_bin()
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nothing to do", result.stdout)
+
+    def scope_drop_in(self):
+        return ROOT / "systemd/.config/systemd/user/t3code-claude-.scope.d/oom-continue.conf"
+
+    def test_t3_scope_drop_in_sets_oom_policy_continue(self):
+        # A prefix drop-in: systemd merges it into every t3code-claude-<id>.scope. The
+        # default for a scope is OOMPolicy=stop, which fails the whole thread when the
+        # kernel kills one child. Proved end to end on a live box 2026-11-07: a scope
+        # started with -p OOMPolicy=stop, a 1 GiB allocation under MemoryMax=512M, scope
+        # still active with this file present and failed with oom-kill without it.
+        lines = [line for line in self.scope_drop_in().read_text().splitlines()
+                 if line.strip() and not line.startswith("#")]
+        self.assertEqual(lines, ["[Scope]", "OOMPolicy=continue"])
+        self.assertEqual(self.scope_drop_in().parent.name, "t3code-claude-.scope.d")
+
+    @unittest.skipUnless(shutil.which("stow"), "GNU Stow is not installed")
+    def test_t3_scope_drop_in_stows_into_the_user_unit_directory(self):
+        # deploy_stow pre-creates the parent directories (ensure_target_dirs), so only the
+        # files are linked, and herdr@.service keeps working beside the drop-in.
+        unit_dir = self.home / ".config/systemd/user"
+        (unit_dir / "t3code-claude-.scope.d").mkdir(parents=True)
+        subprocess.run(["stow", "-d", str(ROOT), "-t", str(self.home), "systemd"], check=True)
+        link = unit_dir / "t3code-claude-.scope.d/oom-continue.conf"
+        self.assertEqual(link.resolve(), self.scope_drop_in())
+        self.assertEqual((unit_dir / "herdr@.service").resolve().name, "herdr@.service")
+
+    def test_t3_scope_migration_installs_the_drop_in_once_and_keeps_stow_links(self):
+        script = self.migration("OOMPolicy=continue")
+        reload_log = self.home / "systemctl.log"
+        bin_dir = self.stub_bin(systemctl=f'echo "$*" >> "{reload_log}"')
+        dest = self.home / ".config/systemd/user/t3code-claude-.scope.d/oom-continue.conf"
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(dest.read_text(), self.scope_drop_in().read_text())
+        self.assertFalse(dest.is_symlink())  # a copy: stow owns only the links it made
+        self.assertEqual(reload_log.read_text().strip(), "--user daemon-reload")
+        self.assertIn("installed", result.stdout)
+        self.assertIn("already in place", self.run_migration(script, bin_dir).stdout)
+        # A different file (the hand-made one) is kept under a backup name, then replaced.
+        dest.write_text("[Scope]\nOOMPolicy=stop\n")
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(dest.read_text(), self.scope_drop_in().read_text())
+        backups = list(dest.parent.glob("oom-continue.conf.backup_*"))
+        self.assertEqual([b.read_text() for b in backups], ["[Scope]\nOOMPolicy=stop\n"])
+        # A stow link to the repo file is left alone.
+        dest.unlink()
+        dest.symlink_to(self.scope_drop_in())
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(dest.is_symlink())
+        self.assertIn("already linked", result.stdout)
+
+    def test_t3_scope_migration_survives_a_box_with_no_user_manager(self):
+        script = self.migration("OOMPolicy=continue")
+        bin_dir = self.stub_bin(systemctl="exit 1")
+        result = self.run_migration(script, bin_dir)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("daemon-reload did not run", result.stdout)
+        # And with no systemctl at all.
+        result = self.run_migration(script, self.stub_bin())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    # ----- msg-read: the sanctioned .msg reader -----
+
+    MSG_READ = ROOT / "scripts/.local/bin/msg-read"
+    STUB_EXTRACT_MSG = '''
+class Attachment:
+    def __init__(self, name, data):
+        self.name, self.data = name, data
+    def getFilename(self):
+        return self.name
+    def save(self, customPath=None, customFilename=None):
+        with open(customPath + "/" + customFilename, "w") as handle:
+            handle.write("embedded message")
+
+class Message:
+    sender = "Sender Name <sender@example.test>"
+    to = "Recipient <to@example.test>"
+    cc = ""
+    date = "2026-01-02 03:04:05"
+    subject = "Quarterly report"
+    body = ""
+    htmlBody = (b"<html><head><style>p{color:red}</style></head><body><p>Hello <b>there</b></p>"
+                b"<script>var x = 1;</script><div>second line</div></body></html>")
+    attachments = [Attachment("../escape.txt", b"one"), Attachment("report.pdf", b"%PDF-1"),
+                   Attachment("report.pdf", b"%PDF-2"), Attachment("", b"zz"),
+                   Attachment("inner.eml", object())]
+    def close(self):
+        pass
+
+def openMsg(path):
+    if path.endswith("broken.msg"):
+        raise ValueError("not an OLE file")
+    return Message()
+'''
+
+    def msg_read(self, *args, with_uv=True, stub=None):
+        stubs = Path(self.temp.name) / "msg-stub"
+        shutil.rmtree(stubs, ignore_errors=True)
+        stubs.mkdir()
+        (stubs / "extract_msg.py").write_text(stub or self.STUB_EXTRACT_MSG)
+        bin_dir = Path(self.temp.name) / "msg-bin"
+        shutil.rmtree(bin_dir, ignore_errors=True)
+        bin_dir.mkdir()
+        if with_uv:  # runs the helper the way `uv run ... python - args` would, with the stub module
+            self.executable(bin_dir / "uv",
+                            'echo "$*" > "$HOME/uv-args"\nwhile [ "$1" != python ]; do shift; done\nshift\n'
+                            'exec python3 "$@"')
+        return subprocess.run(["bash", str(self.MSG_READ), *map(str, args)], text=True, capture_output=True,
+                              timeout=30, env=self.env | {"PATH": f"{bin_dir}:/usr/bin:/bin",
+                                                          "PYTHONPATH": str(stubs)})
+
+    def test_msg_read_prints_headers_attachments_and_a_text_body(self):
+        result = self.msg_read("mail.msg")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = result.stdout
+        self.assertIn("From: Sender Name <sender@example.test>", out)
+        self.assertIn("Subject: Quarterly report", out)
+        self.assertNotIn("Cc:", out)  # an empty header is not printed
+        self.assertIn("Attachments (5):", out)
+        self.assertIn("1. ../escape.txt (3 bytes)", out)
+        self.assertIn("5. inner.eml (embedded message)", out)
+        body = out.split("--- body ---", 1)[1]
+        self.assertIn("Hello there", body)  # HTML turned into text when there is no plain body
+        self.assertIn("second line", body)
+        self.assertNotIn("var x", body)
+        self.assertNotIn("color:red", body)
+        # extract-msg is requested through uv with a floor and a ceiling, outside any project.
+        uv_args = (self.home / "uv-args").read_text()
+        for part in ("run", "--no-project", "--with", "extract-msg>=0.55,<1", "python"):
+            self.assertIn(part, uv_args)
+
+    def test_msg_read_saves_attachments_without_escaping_or_overwriting(self):
+        out = self.home / "saved"
+        result = self.msg_read("-o", out, "mail.msg")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sorted(p.name for p in out.iterdir()),
+                         ["attachment-4", "escape.txt", "inner.eml.msg", "report-2.pdf", "report.pdf"])
+        self.assertFalse((self.home / "escape.txt").exists())  # `../escape.txt` stayed inside -o
+        self.assertEqual((out / "report.pdf").read_bytes(), b"%PDF-1")
+        self.assertEqual((out / "report-2.pdf").read_bytes(), b"%PDF-2")
+        self.assertEqual((out / "inner.eml.msg").read_text(), "embedded message")
+        self.assertIn(f"-> {out}/report-2.pdf", result.stdout)
+        # Run again: the existing files are not overwritten, they get new suffixes.
+        self.msg_read("-o", out, "mail.msg")
+        self.assertEqual((out / "report.pdf").read_bytes(), b"%PDF-1")
+        self.assertTrue((out / "report-3.pdf").exists())
+
+    def test_msg_read_reports_each_bad_file_and_keeps_going(self):
+        result = self.msg_read("broken.msg", "notes.txt", "mail.msg")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("broken.msg: ValueError: not an OLE file", result.stderr)
+        self.assertIn("notes.txt: not a .msg file", result.stderr)
+        self.assertIn("=== mail.msg ===", result.stdout)  # a banner when there is more than one file
+        self.assertIn("Subject: Quarterly report", result.stdout)
+
+    def test_msg_read_usage_and_missing_uv(self):
+        self.assertEqual(self.msg_read().returncode, 2)
+        self.assertEqual(self.msg_read("-x", "mail.msg").returncode, 2)
+        self.assertEqual(self.msg_read("-o").returncode, 2)
+        if shutil.which("uv", path="/usr/bin:/bin"):
+            self.skipTest("uv is installed system-wide")
+        result = self.msg_read("mail.msg", with_uv=False)
+        self.assertEqual(result.returncode, 127)
+        self.assertIn("astral.sh/uv/install.sh", result.stderr)
+
+    # ----- zsh -c behaves like bash for the two habits that fail as zsh errors -----
+
+    ZSHENV = ROOT / "zsh/.zshenv"
+
+    def zsh(self, *args, home=None):
+        return subprocess.run(["zsh", *args], capture_output=True, text=True, timeout=10,
+                              env={"HOME": str(home or self.home), "PATH": "/usr/bin:/bin",
+                                   "LC_ALL": "C.UTF-8"})
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+    def test_zshenv_makes_zsh_dash_c_tolerate_bash_globs_and_equals_words(self):
+        # Agent tools run `zsh -lc '<command>'` on a box whose login shell is zsh, and
+        # Codex cannot be pointed at another shell (checked on Codex 0.167). `ls *.log`
+        # with no match was "zsh: no matches found" and `echo =x` an expansion error.
+        shutil.copy(self.ZSHENV, self.home / ".zshenv")
+        for flags in ("-c", "-lc"):
+            with self.subTest(flags=flags):
+                result = self.zsh(flags, "echo *.nomatch-here; echo =nosuchword; echo status=$?")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "*.nomatch-here\n=nosuchword\nstatus=0\n")
+                self.assertEqual(result.stderr, "")
+        # The PATH entry the file existed for is still added.
+        result = self.zsh("-c", "echo $PATH")
+        self.assertIn(f"{self.home}/.local/bin", result.stdout)
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+    def test_zshenv_leaves_scripts_and_interactive_shells_on_zsh_defaults(self):
+        shutil.copy(self.ZSHENV, self.home / ".zshenv")
+        script = self.home / "task.zsh"
+        script.write_text("echo *.nomatch-here\n")
+        result = self.zsh(str(script))
+        self.assertNotEqual(result.returncode, 0)  # zsh still stops on an unmatched glob in a script
+        self.assertIn("no matches found", result.stderr)
+        # An interactive shell has no -c command string either.
+        result = subprocess.run(["zsh", "-i"], input="echo *.nomatch-here\nexit\n", capture_output=True,
+                                text=True, timeout=10, env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"})
+        self.assertIn("no matches found", result.stderr)
+
+    def test_readme_lists_every_migration_and_only_real_ones(self):
+        readme = (ROOT / "README.md").read_text()
+        listed = set(re.findall(r"`(\d{10}\.sh)`", readme))
+        shipped = {path.name for path in (ROOT / "migrations").glob("*.sh")}
+        self.assertEqual(listed, shipped)
+
     def test_python_bytecode_is_not_written(self):
         # Alex, 2026-10-28: lanes left 13.7 GB of __pycache__ across the project checkouts on
         # t3cowork. Every Claude session and its Bash commands inherit this env.

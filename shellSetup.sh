@@ -319,7 +319,10 @@ EOF
     # chafa renders images as terminal blocks — lets a headless box preview
     # screenshots/diagrams over SSH (grabit --queue uses it, and degrades to a
     # plain listing when absent, so this is a nicety rather than a dependency).
-    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap build-essential wget jq btop tree chafa)
+    # poppler-utils (pdftotext, pdftoppm) is what Claude Code's Read tool and every
+    # agent PDF task call: without it a PDF read fails and the agent falls through a
+    # cascade of Python PDF probes (about 100 failed calls in two weeks on three boxes).
+    local DEBIAN_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip ffmpeg nmap build-essential wget jq btop tree chafa poppler-utils)
     if [[ "$OS_ID" == "kali" ]]; then DEBIAN_PKGS+=(kali-win-kex); fi
 
     msg_info "Installing packages: ${DEBIAN_PKGS[*]}"
@@ -375,7 +378,7 @@ EOF
     ensure_utf8_locale
     sudo pacman -Syu --noconfirm
     
-    local ARCH_PKGS=(zsh stow git curl wget unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel jq btop tree)
+    local ARCH_PKGS=(zsh stow git curl wget unzip tmux fzf fastfetch gnupg2 xclip ffmpeg nmap base-devel jq btop tree poppler)
     msg_info "Installing packages: ${ARCH_PKGS[*]}"
     sudo pacman -S --noconfirm --needed "${ARCH_PKGS[@]}"
 
@@ -397,7 +400,7 @@ EOF
     ensure_utf8_locale
     sudo dnf upgrade -y
 
-    local FEDORA_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip nmap wget jq btop tree)
+    local FEDORA_PKGS=(zsh stow git curl unzip tmux fzf gnupg2 xclip nmap wget jq btop tree poppler-utils)
     msg_info "Installing packages: ${FEDORA_PKGS[*]}"
     sudo dnf install -y "${FEDORA_PKGS[@]}"
 
@@ -1660,6 +1663,24 @@ EOF
 
   # --- PYTHON ENVIRONMENT (pyenv, Python latest, common pip packages) ---
 
+  # Make $1 the default Python and keep every version that was already on the global
+  # list after it (at most three entries in all). WHY: a pyenv shim resolves only
+  # through the versions on the global list. When the default moved to a version that
+  # did not hold the pip tools (ruff, pytest, black), their shims stayed on disk and
+  # failed in every agent shell with "pyenv: ruff: command not found" (Codex lanes,
+  # 2026-11: ruff in 3.14.7, global 3.14.5). Versions that are not installed any more
+  # are dropped, because `pyenv global` refuses a list that names one.
+  pyenv_set_global() {
+    local latest="$1" version
+    local -a keep=("$latest")
+    while IFS= read -r version; do
+      [[ -n "$version" && "$version" != "system" && "$version" != "$latest" ]] || continue
+      pyenv versions --bare | grep -qxF "$version" || continue
+      keep+=("$version")
+    done < <(pyenv global 2>/dev/null)
+    pyenv global "${keep[@]:0:3}"
+  }
+
   install_python_env() {
     msg_header "Installing Python Environment (pyenv, Python, pip packages)"
 
@@ -1702,7 +1723,7 @@ EOF
       msg_info "Installing Python $LATEST_PY (this takes a few minutes)..."
       pyenv install "$LATEST_PY"
     fi
-    pyenv global "$LATEST_PY"
+    pyenv_set_global "$LATEST_PY"
 
     # Upgrade pip, setuptools, wheel
     msg_info "Upgrading pip, setuptools, wheel..."
@@ -1731,6 +1752,26 @@ EOF
       click \
       python-dotenv \
       pyyaml
+
+    # uv: the msg-read helper (scripts/.local/bin) runs extract-msg through `uv run`, and
+    # agents use it for any one-off Python dependency instead of building a venv. The
+    # standalone installer drops uv and uvx in ~/.local/bin; UV_NO_MODIFY_PATH keeps it
+    # from editing shell rc files, which this repo owns. A failure is a warning, not a
+    # stop: nothing else in this step needs uv. Unpinned vendor installer, like the
+    # Claude Code and OpenCode installers (see the supply chain note in README.md).
+    if command -v uv >/dev/null 2>&1; then
+      msg_info "uv already installed: $(uv --version 2>/dev/null)"
+    else
+      msg_info "Installing uv (standalone installer)..."
+      # The pipeline's status is sh's, so a failed download would look like success:
+      # judge by the binary instead.
+      curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh
+      if [ -x "$HOME/.local/bin/uv" ]; then
+        msg_success "uv installed in ~/.local/bin"
+      else
+        msg_warn "uv install failed; msg-read and 'uv run' will not work until it is installed."
+      fi
+    fi
 
     # Heavier optional groups via pipx (isolated, on-demand). Only the CLI
     # tools — libraries still belong in project venvs.

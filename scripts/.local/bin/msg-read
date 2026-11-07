@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# msg-read: print an Outlook .msg file (headers, attachment list and body).
+#
+#   msg-read [-o DIR] FILE.msg [FILE.msg ...]
+#
+# Prints From, To, Cc, Date and Subject, the attachment list (name and size), then the
+# plain-text body (HTML is converted to text when the message has no plain body).
+# With -o DIR every attachment is also saved into DIR (created if needed); a name that
+# already exists gets a -2, -3 suffix, so nothing is overwritten.
+#
+# It runs the extract-msg library through uv in a cached throwaway environment, so no
+# venv, pip or system package is needed. Stage-1 installs uv (shellSetup.sh, PYTHON).
+set -u
+
+usage() {
+  echo "usage: msg-read [-o DIR] FILE.msg [FILE.msg ...]" >&2
+  exit 2
+}
+
+outdir=""
+while getopts ":o:h" opt; do
+  case "$opt" in
+    o) outdir="$OPTARG" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ "$#" -ge 1 ] || usage
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "msg-read: uv is not installed. Install it with:" >&2
+  echo "  curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh" >&2
+  exit 127
+fi
+
+# --no-project: never sync a pyproject.toml found in the current directory.
+# The helper reads its arguments after "-": the script itself arrives on stdin.
+exec uv run --quiet --no-project --with 'extract-msg>=0.55,<1' python - "$outdir" "$@" <<'PY'
+import html.parser
+import re
+import sys
+from pathlib import Path
+
+import extract_msg
+
+
+class TextFromHtml(html.parser.HTMLParser):
+    """Visible text of an HTML body; the stdlib parser keeps this dependency-free."""
+
+    BLOCKS = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table"}
+
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self.skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self.skip += 1
+        elif tag in self.BLOCKS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style"):
+            self.skip = max(0, self.skip - 1)
+        elif tag in self.BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def html_to_text(raw):
+    text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    parser = TextFromHtml()
+    parser.feed(text)
+    return re.sub(r"\n{3,}", "\n\n", "".join(parser.parts)).strip()
+
+
+def safe_name(name, index):
+    """A file name that cannot leave the output directory."""
+    base = re.split(r"[\\/]", str(name or ""))[-1].strip().lstrip(".")
+    return base or f"attachment-{index}"
+
+
+def unique_path(folder, name):
+    path = folder / name
+    stem, suffix, counter = path.stem, path.suffix, 2
+    while path.exists():
+        path = folder / f"{stem}-{counter}{suffix}"
+        counter += 1
+    return path
+
+
+def attachment_size(att):
+    data = att.data
+    return len(data) if isinstance(data, (bytes, bytearray)) else None
+
+
+def save_attachment(att, folder, index):
+    name = safe_name(att.getFilename(), index)
+    data = att.data
+    if isinstance(data, (bytes, bytearray)):
+        target = unique_path(folder, name)
+        target.write_bytes(data)
+        return target
+    # An embedded message: let extract-msg write it, under a name that cannot collide.
+    target = unique_path(folder, name if name.lower().endswith(".msg") else name + ".msg")
+    att.save(customPath=str(folder), customFilename=target.name)
+    return target
+
+
+def show(path, outdir, banner):
+    message = extract_msg.openMsg(str(path))
+    try:
+        if banner:
+            print(f"=== {path} ===")
+        for label, value in (("From", message.sender), ("To", message.to), ("Cc", message.cc),
+                             ("Date", message.date), ("Subject", message.subject)):
+            if value:
+                print(f"{label}: {value}")
+        attachments = list(message.attachments)
+        print(f"Attachments ({len(attachments)}):")
+        folder = None
+        if attachments and outdir:
+            folder = Path(outdir)
+            folder.mkdir(parents=True, exist_ok=True)
+        for index, att in enumerate(attachments, 1):
+            size = attachment_size(att)
+            line = f"  {index}. {att.getFilename() or '(unnamed)'}"
+            line += f" ({size} bytes)" if size is not None else " (embedded message)"
+            if folder is not None:
+                try:
+                    line += f" -> {save_attachment(att, folder, index)}"
+                except Exception as error:  # keep going: one bad attachment must not hide the rest
+                    line += f" -> NOT SAVED ({type(error).__name__}: {error})"
+            print(line)
+        body = message.body
+        if not body and message.htmlBody:
+            body = html_to_text(message.htmlBody)
+        print("--- body ---")
+        print((body or "").strip())
+    finally:
+        message.close()
+
+
+outdir = sys.argv[1] or None
+failures = 0
+paths = sys.argv[2:]
+for path in paths:
+    if not str(path).lower().endswith(".msg"):
+        print(f"msg-read: {path}: not a .msg file", file=sys.stderr)
+        failures += 1
+        continue
+    try:
+        show(path, outdir, banner=len(paths) > 1)
+    except Exception as error:
+        print(f"msg-read: {path}: {type(error).__name__}: {error}", file=sys.stderr)
+        failures += 1
+sys.exit(1 if failures else 0)
+PY

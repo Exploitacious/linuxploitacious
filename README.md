@@ -85,9 +85,9 @@ The script uses a two-stage architecture:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, cloudflared, superfile, etc.) | ON |
+| BASE | OS updates, core packages (zsh, stow, tmux, fzf, btop, fastfetch, poppler for PDF reading, cloudflared, superfile, etc.) | ON |
 | NODE | Node.js via NVM and pnpm | ON |
-| PYTHON | Python via pyenv + pip packages | ON |
+| PYTHON | Python via pyenv + pip packages, plus `uv`. The newest Python becomes the pyenv default and the previous default stays on the global list behind it (at most three), so the pip tools' shims (ruff, pytest, black) never dangle | ON |
 | SHELL | Zsh, Oh My Zsh (with autosuggestions, syntax-highlighting, completions, fzf-tab), Oh My Posh, TPM | ON |
 | STOW | Deploy all repo configs to `$HOME` via GNU Stow | ON |
 | CLITOOLS | Modern CLI tools: bat, eza, fd, zoxide, ripgrep, git-delta, dust, tealdeer, lazygit, lazydocker, inotify-tools | ON |
@@ -130,6 +130,16 @@ with upstream. Set `LPX_NO_MIGRATE=1` to skip that pass. Note this includes a
 first-ever provision: pending migrations apply before any menu selection, so a
 migration like the CLI-toolset one effectively makes its payload non-optional
 on new boxes (each installer still guards per-tool, so this is safe).
+
+Current migrations (each one is also covered by `scripts/test_stage1.py`):
+
+| Migration | What it does on an existing box |
+|-----------|---------------------------------|
+| `1787420449.sh` | Installs the modern CLI toolset (`CLITOOLS`, see [Modern CLI tools](#modern-cli-tools-clitools)). |
+| `1793811465.sh` | Upgrades herdr to the pinned 0.9.3 (see [Herdr multiplexer](#herdr-multiplexer-herdr)). |
+| `1794070543.sh` | Installs poppler (`poppler-utils`, `poppler` on Arch) and `uv` when missing, so the agent Read tool can render a PDF and `msg-read` runs. Fails closed with no terminal and no passwordless sudo. |
+| `1794070544.sh` | Appends to the pyenv global list the version that holds a Stage-1 pip tool whose shim does not resolve (ruff, pytest, black...). The current default stays first. |
+| `1794070545.sh` | Copies the T3 thread-scope `OOMPolicy=continue` drop-in into `~/.config/systemd/user/` (see [The systemd package](#the-systemd-package)) and reloads the user manager. |
 
 ### The `--run` flag
 
@@ -313,10 +323,13 @@ No hook injects it, per turn or per lane. The Stage-1 scripts attempt to
 uninstall the plugins on already-provisioned hosts and report CLI failures,
 including already-absent plugins or marketplaces.
 
-Offline checks for the shared hooks, profile selection, plugin retirement,
-Omarchy file deployment, SSH picker gating, the Stage 2 deploy-script gate, and
-the model pins against the OPS template's model checks (every OPS install runs
-them on this `settings.json`): `python3 scripts/test_stage1.py`. The Windows
+Offline checks for the shared hooks (where each is registered, the fail-open
+pattern and timeouts), profile selection, plugin retirement, Omarchy file
+deployment, SSH picker gating, the Stage 2 deploy-script gate, the poppler and
+pyenv package steps, the run-once migrations, `msg-read`, the zsh `-c` options
+and the T3 scope drop-in, and the model pins against the OPS template's model
+checks (every OPS install runs them on this `settings.json`):
+`python3 scripts/test_stage1.py`. The Windows
 gate is checked statically; the Windows retirement check runs when `pwsh` is
 available. With `OPS_DIR` set to an OPS checkout, the suite also compares its
 copy of the OPS model rules with that checkout's `verify-ops.sh`.
@@ -419,8 +432,28 @@ Optional (referenced if present; silent otherwise):
 
 | Path | Purpose |
 |------|---------|
-| `.claude-config/hooks/*.sh` | Invoked by the hook arrays in `claude/.claude/settings.json` (SessionStart, PreCompact, PreToolUse, and the rest). Each is guarded by `test -x`, so a missing hook is a silent no-op. |
+| `.claude-config/hooks/*.sh` | Invoked by the hook arrays in `claude/.claude/settings.json` (SessionStart, SubagentStart, PreCompact, PreToolUse, PostToolUse, PostToolUseFailure, Stop, UserPromptSubmit). Each is guarded by `test -x`, so a missing hook is a silent no-op. |
 | `CONTEXT/` directory | Read by Claude Code per the "Harness context" section of `claude/.claude/CLAUDE.md`. Existence-checked. |
+
+The hook registrations follow one pattern: resolve `$HOME/COWORK` (falling back to
+`$HOME/OPS`), `test -x` the script, run it with `2>/dev/null || true`. The three
+PreToolUse guards fail closed (`onFailure: block`, 30 s); every other hook fails
+open with a timeout of 10 s or less (5 s for the per-prompt ones), and prints
+nothing when it has nothing to say. Because of `|| true`, a hook cannot signal
+through its exit code (a blocking `exit 2` would become 0): the Stop hooks and
+prompt hooks answer with JSON on stdout.
+
+| Hook script | Registered on |
+|-------------|---------------|
+| `lane-rules.sh` | SubagentStart (all agent types), SessionStart (both groups); it decides for itself whether the session is a lane |
+| `foreman-context.sh` | SessionStart, both groups |
+| `report-lint.sh` | Stop |
+| `askuser-cancel.sh` | PostToolUse and PostToolUseFailure, matcher `AskUserQuestion` |
+| `memory-hint.sh` | UserPromptSubmit |
+
+SessionStart has two source groups: `startup|clear`, and `resume|compact`, which
+repeats the context hooks because a compaction drops what they injected. The
+Planner WIP refresh nudge is no longer registered (the board is dormant).
 
 Stage 2 is responsible for everything else — its own symlinks
 (skills, commands), PATH wiring, plugin installs, scheduled
@@ -563,6 +596,7 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 ├── bash/                              # Package: Bash config
 │   └── .bashrc                        #   -> ~/.bashrc
 ├── zsh/                               # Package: Zsh config
+│   ├── .zshenv                        #   -> ~/.zshenv (PATH; bash-like `zsh -c`)
 │   └── .zshrc                         #   -> ~/.zshrc
 ├── tmux/                              # Package: Tmux config
 │   └── .tmux.conf                     #   -> ~/.tmux.conf
@@ -599,6 +633,7 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       ├── pubip                      #   -> ~/.local/bin/pubip
 │       ├── netdot                     #   -> ~/.local/bin/netdot
 │       ├── netstatus                  #   -> ~/.local/bin/netstatus (tmux/--ansi/--plain)
+│       ├── msg-read                   #   -> ~/.local/bin/msg-read (Outlook .msg reader, via uv)
 │       ├── hpill                      #   -> ~/.local/bin/hpill (herdr status pills)
 │       ├── vpn                        #   -> ~/.local/bin/vpn
 │       ├── launch_nordvpn             #   -> ~/.local/bin/launch_nordvpn
@@ -618,7 +653,9 @@ This means: **the repository always wins**. Any local file that conflicts gets t
 │       └── themes/                    #   Catppuccin Mocha .tmTheme (vendored)
 ├── systemd/                           # Package: systemd user unit templates
 │   └── .config/systemd/user/
-│       └── herdr@.service             #   -> ~/.config/systemd/user/ (fold)
+│       ├── herdr@.service             #   -> ~/.config/systemd/user/ (fold)
+│       └── t3code-claude-.scope.d/
+│           └── oom-continue.conf      #   T3 thread scopes: OOMPolicy=continue
 ├── herdr/                             # Package: herdr config (status pills)
 │   └── .config/herdr/
 │       └── config.toml                #   -> ~/.config/herdr/config.toml
@@ -712,6 +749,7 @@ These aliases are defined in both `.bashrc` and `.zshrc` and available in either
 | `netstatus` | Renders the full catppuccin-style `NET` pill (label + IP, or `offline`) that sits next to `netdot` on the tmux status bar |
 | `vpn` | Wrapper around the official NordVPN CLI — connect / random / off / status / kill switch. See [VPN](#vpn-nordvpn) |
 | `launch_nordvpn` | **Legacy.** Self-provisioning raw-`.ovpn` OpenVPN wrapper with random server selection. Superseded by `vpn`; kept for the service-credential path |
+| `msg-read` | Read an Outlook `.msg`: headers, attachment list and body; `msg-read -o DIR FILE.msg` also saves the attachments (never overwriting, never outside `DIR`). Runs `extract-msg` through `uv run`, so it needs `uv` (PYTHON installs it) and no venv or system package |
 | `herdr-boot` | *(stowed script in `~/.local/bin`, not an rc alias)* Boot a [herdr](#herdr-multiplexer-herdr) session's headless server (`herdr-boot <session>`) with no attached TUI client; idempotent. The ad-hoc counterpart to the `herdr@.service` user unit |
 
 The `lpx-*` helpers are documented under [The `lpx` command suite](#the-lpx-command-suite).
@@ -734,6 +772,34 @@ coreutils/grep/awk.
 | `lpx debug` | Write a system diagnostic snapshot to `/tmp/lpx-debug-<ts>.log` (kernel, disk, memory, failed units, dmesg, docker ps, top processes). Captures **no** environment, home contents, or secrets |
 | `lpx version` | Print the repo checkout version (`git describe` / short SHA) |
 | `lpx sudo-window <minutes>` | Grant the current user a time-boxed `NOPASSWD:ALL` window, validated with `visudo -cf` before install and auto-revoked by a `systemd-run` timer; a boot-time cleanup unit ensures a reboot can't leave a stale grant. `lpx sudo-window reset` revokes immediately. Requires sudo |
+
+## The systemd package
+
+`systemd/` lands user units and drop-ins in `~/.config/systemd/user/`:
+
+- `herdr@.service`: the headless herdr session server template (see [Headless server boot](#headless-server-boot)).
+- `t3code-claude-.scope.d/oom-continue.conf`: `OOMPolicy=continue` for every
+  T3 Code thread scope (`t3code-claude-<id>.scope`). systemd's default for a
+  scope is `stop`: when the kernel OOM-kills one child (a test runner, a
+  PowerShell process) systemd stops the whole scope and the foreman and every lane
+  in that thread fail with it. With `continue` only the killed process goes. The
+  file is inert on a box without T3, and it takes effect for scopes created after
+  the next `systemctl --user daemon-reload`; running threads keep the policy they
+  started with. Check it on a box with a throwaway scope: start one named
+  `t3code-claude-probe` with `-p OOMPolicy=stop` and `systemctl --user show` reports
+  `OOMPolicy=continue`.
+
+## zsh `-c` and bash habits
+
+Agent tools run `zsh -lc '<command>'` on a box whose login shell is zsh, and Codex
+(checked on 0.167) takes the login shell from the password database and has no
+setting that changes it (`$SHELL` and `shell_environment_policy.set` are both
+ignored). Two bash habits then fail as zsh errors: `ls *.log` with no match is
+`zsh: no matches found`, and a word starting with `=` is expanded as a command
+path. `zsh/.zshenv` sets `nonomatch` and `noequals` when zsh is given a `-c`
+command string (`ZSH_EXECUTION_STRING` is set), so those commands behave as in
+bash. Interactive shells and script files keep zsh's defaults. The login shell
+itself is not changed.
 
 ## Shell workflow functions
 
