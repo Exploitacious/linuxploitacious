@@ -272,7 +272,9 @@ class Stage1Tests(unittest.TestCase):
 
     def test_settings_has_no_retired_fleet_hooks(self):
         text = (ROOT / "claude/.claude/settings.json").read_text()
-        for retired in ("WORKFORCE", "ac-reorient", "remote-session-register"):
+        # wip-refresh-nudge: the Planner WIP board is dormant (Alex, 2026-11-07), so its
+        # per-prompt refresh nudge is gone with it.
+        for retired in ("WORKFORCE", "ac-reorient", "remote-session-register", "wip-refresh-nudge"):
             self.assertNotIn(retired, text)
         # Compare against the surviving hook contract, not a second read of
         # the same JSON. Losing another hook must fail this retirement check.
@@ -280,9 +282,11 @@ class Stage1Tests(unittest.TestCase):
             "startup|clear": ["session-briefing.sh", "post-compact-resume.sh",
                               "handoff-check.sh", "vault-inbox-check.sh",
                               "memory-index.sh", "memory-digest.sh",
+                              "foreman-context.sh", "lane-rules.sh",
                               "session-work-init.sh", "seatpool-notice.sh"],
             "resume|compact": ["post-compact-resume.sh", "handoff-check.sh",
                                "session-briefing.sh", "memory-digest.sh",
+                               "foreman-context.sh", "lane-rules.sh",
                                "session-work-init.sh", "seatpool-notice.sh"],
             "*": ["herdr-agent-state.sh"],
         }
@@ -366,6 +370,71 @@ class Stage1Tests(unittest.TestCase):
                                 env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
                                 input="{}", capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    # The hooks the harness lanes added on 2026-11-07, and where each one must be
+    # registered: (event, matcher) pairs. Each script lives in the harness, not here, and
+    # prints nothing when it has nothing to say. askuser-cancel.sh is also on
+    # PostToolUseFailure: a declined question may reach Claude Code as a failed tool call
+    # rather than a completed one, and the script reads whichever event arrives.
+    LANE_HOOKS = {
+        "lane-rules.sh": {("SubagentStart", ".*"), ("SessionStart", "startup|clear"),
+                          ("SessionStart", "resume|compact")},
+        "foreman-context.sh": {("SessionStart", "startup|clear"), ("SessionStart", "resume|compact")},
+        "report-lint.sh": {("Stop", ".*")},
+        "askuser-cancel.sh": {("PostToolUse", "AskUserQuestion"), ("PostToolUseFailure", "AskUserQuestion")},
+        "memory-hint.sh": {("UserPromptSubmit", ".*")},
+    }
+
+    def registrations(self, script):
+        return [(event, group["matcher"], hook) for event, groups in SETTINGS["hooks"].items()
+                for group in groups for hook in group["hooks"]
+                if f"/.claude-config/hooks/{script}" in hook["command"]]
+
+    def test_lane_hooks_are_registered_where_the_harness_expects_them(self):
+        for script, expected in self.LANE_HOOKS.items():
+            with self.subTest(script=script):
+                found = self.registrations(script)
+                self.assertEqual({(event, matcher) for event, matcher, _ in found}, expected)
+                # One entry per (event, matcher): a duplicate would run the hook twice.
+                self.assertEqual(len(found), len(expected))
+
+    def test_lane_hooks_use_the_guarded_pattern_and_fail_open(self):
+        prefix = 'H="$HOME/COWORK"; [ -d "$H" ] || H="$HOME/OPS"; test -x "$H/.claude-config/hooks/'
+        for script in self.LANE_HOOKS:
+            for event, _, hook in self.registrations(script):
+                with self.subTest(script=script, event=event):
+                    command = hook["command"]
+                    self.assertTrue(command.startswith(prefix + script), command)
+                    self.assertTrue(command.endswith("2>/dev/null || true"), command)
+                    # Every one gets a short timeout: a slow or hung hook must not hold a
+                    # session (prompt-time hooks are held to the same 5 s as skill-hint).
+                    self.assertLessEqual(hook.get("timeout", 600), 10, command)
+                    self.assertNotIn("onFailure", hook)
+                    # Stop and the prompt hooks speak through stdout JSON: the guard's
+                    # `|| true` turns any exit code, a blocking exit 2 included, into 0.
+                    for harness in ("COWORK", "OPS"):
+                        target = self.home / harness / ".claude-config/hooks" / script
+                        self.executable(target, "cat; exit 2")
+                        result = self.shell(command)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, "{}")  # the hook's stdin reached the script
+                        shutil.rmtree(self.home / harness)
+                    result = self.shell(command, PATH=str(self.home))
+                    self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+
+    def test_prompt_time_lane_hooks_have_the_skill_hint_timeout(self):
+        skill_hint = next(h for _, _, h in self.registrations("skill-hint.sh"))
+        for _, _, hook in self.registrations("memory-hint.sh"):
+            self.assertLessEqual(hook["timeout"], skill_hint["timeout"])
+
+    def test_skill_hint_context_watch_and_guards_keep_their_registrations(self):
+        # The lane hooks were added beside these, not instead of them.
+        self.assertEqual({(e, m) for e, m, _ in self.registrations("skill-hint.sh")},
+                         {("UserPromptSubmit", ".*")})
+        self.assertEqual({(e, m) for e, m, _ in self.registrations("context-watch.sh")},
+                         {("PostToolUse", ".*"), ("Stop", ".*"), ("UserPromptSubmit", ".*")})
+        for guard in ("secrets-guard.sh", "git-guard.sh", "review-gate-guard.sh"):
+            self.assertTrue(any(e == "PreToolUse" for e, _, _ in self.registrations(guard)), guard)
 
     def test_python_bytecode_is_not_written(self):
         # Alex, 2026-10-28: lanes left 13.7 GB of __pycache__ across the project checkouts on
@@ -569,10 +638,14 @@ class Stage1Tests(unittest.TestCase):
     def test_settings_has_no_subagent_operating_model_hook(self):
         # Subagents load ~/.claude/CLAUDE.md and its core import themselves
         # (Explore and Plan skip it by design), so a SubagentStart injection
-        # of the operating model would be a second copy of the core.
+        # of the operating model would be a second copy of the core. The one
+        # SubagentStart hook is the short lane-rules block (lane-rules.sh): the
+        # shell rules a lane needs and a brief does not carry, not the core.
         text = (ROOT / "claude/.claude/settings.json").read_text()
-        self.assertNotIn("SubagentStart", SETTINGS["hooks"])
         self.assertNotIn("umbrella-operating-model", text)
+        commands = [h["command"] for g in SETTINGS["hooks"]["SubagentStart"] for h in g["hooks"]]
+        self.assertEqual(len(commands), 1, commands)
+        self.assertIn("/.claude-config/hooks/lane-rules.sh", commands[0])
 
     def test_rc_files_do_not_source_claude_wrapper(self):
         # The wrapper is root-only now; COWORK's deploy.sh wires /root's rcs.

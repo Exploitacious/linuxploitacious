@@ -52,6 +52,16 @@
           },
           {
             "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/foreman-context.sh\" && \"$H/.claude-config/hooks/foreman-context.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/lane-rules.sh\" && \"$H/.claude-config/hooks/lane-rules.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-work-init.sh\" && \"$H/.claude-config/hooks/session-work-init.sh\" 2>/dev/null || true"
           },
           {
@@ -81,6 +91,16 @@
           },
           {
             "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/foreman-context.sh\" && \"$H/.claude-config/hooks/foreman-context.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/lane-rules.sh\" && \"$H/.claude-config/hooks/lane-rules.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/session-work-init.sh\" && \"$H/.claude-config/hooks/session-work-init.sh\" 2>/dev/null || true"
           },
           {
@@ -95,6 +115,18 @@
           {
             "type": "command",
             "command": "H=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/herdr-agent-state.sh\"; test -x \"$H\" && bash \"$H\" session || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/lane-rules.sh\" && \"$H/.claude-config/hooks/lane-rules.sh\" 2>/dev/null || true",
             "timeout": 10
           }
         ]
@@ -157,11 +189,33 @@
         ]
       },
       {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": ".*",
         "hooks": [
           {
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/context-watch.sh\" && \"$H/.claude-config/hooks/context-watch.sh\" posttool 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       }
@@ -183,6 +237,11 @@
             "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/disk-alert.sh\" && \"$H/.claude-config/hooks/disk-alert.sh\" 2>/dev/null || true",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/report-lint.sh\" && \"$H/.claude-config/hooks/report-lint.sh\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       }
@@ -202,7 +261,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/wip-refresh-nudge.sh\" && \"$H/.claude-config/hooks/wip-refresh-nudge.sh\" 2>/dev/null || true"
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/skill-hint.sh\" && \"$H/.claude-config/hooks/skill-hint.sh\" 2>/dev/null || true",
+            "timeout": 5
           }
         ]
       },
@@ -211,7 +271,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/skill-hint.sh\" && \"$H/.claude-config/hooks/skill-hint.sh\" 2>/dev/null || true",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/memory-hint.sh\" && \"$H/.claude-config/hooks/memory-hint.sh\" 2>/dev/null || true",
             "timeout": 5
           }
         ]
