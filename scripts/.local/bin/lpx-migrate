@@ -18,6 +18,48 @@ MIGRATIONS_DIR="${LPX_MIGRATIONS_DIR:-$REPO_DIR/migrations}"
 STATE_ROOT="${LPX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/lpx}"
 DONE_DIR="$STATE_ROOT/migrations"
 SKIP_DIR="$DONE_DIR/skipped"
+
+# Arguments are parsed before anything is written. Until 2026-11-07 this runner
+# ignored its arguments, so `lpx-migrate --help` applied every pending migration,
+# package installs included, on five team boxes whose owners have passwordless
+# sudo. An unknown argument now refuses instead of running.
+MODE=run
+case "${1:-}" in
+  "") ;;
+  -h|--help)
+    cat <<'USAGE'
+Usage: lpx-migrate [--list | --help]
+  (no argument)  apply every pending run-once migration, oldest first; a failure
+                 asks to skip on a terminal and fails closed without one
+  --list         print each pending migration and its first comment line; runs
+                 nothing and writes nothing
+  --help         print this text; runs nothing and writes nothing
+State: $LPX_STATE_DIR, else $XDG_STATE_HOME/lpx, else ~/.local/state/lpx.
+USAGE
+    exit 0 ;;
+  --list|--dry-run) MODE=list ;;
+  *) printf '[lpx-migrate] unknown argument: %s (see lpx-migrate --help); nothing was run\n' "$1" >&2
+     exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+  printf '[lpx-migrate] one argument at most (see lpx-migrate --help); nothing was run\n' >&2
+  exit 2
+fi
+
+if [ "$MODE" = list ]; then
+  shopt -s nullglob
+  n=0
+  for m in "${MIGRATIONS_DIR}"/*.sh; do
+    base="$(basename "$m")"
+    [ -e "$DONE_DIR/$base" ] || [ -e "$SKIP_DIR/$base" ] && continue
+    desc="$(grep -m1 -E '^# [A-Za-z]' "$m" | sed 's/^# //')"
+    printf '[lpx-migrate] pending %s  %s\n' "$base" "$desc"
+    n=$((n + 1))
+  done
+  printf '[lpx-migrate] %d pending; nothing was run\n' "$n"
+  exit 0
+fi
+
 mkdir -p "$DONE_DIR" "$SKIP_DIR"
 
 msg()  { printf '[lpx-migrate] %s\n' "$1"; }

@@ -1416,5 +1416,67 @@ class MsgReadTest(unittest.TestCase):
         self.assertEqual((out / "sample" / "invoice.pdf").read_bytes(), b"%PDF-1.4 fake")
 
 
+class LpxMigrateArgsTest(unittest.TestCase):
+    """lpx-migrate reads its arguments before it writes or runs anything.
+
+    Until 2026-11-07 it ignored them, so `lpx-migrate --help` applied every
+    pending migration (package installs included) on five team boxes.
+    """
+
+    RUNNER = ROOT / "scripts/.local/bin/lpx-migrate"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.migs = self.tmp / "migrations"
+        self.migs.mkdir()
+        self.state = self.tmp / "state"
+        self.ran = self.tmp / "ran"
+        (self.migs / "1000.sh").write_text("# Migration: write a marker file.\n"
+                                           f"touch '{self.ran}'\n")
+
+    def run_it(self, *args):
+        env = os.environ | {"LPX_MIGRATIONS_DIR": str(self.migs), "LPX_STATE_DIR": str(self.state)}
+        return subprocess.run(["bash", str(self.RUNNER), *args], env=env, capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL, timeout=30)
+
+    def test_help_runs_nothing_and_writes_nothing(self):
+        for flag in ("--help", "-h"):
+            r = self.run_it(flag)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("Usage: lpx-migrate", r.stdout)
+            self.assertFalse(self.ran.exists(), flag)
+            self.assertFalse(self.state.exists(), flag)
+
+    def test_list_names_pending_and_runs_nothing(self):
+        for flag in ("--list", "--dry-run"):
+            r = self.run_it(flag)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("pending 1000.sh  Migration: write a marker file.", r.stdout)
+            self.assertIn("1 pending; nothing was run", r.stdout)
+            self.assertFalse(self.ran.exists(), flag)
+            self.assertFalse(self.state.exists(), flag)
+
+    def test_unknown_or_extra_argument_refuses(self):
+        for args in (("--bogus",), ("run",), ("--list", "--help")):
+            r = self.run_it(*args)
+            self.assertEqual(r.returncode, 2, args)
+            self.assertIn("nothing was run", r.stderr)
+            self.assertFalse(self.ran.exists(), args)
+            self.assertFalse(self.state.exists(), args)
+
+    def test_no_argument_still_applies_once(self):
+        r = self.run_it()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.ran.exists())
+        self.assertIn("1 ran, 0 skipped, 0 pending", r.stdout)
+        self.ran.unlink()
+        r = self.run_it("--list")
+        self.assertIn("0 pending; nothing was run", r.stdout)
+        r = self.run_it()
+        self.assertFalse(self.ran.exists())
+        self.assertIn("0 ran, 1 skipped, 0 pending", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
