@@ -1011,6 +1011,93 @@ class Stage1Tests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.assert_compaction_policy(settings)
 
+    def assert_effort_policy(self, settings):
+        # Each Claude model carries its own saved effort level (ruling
+        # 2026-11-10): Opus 5.5, Sonnet 5.5 and Haiku 5.5 xhigh, Fable 5.2 and
+        # Mythos 5.2 high, and never max on any model. The backend sets
+        # defaults and never overrides a pick, so the env CLAUDE_CODE_EFFORT_LEVEL
+        # pin is gone: Claude Code 2.1.322 ranks it above --effort and the
+        # picker, which forced Fable to xhigh. A top-level effortLevel is gone
+        # too: these four models ignore it in the user settings file (measured
+        # on 2.1.322), and in a project, local or --settings file it would
+        # outrank every per-model level here. The values are pinned exactly
+        # because Claude Code drops a misspelled or unsupported saved level to
+        # the model default, medium for all of these, without a word, which
+        # would quietly cut the reasoning effort of every session and lane.
+        # Any key naming an effort level is collected wherever it sits, so a
+        # stray maxEffortLevel or a level under the wrong parent also fails.
+        expected = {"claude-opus-5-5": "xhigh", "claude-sonnet-5-5": "xhigh",
+                    "claude-haiku-5-5": "xhigh", "claude-fable-5-2": "high",
+                    "claude-mythos-5-2": "high"}
+        valid = {"low", "medium", "high", "xhigh"}
+        found = {}
+
+        def walk(node, path):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if "effort" in key.lower():
+                        found["/".join(path + [key])] = value
+                    walk(value, path + [key])
+            elif isinstance(node, list):
+                for index, value in enumerate(node):
+                    walk(value, path + [str(index)])
+
+        walk(settings, [])
+        # Key lists, not the dicts: a failure must not dump the whole file.
+        self.assertNotIn("CLAUDE_CODE_EFFORT_LEVEL", list(settings.get("env", {})))
+        self.assertNotIn("effortLevel", list(settings))
+        for path, level in found.items():
+            self.assertIsInstance(level, str, path)
+            self.assertNotEqual(level, "max", path)
+            self.assertIn(level, valid, path)
+        self.assertEqual(found, {f"modelSettings/{model}/effortLevel": level
+                                 for model, level in expected.items()})
+
+    def test_per_model_effort_levels_and_no_global_pin(self):
+        self.assert_effort_policy(SETTINGS)
+        # Haiku keeps its 100K auto-compact window beside its level.
+        self.assertEqual(SETTINGS["modelSettings"]["claude-haiku-5-5"],
+                         {"autoCompactWindow": 100000, "effortLevel": "xhigh"})
+
+    def test_effort_policy_rejects_each_drift(self):
+        # Every way the settings can be wrong must fail the policy check above,
+        # the silent ones (a typo, a missing entry, max) most of all.
+        def model(name):
+            return lambda s: s["modelSettings"].setdefault(name, {})
+        mutations = {
+            "env effort pin back": lambda s: s["env"].update(CLAUDE_CODE_EFFORT_LEVEL="xhigh"),
+            "env effort pin max": lambda s: s["env"].update(CLAUDE_CODE_EFFORT_LEVEL="max"),
+            "top-level effortLevel": lambda s: s.update(effortLevel="xhigh"),
+            "top-level effortLevel max": lambda s: s.update(effortLevel="max"),
+            "modelSettings removed": lambda s: s.pop("modelSettings"),
+            "Opus entry missing": lambda s: s["modelSettings"].pop("claude-opus-5-5"),
+            "Sonnet entry missing": lambda s: s["modelSettings"].pop("claude-sonnet-5-5"),
+            "Haiku level missing": lambda s: s["modelSettings"]["claude-haiku-5-5"].pop("effortLevel"),
+            "Fable entry missing": lambda s: s["modelSettings"].pop("claude-fable-5-2"),
+            "Mythos entry missing": lambda s: s["modelSettings"].pop("claude-mythos-5-2"),
+            "Fable at xhigh": lambda s: s["modelSettings"]["claude-fable-5-2"].update(effortLevel="xhigh"),
+            "Mythos at xhigh": lambda s: s["modelSettings"]["claude-mythos-5-2"].update(effortLevel="xhigh"),
+            "Opus at high": lambda s: s["modelSettings"]["claude-opus-5-5"].update(effortLevel="high"),
+            "Haiku at medium": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(effortLevel="medium"),
+            "Opus at max": lambda s: s["modelSettings"]["claude-opus-5-5"].update(effortLevel="max"),
+            "Fable at max": lambda s: s["modelSettings"]["claude-fable-5-2"].update(effortLevel="max"),
+            "level misspelled": lambda s: s["modelSettings"]["claude-sonnet-5-5"].update(effortLevel="xhgih"),
+            "level in capitals": lambda s: s["modelSettings"]["claude-sonnet-5-5"].update(effortLevel="XHIGH"),
+            "level as a number": lambda s: s["modelSettings"]["claude-sonnet-5-5"].update(effortLevel=4),
+            "level empty": lambda s: s["modelSettings"]["claude-sonnet-5-5"].update(effortLevel=""),
+            "model key misspelled": lambda s: s["modelSettings"].update({"claude-opus-5.5": s["modelSettings"].pop("claude-opus-5-5")}),
+            "key with a [1m] suffix": lambda s: s["modelSettings"].update({"claude-opus-5-5[1m]": s["modelSettings"].pop("claude-opus-5-5")}),
+            "maxEffortLevel added": lambda s: s["modelSettings"]["claude-opus-5-5"].update(maxEffortLevel="max"),
+            "level under an unexpected model": lambda s: model("claude-opus-4-8")(s).update(effortLevel="high"),
+            "level key misspelled": lambda s: s["modelSettings"]["claude-opus-5-5"].update({"effortlevel": s["modelSettings"]["claude-opus-5-5"].pop("effortLevel")}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name):
+                settings = json.loads(json.dumps(SETTINGS))
+                mutate(settings)
+                with self.assertRaises(AssertionError):
+                    self.assert_effort_policy(settings)
+
     def test_guards_fail_closed_and_helpers_fail_open(self):
         # The three PreToolUse guards block the call when they crash, time
         # out or exit with anything but 0 or 2 (onFailure, Claude Code
@@ -1208,6 +1295,60 @@ sudo() { printf '%s\n' "$*" >> "$HOME/sudo-calls"; return 0; }
                 self.assertEqual(result.returncode, 0, result.stderr)
                 color = green if state == "on" else yellow
                 self.assertIn("AC:\033[0m%s%s\033[0m" % (color, state), result.stdout)
+
+    def test_statusline_effort_badge(self):
+        # The badge shows the effort the session really runs: the statusline
+        # input's effort.level (cyan), which already reflects a launch flag, the
+        # picker or an env override. Only with none in the input does it fall
+        # back to the saved level for the session's model (dim, read from
+        # modelSettings the way Claude Code keys it, without a [1m] suffix), and
+        # with neither it prints no effort. The old top-level effortLevel is
+        # never read (ruling 2026-11-10), and a level that is not a plain
+        # lowercase word is dropped rather than printed into the terminal.
+        cyan_dot = "\033[2m·\033[0m \033[38;5;117m%s\033[0m"
+        dim_dot = "\033[2m· %s\033[0m"
+        config = self.home / ".claude"
+        config.mkdir()
+        stale = json.loads(json.dumps(SETTINGS))
+        stale["effortLevel"] = "low"
+        cases = (
+            ("input level wins over the saved one", SETTINGS,
+             {"id": "claude-fable-5-2"}, {"level": "xhigh"}, cyan_dot % "xhigh", ()),
+            ("input level, model with no saved entry", SETTINGS,
+             {"id": "claude-unknown-1"}, {"level": "medium"}, cyan_dot % "medium", ()),
+            ("saved level, Opus with a [1m] suffix", SETTINGS,
+             {"id": "claude-opus-5-5[1m]"}, None, dim_dot % "xhigh", ("\033[38;5;117mxhigh",)),
+            ("saved level, Fable", SETTINGS,
+             {"id": "claude-fable-5-2"}, None, dim_dot % "high", ()),
+            ("saved level, Haiku beside its window", SETTINGS,
+             {"id": "claude-haiku-5-5"}, None, dim_dot % "xhigh", ()),
+            ("no level and no saved entry", SETTINGS,
+             {"id": "claude-unknown-1"}, None, "", ("default", "·")),
+            ("no model id", SETTINGS, {}, None, "", ("default", "·")),
+            ("effort is not an object", SETTINGS,
+             {"id": "claude-unknown-1"}, "high", "", ("high", "·")),
+            ("top-level effortLevel is ignored", stale,
+             {"id": "claude-unknown-1"}, None, "", ("low", "·")),
+            ("escape sequence in the level is dropped", SETTINGS,
+             {"id": "claude-unknown-1"}, {"level": "\033[31mred"}, "", ("red", "·")),
+            ("a very long level is dropped", SETTINGS,
+             {"id": "claude-unknown-1"}, {"level": "x" * 20000}, "", ("xxxxxxxxxxxxx", "·")),
+        )
+        for name, settings, model, effort, want, forbidden in cases:
+            with self.subTest(name):
+                (config / "settings.json").write_text(json.dumps(settings))
+                payload = {"model": model | {"display_name": "Test model"}}
+                if effort is not None:
+                    payload["effort"] = effort
+                result = subprocess.run(
+                    ["bash", str(ROOT / "claude/.claude/statusline.sh")],
+                    env=self.env | {"CLAUDE_CONFIG_DIR": str(config)}, text=True,
+                    input=json.dumps(payload), capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("AC:", result.stdout)
+                self.assertIn(want, result.stdout)
+                for text in forbidden:
+                    self.assertNotIn(text, result.stdout)
 
     def test_statusline_profiles(self):
         for personal in (False, True):

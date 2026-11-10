@@ -21,6 +21,8 @@ RL_5H=""
 RL_7D=""
 RL_5H_RESET=""
 RL_7D_RESET=""
+EFFORT=""
+MODEL_ID=""
 
 # --- Parse values via NUL-separated jq output ---
 # Old version used `eval $(jq -r '...')` which broke on quotes/newlines
@@ -33,7 +35,7 @@ if command -v jq >/dev/null 2>&1; then
   # gsub strips them just in case.
   while IFS='=' read -r key val; do
     case "$key" in
-      MODEL|CTX_USED|CTX_SIZE|COST|TOTAL_MS|API_MS|LINES_ADD|LINES_REM|CACHE_READ|CACHE_CREATE|RL_5H|RL_7D|RL_5H_RESET|RL_7D_RESET)
+      MODEL|CTX_USED|CTX_SIZE|COST|TOTAL_MS|API_MS|LINES_ADD|LINES_REM|CACHE_READ|CACHE_CREATE|RL_5H|RL_7D|RL_5H_RESET|RL_7D_RESET|EFFORT|MODEL_ID)
         printf -v "$key" '%s' "$val"
         ;;
     esac
@@ -52,7 +54,9 @@ if command -v jq >/dev/null 2>&1; then
     "RL_5H=" + (.rate_limits.five_hour.used_percentage // "" | s),
     "RL_7D=" + (.rate_limits.seven_day.used_percentage // "" | s),
     "RL_5H_RESET=" + (.rate_limits.five_hour.resets_at // "" | s),
-    "RL_7D_RESET=" + (.rate_limits.seven_day.resets_at // "" | s)
+    "RL_7D_RESET=" + (.rate_limits.seven_day.resets_at // "" | s),
+    "EFFORT=" + ((.effort | if type == "object" then .level else null end) // "" | s),
+    "MODEL_ID=" + ((.model | if type == "object" then .id else null end) // "" | s)
   ' 2>/dev/null)
 fi
 
@@ -146,9 +150,17 @@ pad_to() {
 
 # === Compute values ===
 
-# Posture badge — autocompact + effort, read from the ACTIVE profile's
-# settings.json (CLAUDE_CONFIG_DIR resolves per profile; both symlink to the
-# same source). Not in the statusline JSON, so we read the config directly.
+# Posture badge — autocompact + effort. Autocompact is not in the statusline
+# JSON, so it is read from the ACTIVE profile's settings.json
+# (CLAUDE_CONFIG_DIR resolves per profile; both symlink to the same source).
+# Effort is the level the session really runs, from the input's effort.level
+# (cyan). A launch flag, the picker or an env override all land there. Only
+# when the input carries none (an older Claude Code) does the badge show the
+# saved level for the session's model from modelSettings, dim so it reads as
+# unconfirmed, and with neither it shows no effort at all. The old top-level
+# effortLevel is never read: the harness no longer sets one (ruling
+# 2026-11-10: per-model defaults, the backend never overrides a pick), and
+# Claude Code ignores it in the user file for Opus, Sonnet, Haiku and Fable 5.x.
 # Auto-compaction on is the normal state since 2026-10-14 (Haiku 5.5 lanes
 # compact inside 100K), so "on" is the quiet green and "off" the yellow
 # warning the TUI otherwise never surfaces.
@@ -160,7 +172,12 @@ if [ -r "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # swallow an explicit `false` and wrongly report "on". Plain `.x` yields
     # the literal "false"/"true"/"null".
     ac=$(jq -r '.autoCompactEnabled' "$SETTINGS_FILE" 2>/dev/null)
-    eff=$(jq -r '.effortLevel // empty' "$SETTINGS_FILE" 2>/dev/null)
+    # A saved level is read the way Claude Code keys it: the canonical model id
+    # without a [1m] suffix.
+    eff_saved=""
+    if [ -z "$EFFORT" ] && [ -n "$MODEL_ID" ]; then
+        eff_saved=$(jq -r --arg id "${MODEL_ID%%\[*}" '.modelSettings[$id].effortLevel // empty' "$SETTINGS_FILE" 2>/dev/null)
+    fi
     # Either switch closed stops auto-compaction: autoCompactEnabled false
     # (absent means on), or a truthy DISABLE_AUTO_COMPACT or DISABLE_COMPACT in
     # the env this statusline inherits from the session, read the way Claude
@@ -171,8 +188,17 @@ if [ -r "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     else
         ac_txt="on"; ac_c="$GRN"
     fi
-    [ -n "$eff" ] || eff="default"
-    POSTURE="   ${D}AC:${RST}${ac_c}${ac_txt}${RST} ${D}·${RST} ${CYN}${eff}${RST}"
+    # Levels are plain lowercase words; anything else is dropped, never printed.
+    case "$EFFORT" in ''|*[!a-z]*) EFFORT="" ;; esac
+    case "$eff_saved" in ''|*[!a-z]*) eff_saved="" ;; esac
+    [ "${#EFFORT}" -le 12 ] || EFFORT=""
+    [ "${#eff_saved}" -le 12 ] || eff_saved=""
+    POSTURE="   ${D}AC:${RST}${ac_c}${ac_txt}${RST}"
+    if [ -n "$EFFORT" ]; then
+        POSTURE="${POSTURE} ${D}·${RST} ${CYN}${EFFORT}${RST}"
+    elif [ -n "$eff_saved" ]; then
+        POSTURE="${POSTURE} ${D}· ${eff_saved}${RST}"
+    fi
 fi
 
 # Rate-limit reset countdowns (resets_at = Unix epoch seconds).
