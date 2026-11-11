@@ -17,7 +17,12 @@
     "pr": ""
   },
   "permissions": {
-    "defaultMode": "bypassPermissions"
+    "defaultMode": "bypassPermissions",
+    "deny": [
+      "Artifact",
+      "ArtifactComments",
+      "ArtifactData"
+    ]
   },
   "model": "claude-opus-5-5[1m]",
   "hooks": {
