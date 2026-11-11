@@ -14,5 +14,6 @@ read, not an automatic import. If neither file exists, these defaults apply:
 - Never compress code output.
 - Conventional Commits: `<type>(<scope>): <imperative summary>`, subject 72
   characters at most, no trailing period, no AI attribution in commits.
-- Every PR body ends with a line naming the models that did the work: the
-  foreman, any consult above Opus, the lanes, and the reviewer with its rounds.
+- Every PR body ends with a models line: Opus 5.5, then Fable 5.2 or Mythos 5.2
+  only if consulted, then the reviewer with its rounds, then the harness. Never
+  name Sonnet or Haiku, and never write "foreman".
