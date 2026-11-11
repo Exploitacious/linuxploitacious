@@ -13,4 +13,6 @@ read, not an automatic import. If neither file exists, these defaults apply:
   technical reply. No emojis unless asked.
 - Never compress code output.
 - Conventional Commits: `<type>(<scope>): <imperative summary>`, subject 72
-  characters at most, no trailing period, no AI attribution.
+  characters at most, no trailing period, no AI attribution in commits.
+- Every PR body ends with a line naming the models that did the work: the
+  foreman, any consult above Opus, the lanes, and the reviewer with its rounds.
