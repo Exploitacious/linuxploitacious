@@ -237,6 +237,11 @@
           },
           {
             "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/model-fallback-watch.sh\" && \"$H/.claude-config/hooks/model-fallback-watch.sh\" 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; test -x \"$H/.claude-config/hooks/askuser-cancel.sh\" && \"$H/.claude-config/hooks/askuser-cancel.sh\" 2>/dev/null || true",
             "timeout": 10
           }

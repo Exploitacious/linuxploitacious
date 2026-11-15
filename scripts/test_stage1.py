@@ -394,6 +394,7 @@ class Stage1Tests(unittest.TestCase):
                           ("SessionStart", "resume|compact")},
         "foreman-context.sh": {("SessionStart", "startup|clear"), ("SessionStart", "resume|compact")},
         "report-lint.sh": {("Stop", ".*")},
+        "model-fallback-watch.sh": {("Stop", ".*")},
         "askuser-cancel.sh": {("UserPromptSubmit", ".*"), ("Stop", ".*")},
         "memory-hint.sh": {("UserPromptSubmit", ".*")},
         "time-checkpoint.sh": {("PostToolUse", TICKET_MANAGE)},

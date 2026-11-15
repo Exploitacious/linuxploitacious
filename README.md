@@ -450,6 +450,7 @@ prompt hooks answer with JSON on stdout.
 | `lane-rules.sh` | SubagentStart (all agent types), SessionStart (both groups); it decides for itself whether the session is a lane |
 | `foreman-context.sh` | SessionStart, both groups |
 | `report-lint.sh` | Stop |
+| `model-fallback-watch.sh` | Stop. Flags a session or lane that a refusal moved to another model (the fallback reroute), once per event, and logs it to `~/.local/state/cowork/model-fallbacks.tsv` |
 | `askuser-cancel.sh` | UserPromptSubmit and Stop. Not a tool event: a rejected `AskUserQuestion` never runs, so Claude Code fires no PostToolUse or PostToolUseFailure for it. The message that cancelled the question arrives as a prompt, and Stop is the backstop |
 | `memory-hint.sh` | UserPromptSubmit |
 | `time-checkpoint.sh` | PostToolUse, matcher `mcp__umbrella-autotask__autotask__ticket_manage` (nudges to log time before a ticket is closed) |
