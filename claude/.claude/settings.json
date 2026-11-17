@@ -310,20 +310,20 @@
   "spinnerTipsEnabled": false,
   "modelSettings": {
     "claude-opus-5-5": {
-      "effortLevel": "xhigh"
+      "effortLevel": "high"
     },
     "claude-sonnet-5-5": {
-      "effortLevel": "xhigh"
+      "effortLevel": "high"
     },
     "claude-haiku-5-5": {
       "autoCompactWindow": 100000,
-      "effortLevel": "xhigh"
+      "effortLevel": "high"
     },
     "claude-fable-5-2": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     },
     "claude-mythos-5-2": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     }
   },
   "tui": "fullscreen",

@@ -1014,8 +1014,11 @@ class Stage1Tests(unittest.TestCase):
 
     def assert_effort_policy(self, settings):
         # Each Claude model carries its own saved effort level (ruling
-        # 2026-11-10): Opus 5.5, Sonnet 5.5 and Haiku 5.5 xhigh, Fable 5.2 and
-        # Mythos 5.2 high, and never max on any model. The backend sets
+        # 2026-11-16, replacing the 2026-11-10 xhigh/high levels): Opus 5.5,
+        # Sonnet 5.5 and Haiku 5.5 high, Fable 5.2 and Mythos 5.2 medium, and
+        # never max on any model. The foreman raises a thread or lane above its
+        # default when the work needs it; the saved level is only the default.
+        # The backend sets
         # defaults and never overrides a pick, so the env CLAUDE_CODE_EFFORT_LEVEL
         # pin is gone: Claude Code 2.1.322 ranks it above --effort and the
         # picker, which forced Fable to xhigh. A top-level effortLevel is gone
@@ -1027,9 +1030,9 @@ class Stage1Tests(unittest.TestCase):
         # would quietly cut the reasoning effort of every session and lane.
         # Any key naming an effort level is collected wherever it sits, so a
         # stray maxEffortLevel or a level under the wrong parent also fails.
-        expected = {"claude-opus-5-5": "xhigh", "claude-sonnet-5-5": "xhigh",
-                    "claude-haiku-5-5": "xhigh", "claude-fable-5-2": "high",
-                    "claude-mythos-5-2": "high"}
+        expected = {"claude-opus-5-5": "high", "claude-sonnet-5-5": "high",
+                    "claude-haiku-5-5": "high", "claude-fable-5-2": "medium",
+                    "claude-mythos-5-2": "medium"}
         valid = {"low", "medium", "high", "xhigh"}
         found = {}
 
@@ -1058,7 +1061,7 @@ class Stage1Tests(unittest.TestCase):
         self.assert_effort_policy(SETTINGS)
         # Haiku keeps its 100K auto-compact window beside its level.
         self.assertEqual(SETTINGS["modelSettings"]["claude-haiku-5-5"],
-                         {"autoCompactWindow": 100000, "effortLevel": "xhigh"})
+                         {"autoCompactWindow": 100000, "effortLevel": "high"})
 
     def test_effort_policy_rejects_each_drift(self):
         # Every way the settings can be wrong must fail the policy check above,
@@ -1077,8 +1080,12 @@ class Stage1Tests(unittest.TestCase):
             "Fable entry missing": lambda s: s["modelSettings"].pop("claude-fable-5-2"),
             "Mythos entry missing": lambda s: s["modelSettings"].pop("claude-mythos-5-2"),
             "Fable at xhigh": lambda s: s["modelSettings"]["claude-fable-5-2"].update(effortLevel="xhigh"),
+            "Fable back at high": lambda s: s["modelSettings"]["claude-fable-5-2"].update(effortLevel="high"),
             "Mythos at xhigh": lambda s: s["modelSettings"]["claude-mythos-5-2"].update(effortLevel="xhigh"),
-            "Opus at high": lambda s: s["modelSettings"]["claude-opus-5-5"].update(effortLevel="high"),
+            "Mythos back at high": lambda s: s["modelSettings"]["claude-mythos-5-2"].update(effortLevel="high"),
+            "Opus back at xhigh": lambda s: s["modelSettings"]["claude-opus-5-5"].update(effortLevel="xhigh"),
+            "Sonnet back at xhigh": lambda s: s["modelSettings"]["claude-sonnet-5-5"].update(effortLevel="xhigh"),
+            "Haiku back at xhigh": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(effortLevel="xhigh"),
             "Haiku at medium": lambda s: s["modelSettings"]["claude-haiku-5-5"].update(effortLevel="medium"),
             "Opus at max": lambda s: s["modelSettings"]["claude-opus-5-5"].update(effortLevel="max"),
             "Fable at max": lambda s: s["modelSettings"]["claude-fable-5-2"].update(effortLevel="max"),
@@ -1318,11 +1325,11 @@ sudo() { printf '%s\n' "$*" >> "$HOME/sudo-calls"; return 0; }
             ("input level, model with no saved entry", SETTINGS,
              {"id": "claude-unknown-1"}, {"level": "medium"}, cyan_dot % "medium", ()),
             ("saved level, Opus with a [1m] suffix", SETTINGS,
-             {"id": "claude-opus-5-5[1m]"}, None, dim_dot % "xhigh", ("\033[38;5;117mxhigh",)),
+             {"id": "claude-opus-5-5[1m]"}, None, dim_dot % "high", ("\033[38;5;117mhigh",)),
             ("saved level, Fable", SETTINGS,
-             {"id": "claude-fable-5-2"}, None, dim_dot % "high", ()),
+             {"id": "claude-fable-5-2"}, None, dim_dot % "medium", ()),
             ("saved level, Haiku beside its window", SETTINGS,
-             {"id": "claude-haiku-5-5"}, None, dim_dot % "xhigh", ()),
+             {"id": "claude-haiku-5-5"}, None, dim_dot % "high", ()),
             ("no level and no saved entry", SETTINGS,
              {"id": "claude-unknown-1"}, None, "", ("default", "·")),
             ("no model id", SETTINGS, {}, None, "", ("default", "·")),
