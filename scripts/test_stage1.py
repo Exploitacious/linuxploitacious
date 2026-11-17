@@ -1063,6 +1063,39 @@ class Stage1Tests(unittest.TestCase):
         self.assertEqual(SETTINGS["modelSettings"]["claude-haiku-5-5"],
                          {"autoCompactWindow": 100000, "effortLevel": "high"})
 
+    def assert_skill_overrides(self, settings):
+        # skillOverrides quiets skills in the listing without deleting them
+        # (2026-11-16 skill sweep: the listing sits at its cap, so a skill no
+        # session loads costs a live one its description). Claude Code 2.1.326
+        # drops the whole key without a word when any entry is not one of its
+        # four states, which would put every quieted skill back in the listing.
+        overrides = settings.get("skillOverrides")
+        self.assertIsInstance(overrides, dict)
+        self.assertTrue(overrides)
+        for name, state in overrides.items():
+            self.assertIsInstance(name, str)
+            self.assertRegex(name, r"^[a-z0-9][a-z0-9:-]*$", name)
+            self.assertIn(state, {"on", "name-only", "user-invocable-only", "off"}, name)
+
+    def test_skill_overrides_are_valid(self):
+        self.assert_skill_overrides(SETTINGS)
+
+    def test_skill_overrides_reject_each_drift(self):
+        for name, mutate in {
+            "key removed": lambda s: s.pop("skillOverrides"),
+            "not an object": lambda s: s.update(skillOverrides=["umbrella-kb-suggest"]),
+            "empty": lambda s: s.update(skillOverrides={}),
+            "state misspelled": lambda s: s["skillOverrides"].update({"umbrella-kb-suggest": "name_only"}),
+            "state in capitals": lambda s: s["skillOverrides"].update({"umbrella-kb-suggest": "OFF"}),
+            "state as a boolean": lambda s: s["skillOverrides"].update({"umbrella-kb-suggest": False}),
+            "name with a space": lambda s: s["skillOverrides"].update({"umbrella kb": "off"}),
+        }.items():
+            with self.subTest(name):
+                settings = json.loads(json.dumps(SETTINGS))
+                mutate(settings)
+                with self.assertRaises(AssertionError):
+                    self.assert_skill_overrides(settings)
+
     def test_effort_policy_rejects_each_drift(self):
         # Every way the settings can be wrong must fail the policy check above,
         # the silent ones (a typo, a missing entry, max) most of all.

@@ -326,6 +326,14 @@
       "effortLevel": "medium"
     }
   },
+  "skillOverrides": {
+    "umbrella-inventory-lifecycle": "name-only",
+    "umbrella-itglue-vendor-assets": "name-only",
+    "umbrella-kb-suggest": "name-only",
+    "umbrella-monitoring-alert-triage": "name-only",
+    "umbrella-operator-run": "name-only",
+    "upstream-contrib-setup": "name-only"
+  },
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": false,
