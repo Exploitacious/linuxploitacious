@@ -171,6 +171,16 @@
         ]
       },
       {
+        "matcher": "Bash|Read|Grep|Glob|LS|Edit|Write|MultiEdit|NotebookEdit|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"$HOME/COWORK\"; [ -d \"$H\" ] || H=\"$HOME/OPS\"; [ ! -x \"$H/.claude-config/hooks/sealed-guard.sh\" ] || \"$H/.claude-config/hooks/sealed-guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Agent|Task|Skill",
         "hooks": [
           {
